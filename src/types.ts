@@ -38,6 +38,7 @@ export type FeatureFlags = {
   confirmCheckout: boolean
   confirmPay: boolean
   cart: boolean
+  offers: boolean
   bots: boolean
   register: boolean
   forgotPassword: boolean
@@ -78,6 +79,8 @@ export type CopySettings = {
   btnBid: string
   btnTakeAll: string
   btnAddCart: string
+  btnBuy: string
+  btnOffer: string
   btnCheckout: string
   btnPay: string
   btnAccept: string
@@ -94,6 +97,10 @@ export type CopySettings = {
   confirmTakeAllBody: string
   confirmCartTitle: string
   confirmCartBody: string
+  confirmOfferTitle: string
+  confirmOfferBody: string
+  confirmAcceptOfferTitle: string
+  confirmAcceptOfferBody: string
   confirmCheckoutTitle: string
   confirmCheckoutBody: string
   confirmPayTitle: string
@@ -115,6 +122,8 @@ export type CopySettings = {
   siteNotice: string
   endingSoon: string
   okAddedCart: string
+  okOffer: string
+  okOfferInvoiced: string
   okCheckout: string
   okBid: string
   okPaid: string
@@ -125,11 +134,16 @@ export type CopySettings = {
   warnQty: string
   warnOverQty: string
   warnMinPrice: string
+  warnOwnBidLower: string
+  warnStartPrice: string
   warnNoBid: string
   warnPending: string
   warnDisabled: string
   warnClosed: string
   warnCart: string
+  warnOffers: string
+  warnOfferPrice: string
+  warnOfferOpen: string
   warnLogin: string
   warnRegister: string
   warnAccountTaken: string
@@ -243,7 +257,22 @@ export type Invoice = {
   auctionLabel?: string
 }
 
-export type NoticeKind = 'win' | 'invoice' | 'outbid' | 'closing' | 'fill'
+export type NoticeKind = 'win' | 'invoice' | 'outbid' | 'closing' | 'fill' | 'offer'
+
+export type MarketOfferStatus = 'pending' | 'accepted' | 'declined' | 'confirmed' | 'cancelled'
+
+export type MarketOffer = {
+  id: string
+  lotId: string
+  accountId: string
+  qty: number
+  unitPrice: number
+  listedPrice: number
+  status: MarketOfferStatus
+  createdAt: number
+  reviewedAt?: number
+  reviewedBy?: string
+}
 
 export type Notice = {
   id: string

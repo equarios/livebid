@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { bidOutcome, fillStats } from '../lib/allocate'
 import { downloadCsv as exportCsvFile } from '../lib/csv'
-import { typePillClass } from '../lib/auctionLists'
+import { isSealedLot, typePillClass } from '../lib/auctionLists'
 import { formatDateTime, isoDate, lotTypeLabel, usdAmt } from '../lib/format'
 import { useStore } from '../store'
 import type { BidOutcome } from '../lib/allocate'
@@ -76,6 +76,7 @@ export function BidHistory() {
         .filter((b) => b.lotId === lot.id && b.accountId === me)
         .reduce<typeof bids[0] | undefined>((a, b) => (!a || b.at > a.at ? b : a), undefined)
       if (!last) continue
+      if (lot.endsAt > now && isSealedLot(lot, settings)) continue
       const stats = fillStats(lot, bids, me)
       const outcome = bidOutcome(lot, stats.myPcs, last.qty, now)
       if (!outcome) continue
@@ -90,7 +91,7 @@ export function BidHistory() {
       })
     }
     return rows.sort((a, b) => b.at - a.at)
-  }, [lots, bids, me, now])
+  }, [lots, bids, me, now, settings])
 
   const makers = [...new Set(allRows.map((r) => r.lot.manufacturer))].sort()
   const products = [...new Set(allRows.map((r) => r.lot.model))].sort()
@@ -319,6 +320,35 @@ export function BidHistory() {
           </tbody>
         </table>
         {!filtered.length ? <p className="empty">No bid history for these filters.</p> : null}
+      </div>
+      <div className="inv-cards">
+        {slice.map((row) => {
+          const gap = row.bid - row.win
+          return (
+            <article key={row.lot.id} className="inv-card">
+              <div>
+                <strong>
+                  {row.lot.manufacturer} {row.lot.model}
+                </strong>
+                <div className="muted tiny">{formatDateTime(row.at)}</div>
+              </div>
+              <div className="auction-card-meta">
+                <span className={`gbs-type gbs-type-${typePillClass(row.lot, settings)}`}>
+                  {lotTypeLabel(row.lot, settings)}
+                </span>
+                <span className={`gbs-outcome gbs-outcome-${row.outcome}`}>
+                  {row.outcome === 'won' ? 'Won' : row.outcome === 'partial' ? 'Partially Won' : 'Lost'}
+                </span>
+                <span>{row.qty} pcs</span>
+              </div>
+              <div className="inv-card-meta">
+                <span>Win {usdAmt(row.win)}</span>
+                <span>Bid {usdAmt(row.bid)}</span>
+                {gap ? <span>Gap {usdAmt(gap)}</span> : null}
+              </div>
+            </article>
+          )
+        })}
       </div>
       <div className="gbs-pager">
         <label>

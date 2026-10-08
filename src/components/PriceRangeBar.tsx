@@ -34,6 +34,7 @@ export function PriceMenu({
   const [toText, setToText] = useState(String(hi))
   const all = lo <= min && hi >= max
   const summary = all ? 'All' : `${usd(lo)} – ${usd(hi)}`
+  const active = open || !all
 
   useEffect(() => {
     if (!open) {
@@ -62,7 +63,12 @@ export function PriceMenu({
 
   return (
     <div className={`filter-menu ${open ? 'open' : ''}`}>
-      <button type="button" className="filter-trigger" onClick={onOpen} aria-expanded={open}>
+      <button
+        type="button"
+        className={`filter-trigger${active ? ' is-active' : ''}`}
+        onClick={onOpen}
+        aria-expanded={open}
+      >
         <span className="filter-trigger-title">Price / pc</span>
         <span className="filter-trigger-value">{summary}</span>
       </button>

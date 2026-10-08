@@ -1,6 +1,6 @@
 import { BatteryMark } from './BatteryMark'
 import { TimeLeft } from './TimeLeft'
-import { typePillClass } from '../lib/auctionLists'
+import { isSealedLot, typePillClass } from '../lib/auctionLists'
 import { lotTypeLabel, specLocks, usd } from '../lib/format'
 import { moqLabel } from '../lib/moq'
 import { useStore } from '../store'
@@ -62,8 +62,21 @@ export function LotCompare({
                 </dd>
               </div>
               <div>
-                <dt>Price / pc</dt>
-                <dd>{usd(lot.buyNowPrice ?? lot.currentPrice)}</dd>
+                <dt>
+                  {lot.channel === 'auction' && isSealedLot(lot, settings) && lot.endsAt > Date.now()
+                    ? 'Start / pc'
+                    : 'Price / pc'}
+                </dt>
+                <dd>
+                  {usd(
+                    lot.buyNowPrice ??
+                      (lot.channel === 'auction' &&
+                      isSealedLot(lot, settings) &&
+                      lot.endsAt > Date.now()
+                        ? lot.startPrice
+                        : lot.currentPrice),
+                  )}
+                </dd>
               </div>
               <div>
                 <dt>Time</dt>

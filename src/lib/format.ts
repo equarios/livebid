@@ -74,9 +74,10 @@ export function timeLeft(endsAt: number, now = Date.now()) {
 }
 
 export const typeLabel: Record<string, string> = {
-  live: 'Real-time',
-  sealed: 'Sealed bid',
-  hybrid: 'Hybrid',
+  live: 'Live Auctions',
+  offline: 'Offline Auctions',
+  sealed: 'Offline Auctions',
+  hybrid: 'Offline Auctions',
   marketplace: 'Marketplace',
 }
 

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { PublicShell } from '../components/PublicShell'
-import { groupLotsByType, listPath } from '../lib/auctionLists'
+import { groupLotsByType, isSealedLot, listPath } from '../lib/auctionLists'
 import { usd } from '../lib/format'
 import { lotThumb, photoFallback } from '../lib/photos'
 import { useStore } from '../store'
@@ -44,7 +44,17 @@ const HEROES = [
   },
 ]
 
-function DealCard({ lot, onOpen, showPrice }: { lot: Lot; onOpen: () => void; showPrice: boolean }) {
+function DealCard({
+  lot,
+  onOpen,
+  showPrice,
+  hideHigh,
+}: {
+  lot: Lot
+  onOpen: () => void
+  showPrice: boolean
+  hideHigh?: boolean
+}) {
   return (
     <button type="button" className="deal-card" onClick={onOpen}>
       <div className="deal-card-img">
@@ -64,7 +74,9 @@ function DealCard({ lot, onOpen, showPrice }: { lot: Lot; onOpen: () => void; sh
         </strong>
         <span>{closesLabel(lot.endsAt)}</span>
         {showPrice ? (
-          <span className="deal-price">{usd(lot.currentPrice)} / pc</span>
+          <span className="deal-price">
+            {hideHigh ? `${usd(lot.startPrice)} start` : `${usd(lot.currentPrice)} / pc`}
+          </span>
         ) : (
           <span className="deal-price is-locked">Sign in to see price</span>
         )}
@@ -191,7 +203,8 @@ export function Home() {
                     key={lot.id}
                     lot={lot}
                     showPrice={!!user}
-                    onOpen={() => go(listPath(lot.auctionType || 'live'))}
+                    hideHigh={isSealedLot(lot, settings)}
+                    onOpen={() => go(`/auctions#${lot.auctionType || 'live'}`)}
                   />
                 ))}
               </div>

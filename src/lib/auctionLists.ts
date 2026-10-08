@@ -7,6 +7,7 @@ export const ORIGINS = ['JP', 'KR', 'EU', 'US', 'HK', 'AE', 'TW', 'INT'] as cons
 export const RESERVED_LIST_SLUGS = new Set([
   'all',
   'ongoing',
+  'closed',
   'auction',
   'auctions',
   'marketplace',
@@ -33,9 +34,15 @@ export function slugAuctionType(raw: string) {
 }
 
 export function normalizeFillMode(value?: string, slug?: string): AuctionFillMode {
+  if (slug === 'offline' || slug === 'sealed') return 'sealed'
   if (value === 'sealed' || value === 'hybrid' || value === 'live') return value
-  if (slug === 'sealed' || slug === 'hybrid') return slug
+  if (slug === 'hybrid') return 'hybrid'
   return 'live'
+}
+
+export function migrateLotAuctionType(value?: string) {
+  if (value === 'sealed' || value === 'hybrid') return 'offline'
+  return value || 'live'
 }
 
 export function normalizeAuctionTypes(rows?: AuctionTypeDef[] | { value: string; label: string; fillMode?: string; intro?: string }[]) {
@@ -57,17 +64,19 @@ export function normalizeAuctionTypes(rows?: AuctionTypeDef[] | { value: string;
 
 export function isAuctionListKind(value: string | undefined, settings?: SiteSettings): value is AuctionListKind {
   if (!value) return false
-  if (value === 'all' || value === 'ongoing') return true
+  if (value === 'all' || value === 'ongoing' || value === 'closed') return true
   return Boolean(settings?.auctionTypes.some((t) => t.value === value))
 }
 
 export function listPath(kind: AuctionListKind) {
-  return kind === 'all' ? '/auctions' : `/auctions/${kind}`
+  if (kind === 'all') return '/auctions'
+  return `/auctions#${kind}`
 }
 
 export function listLabel(kind: AuctionListKind, settings?: SiteSettings) {
-  if (kind === 'all') return 'All auctions'
-  if (kind === 'ongoing') return 'Ongoing'
+  if (kind === 'all') return 'All Auctions'
+  if (kind === 'ongoing') return 'Ongoing Auctions'
+  if (kind === 'closed') return 'Closed Auctions'
   return settings?.auctionTypes.find((t) => t.value === kind)?.label || kind
 }
 
@@ -76,18 +85,21 @@ export function listIntro(kind: AuctionListKind, settings?: SiteSettings) {
   if (def?.intro) return def.intro
   const mode = def?.fillMode || normalizeFillMode(undefined, kind)
   if (kind === 'ongoing') {
-    return 'Only lots that are still open, across types. Closed lots stay on their type list.'
+    return 'Ongoing Auctions: only lots that are still open, across types.'
+  }
+  if (kind === 'closed') {
+    return 'Closed Auctions: lots that have ended, across types. Review your bids; new bids are not accepted.'
   }
   if (kind === 'all') {
-    return 'Full auction catalog. Open a type list for one inventory when volumes are large.'
+    return 'All Auctions: full catalog. Live Auctions and Offline Auctions lots sit on this page, grouped by type.'
   }
   if (mode === 'sealed') {
-    return `${def?.label || kind} list: other fills stay hidden until close. Separate catalog from other types.`
+    return `${def?.label || kind}: other fills stay hidden until close.`
   }
   if (mode === 'hybrid') {
-    return `${def?.label || kind} list: live fill now, then a sealed stage. Its own inventory.`
+    return `${def?.label || kind}: live fill now, then a sealed stage.`
   }
-  return `${def?.label || kind} list: last bid per account fills this inventory. You only see your own fill.`
+  return `${def?.label || kind}: last bid per account fills this inventory. You only see your own fill.`
 }
 
 export function typeDef(settings: SiteSettings | undefined, value?: string) {
@@ -107,6 +119,8 @@ export function isSealedLot(lot: Pick<Lot, 'auctionType' | 'channel'>, settings?
 
 export function typePillClass(lot: Pick<Lot, 'auctionType' | 'channel'>, settings?: SiteSettings) {
   if (lot.channel === 'marketplace') return 'market'
+  const slug = lot.auctionType || 'live'
+  if (slug === 'offline') return 'offline'
   return lotFillMode(lot, settings)
 }
 
@@ -114,6 +128,7 @@ export function inAuctionList(lot: Lot, kind: AuctionListKind, now = Date.now())
   if (lot.channel !== 'auction') return false
   if (kind === 'all') return true
   if (kind === 'ongoing') return lot.endsAt > now
+  if (kind === 'closed') return lot.endsAt <= now
   return (lot.auctionType || 'live') === kind
 }
 
@@ -173,6 +188,7 @@ export function typeCounts(lots: Lot[], settings?: SiteSettings, now = Date.now(
   const counts: Record<string, number> = {
     all: auction.length,
     ongoing: auction.filter((l) => l.endsAt > now).length,
+    closed: auction.filter((l) => l.endsAt <= now).length,
   }
   for (const t of settings?.auctionTypes || []) {
     counts[t.value] = auction.filter((l) => (l.auctionType || 'live') === t.value).length

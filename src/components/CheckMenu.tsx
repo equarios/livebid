@@ -39,12 +39,19 @@ export function CheckMenu<T extends string>({
   const summary = selected.length
     ? selected.map((v) => (labelFor ? labelFor(v) : v)).join(', ')
     : 'All'
+  const active = open || selected.length > 0
 
   return (
     <div className={`filter-menu ${open ? 'open' : ''}`}>
-      <button type="button" className="filter-trigger" onClick={onOpen} aria-expanded={open}>
+      <button
+        type="button"
+        className={`filter-trigger${active ? ' is-active' : ''}`}
+        onClick={onOpen}
+        aria-expanded={open}
+      >
         <span className="filter-trigger-title">{title}</span>
         <span className="filter-trigger-value">{summary}</span>
+        {selected.length ? <em>{selected.length}</em> : null}
       </button>
       {open ? (
         <div className="filter-panel">

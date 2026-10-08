@@ -49,9 +49,15 @@ export function parseBidCsv(text: string): { rows: CsvBidRow[]; error?: string }
   if (!table.length) return { rows: [], error: 'That file is empty.' }
   const head = table[0].map(headerKey)
   const lotIx = head.findIndex((h) => ['lotid', 'lot', 'id', 'auctionlot'].includes(h))
-  const qtyIx = head.findIndex((h) => ['qty', 'quantity', 'pcs', 'desiredqty'].includes(h))
+  const desiredIx = head.findIndex((h) =>
+    ['desiredqty', 'desiredquantity', 'bidqty', 'orderqty'].includes(h),
+  )
+  const qtyIx =
+    desiredIx >= 0
+      ? desiredIx
+      : head.findIndex((h) => ['qty', 'quantity', 'pcs'].includes(h))
   const priceIx = head.findIndex((h) =>
-    ['price', 'amount', 'unitprice', 'pricepc', 'bid', 'yourprice'].includes(h),
+    ['price', 'amount', 'unitprice', 'pricepc', 'bid', 'yourprice', 'priceperpc'].includes(h),
   )
   const typeIx = head.findIndex((h) =>
     ['auctiontype', 'type', 'listid', 'list', 'auction'].includes(h),
@@ -60,7 +66,7 @@ export function parseBidCsv(text: string): { rows: CsvBidRow[]; error?: string }
     ['auctionname', 'auctionlabel', 'typename', 'listname', 'listlabel'].includes(h),
   )
   if (lotIx < 0 || qtyIx < 0 || priceIx < 0) {
-    return { rows: [], error: 'Header must include lotId, qty, and price.' }
+    return { rows: [], error: 'Header must include lotId, desiredQty, and price.' }
   }
   if (typeIx < 0 && nameIx < 0) {
     return {
@@ -74,11 +80,12 @@ export function parseBidCsv(text: string): { rows: CsvBidRow[]; error?: string }
     const lotId = (cols[lotIx] || '').trim()
     const qtyRaw = cols[qtyIx]
     const priceRaw = cols[priceIx]
-    if (!lotId && !qtyRaw && !priceRaw) return
+    if (!lotId) return
+    if (!qtyRaw && !priceRaw) return
     rows.push({
       lotId,
-      qty: Number(qtyRaw),
-      amount: Number(priceRaw),
+      qty: qtyRaw === '' || qtyRaw == null ? Number.NaN : Number(qtyRaw),
+      amount: priceRaw === '' || priceRaw == null ? Number.NaN : Number(priceRaw),
       line: i + 2,
       auctionType: typeIx >= 0 ? (cols[typeIx] || '').trim() : '',
       auctionName: nameIx >= 0 ? (cols[nameIx] || '').trim() : '',

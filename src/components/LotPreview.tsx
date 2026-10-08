@@ -1,11 +1,11 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { LotPhotos } from './LotPhotos'
 import { ModalShell } from './ModalShell'
-import { typePillClass } from '../lib/auctionLists'
+import { isSealedLot, typePillClass } from '../lib/auctionLists'
 import { lotTypeLabel, specLocks, usd } from '../lib/format'
 import { BatteryMark } from './BatteryMark'
 import { moqLabel } from '../lib/moq'
-import { useStore } from '../store'
+import { useNow, useStore } from '../store'
 import { TimeLeft } from './TimeLeft'
 import { CopyId } from './CopyId'
 import { pushRecentLot } from '../lib/recent'
@@ -30,6 +30,7 @@ export function LotPreviewProvider({ children }: { children: ReactNode }) {
 }
 
 function LotDetailDialog({ lotId, onClose }: { lotId: string; onClose: () => void }) {
+  const now = useNow()
   const { lots, settings } = useStore()
   const lot = lots.find((l) => l.id === lotId)
   useEffect(() => {
@@ -70,7 +71,10 @@ function LotDetailDialog({ lotId, onClose }: { lotId: string; onClose: () => voi
               {lot.modelNumber ? ` ${lot.modelNumber}` : ''} {lot.capacity}
             </h2>
             <p className="muted">
-              <CopyId value={lot.id} /> · {usd(lot.buyNowPrice ?? lot.currentPrice)} / pc
+              <CopyId value={lot.id} /> ·{' '}
+              {lot.channel === 'auction' && isSealedLot(lot, settings) && lot.endsAt > now
+                ? `${usd(lot.startPrice)} start`
+                : `${usd(lot.buyNowPrice ?? lot.currentPrice)} / pc`}
               {lot.channel === 'auction' ? (
                 <>
                   {' · '}
@@ -138,6 +142,7 @@ function LotDetailDialog({ lotId, onClose }: { lotId: string; onClose: () => voi
 }
 
 function SimilarLots({ lot }: { lot: Lot }) {
+  const now = useNow()
   const { lots } = useStore()
   const { openLot } = useLotPreview()
   const similar = lots
@@ -145,7 +150,7 @@ function SimilarLots({ lot }: { lot: Lot }) {
       (l) =>
         l.id !== lot.id &&
         (l.manufacturer === lot.manufacturer || l.model === lot.model) &&
-        l.endsAt > Date.now(),
+        (l.channel === 'marketplace' || l.endsAt > now),
     )
     .slice(0, 4)
   if (!similar.length) return null

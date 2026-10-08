@@ -3,7 +3,8 @@ import { ConfirmBidDialog } from './ConfirmBidDialog'
 import { ConfirmDialog } from './ConfirmDialog'
 import { FavHeart } from './FavHeart'
 import { fillCopy, usd } from '../lib/format'
-import { checkOrderQty, lotMoq, moqLabel } from '../lib/moq'
+import { isSealedLot } from '../lib/auctionLists'
+import { checkBidPrice, checkOrderQty, lotMoq, minBidPrice, moqLabel } from '../lib/moq'
 import { useNow, useStore } from '../store'
 import type { Lot } from '../types'
 
@@ -19,11 +20,13 @@ export function InlineBid({
   const now = useNow()
   const { placeBid, myLastBid, settings } = useStore()
   const copy = settings.copy
-  const min = lot.startPrice
   const closed = lot.endsAt <= now
   const last = myLastBid(lot.id)
+  const independent = isSealedLot(lot, settings)
+  const priceCtx = { independent, lastOwnAmount: last?.amount }
+  const minNext = minBidPrice(lot, priceCtx)
   const [qty, setQty] = useState(String(lotMoq(lot)))
-  const [amount, setAmount] = useState(String(min))
+  const [amount, setAmount] = useState(String(minNext))
   const [msg, setMsg] = useState<string | null>(null)
   const [ok, setOk] = useState(false)
   const [pending, setPending] = useState<{ qty: number; unitPrice: number } | null>(null)
@@ -32,19 +35,33 @@ export function InlineBid({
   useEffect(() => {
     setAmount((prev) => {
       const n = Number(prev)
-      if (!Number.isFinite(n) || n < min) return String(min)
+      if (!Number.isFinite(n) || n < minNext) return String(minNext)
       return prev
     })
-  }, [min])
+  }, [minNext])
+
+  function currentAmount() {
+    const n = Number(amount)
+    return Number.isFinite(n) ? n : minNext
+  }
+
+  function setHigh() {
+    setAmount(String(minNext))
+    setMsg(null)
+  }
+
+  function bump(delta: number) {
+    setAmount(String(Math.max(minNext, Math.round(currentAmount() + delta))))
+    setMsg(null)
+  }
 
   function parseEntry() {
     const q = Number(qty)
     const p = Number(amount)
     const qtyErr = checkOrderQty(lot, q, copy)
     if (qtyErr) return qtyErr
-    if (!Number.isFinite(p) || p < min) {
-      return fillCopy(copy.warnMinPrice, { price: usd(min) })
-    }
+    const priceErr = checkBidPrice(lot, p, copy, priceCtx)
+    if (priceErr) return priceErr
     return { qty: q, unitPrice: p }
   }
 
@@ -106,21 +123,46 @@ export function InlineBid({
             <span>Your price / pc</span>
             <input
               type="number"
-              min={min}
+              min={minNext}
               step={1}
               disabled={closed}
               value={closed ? '' : amount}
               aria-label={`Unit price for ${lot.id}`}
-              onChange={(e) => setAmount(e.target.value)}
+              onChange={(e) => {
+                setAmount(e.target.value)
+                const n = Number(e.target.value)
+                if (e.target.value !== '' && Number.isFinite(n) && n < minNext) {
+                  setOk(false)
+                  setMsg(checkBidPrice(lot, n, copy, priceCtx) || '')
+                } else {
+                  setMsg(null)
+                }
+              }}
             />
             {!closed ? (
-              <button
-                type="button"
-                className="linkish bid-match"
-                onClick={() => setAmount(String(Math.max(min, lot.currentPrice)))}
-              >
-                Use high {usd(lot.currentPrice)}
-              </button>
+              <div className="price-steps">
+                {independent ? null : (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={setHigh}
+                  aria-label={`Set price to high ${usd(lot.currentPrice)} for ${lot.id}`}
+                >
+                  High {usd(lot.currentPrice)}
+                </button>
+                )}
+                {[1, 3, 5].map((delta) => (
+                  <button
+                    key={delta}
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => bump(delta)}
+                    aria-label={`Add ${usd(delta)} to price for ${lot.id}`}
+                  >
+                    +${delta}
+                  </button>
+                ))}
+              </div>
             ) : null}
           </label>
           {withWatch && settings.features.favourites ? <FavHeart lotId={lot.id} /> : null}

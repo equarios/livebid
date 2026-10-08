@@ -1,9 +1,18 @@
+import { useMemo } from 'react'
 import { LotCard } from '../components/LotCard'
 import { useStore } from '../store'
 
 export function Watchlist() {
-  const { lots, watchlist, settings } = useStore()
-  const rows = lots.filter((l) => watchlist.includes(l.id))
+  const { lots, watchlist, settings, myLastBid } = useStore()
+  const rows = useMemo(() => {
+    const list = lots.filter((l) => watchlist.includes(l.id))
+    return [...list].sort((a, b) => {
+      const aBid = myLastBid(a.id) ? 0 : 1
+      const bBid = myLastBid(b.id) ? 0 : 1
+      if (aBid !== bBid) return aBid - bBid
+      return a.endsAt - b.endsAt
+    })
+  }, [lots, watchlist, myLastBid])
   return (
     <div>
       <div className="page-head">

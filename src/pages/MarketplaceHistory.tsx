@@ -2,6 +2,7 @@ import { ItemLink } from '../components/ItemLink'
 import { downloadCsv } from '../lib/csv'
 import { invoicePill, invoiceStatusLabel } from '../lib/invoices'
 import { formatDateTime, usdAmt } from '../lib/format'
+import { OfferDesk } from '../components/OfferDesk'
 import { useStore } from '../store'
 
 export function MarketplaceHistory() {
@@ -33,6 +34,9 @@ export function MarketplaceHistory() {
 
   return (
     <div>
+      <h2>Offers</h2>
+      <OfferDesk staff={isStaff} />
+      <h2>Orders</h2>
       <p>
         <button type="button" className="btn gbs-csv" onClick={exportCsv}>
           Export CSV
@@ -71,6 +75,23 @@ export function MarketplaceHistory() {
         </tbody>
       </table>
       {!rows.length ? <p className="empty">No marketplace orders yet.</p> : null}
+    </div>
+    <div className="inv-cards">
+      {rows.map((inv) => {
+        const lot = lots.find((l) => l.id === inv.lotId)
+        return (
+          <article key={inv.id} className="inv-card">
+            {lot ? <ItemLink lot={lot} /> : <strong>{inv.lotId}</strong>}
+            <div className="muted tiny">{inv.id} · {formatDateTime(inv.createdAt)}</div>
+            <div className="inv-card-meta">
+              <span>{inv.qty} pcs</span>
+              <span>{usdAmt(inv.unitPrice)} / pc</span>
+              <span>{usdAmt(inv.amount)}</span>
+            </div>
+            <span className={`pill ${invoicePill(inv.status)}`}>{invoiceStatusLabel(inv.status)}</span>
+          </article>
+        )
+      })}
     </div>
     </div>
   )

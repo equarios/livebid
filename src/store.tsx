@@ -8,16 +8,17 @@ import {
   type ReactNode,
 } from 'react'
 import { DEFAULT_SETTINGS, SEED_ACCOUNTS, SEED_LOTS, SUPER_USER } from './data'
-import { isSealedLot, normalizeAuctionTypes } from './lib/auctionLists'
+import { isSealedLot, migrateLotAuctionType, normalizeAuctionTypes } from './lib/auctionLists'
 import { settleInvoice } from './lib/invoices'
 import { buyerCareNotices, settleClosedAuctions } from './lib/settle'
-import { checkOrderQty, lotMoq } from './lib/moq'
+import { checkBidPrice, checkOrderQty, lotMoq } from './lib/moq'
 import type {
   Account,
   Bid,
   CartItem,
   Invoice,
   Lot,
+  MarketOffer,
   Notice,
   PayDecision,
   PayReviewSide,
@@ -34,6 +35,7 @@ type Store = {
   invoices: Invoice[]
   notices: Notice[]
   cart: CartItem[]
+  offers: MarketOffer[]
   accounts: Account[]
   settings: SiteSettings
   isSuperAdmin: boolean
@@ -51,6 +53,10 @@ type Store = {
   addToCart: (lotId: string, qty: number) => string | null
   removeFromCart: (lotId: string) => void
   checkoutCart: () => string | null
+  placeOffer: (lotId: string, qty: number, unitPrice: number) => string | null
+  reviewOffer: (id: string, decision: 'accepted' | 'declined') => string | null
+  confirmOffer: (id: string) => string | null
+  cancelOffer: (id: string) => string | null
   toggleWatch: (lotId: string) => void
   submitPayment: (id: string, receiptName: string, receiptData: string) => string | null
   reviewPayment: (id: string, side: PayReviewSide, decision: PayDecision) => string | null
@@ -88,6 +94,7 @@ type Persisted = {
   invoices: Invoice[]
   notices: Notice[]
   cart: CartItem[]
+  offers: MarketOffer[]
   settings: SiteSettings
   accounts: Account[]
 }
@@ -140,11 +147,15 @@ function mergeAccounts(stored?: Account[] | null): Account[] {
   return [...byId.values()]
 }
 
-const LEGACY_NAVY = new Set(['#164e78', '#0b2c4d', '#123a63'])
+const LEGACY_NAVY = new Set(['#164e78', '#0b2c4d', '#123a63', '#133a8a', '#0d2c6b'])
+const LEGACY_LIVE = new Set(['#c4161c', '#d32f2f', '#e53935'])
 
 function mergeTheme(partial?: Partial<ThemeSettings> | null): ThemeSettings {
   const navy = partial?.navy?.toLowerCase()
-  if (!navy || LEGACY_NAVY.has(navy)) return { ...DEFAULT_SETTINGS.theme }
+  const live = partial?.live?.toLowerCase()
+  if (!navy || LEGACY_NAVY.has(navy) || (live && LEGACY_LIVE.has(live))) {
+    return { ...DEFAULT_SETTINGS.theme }
+  }
   return { ...DEFAULT_SETTINGS.theme, ...partial }
 }
 
@@ -176,7 +187,46 @@ function mergeSettings(partial?: Partial<SiteSettings> | null): SiteSettings {
     grades: partial?.grades?.length ? partial.grades : DEFAULT_SETTINGS.grades,
     auctionTypes: (() => {
       const next = normalizeAuctionTypes(partial?.auctionTypes)
-      return next.length ? next : DEFAULT_SETTINGS.auctionTypes
+      if (!next.length) return DEFAULT_SETTINGS.auctionTypes
+      const stock = new Set(['live', 'sealed', 'hybrid'])
+      const hasOld = next.some((t) => t.value === 'sealed' || t.value === 'hybrid')
+      const hasOffline = next.some((t) => t.value === 'offline')
+      if (!hasOld && hasOffline) {
+        return next.map((t) =>
+          t.value === 'live' && (t.label === 'Real-time' || t.label === 'Live')
+            ? { ...t, label: 'Live Auctions' }
+            : t,
+        )
+      }
+      const custom = next.filter((t) => !stock.has(t.value) && t.value !== 'offline')
+      const liveDef = DEFAULT_SETTINGS.auctionTypes.find((t) => t.value === 'live')!
+      const offlineDef = DEFAULT_SETTINGS.auctionTypes.find((t) => t.value === 'offline')!
+      const existingLive = next.find((t) => t.value === 'live')
+      const existingOffline = next.find((t) => t.value === 'offline')
+      return [
+        existingLive
+          ? {
+              ...liveDef,
+              label:
+                existingLive.label === 'Real-time' || existingLive.label === 'Live'
+                  ? 'Live Auctions'
+                  : existingLive.label,
+              fillMode: existingLive.fillMode || 'live',
+            }
+          : liveDef,
+        existingOffline
+          ? {
+              ...offlineDef,
+              label: existingOffline.label,
+              intro:
+                existingOffline.intro && existingOffline.intro.includes('fill bar')
+                  ? existingOffline.intro
+                  : offlineDef.intro,
+              fillMode: 'sealed',
+            }
+          : offlineDef,
+        ...custom,
+      ]
     })(),
     theme: mergeTheme(partial?.theme),
     features: { ...DEFAULT_SETTINGS.features, ...partial?.features },
@@ -370,13 +420,16 @@ function loadData(): Persisted {
             if (!cur) return s
             return {
               ...cur,
+              auctionType: migrateLotAuctionType(cur.auctionType || s.auctionType),
               modelNumber: cur.modelNumber || s.modelNumber,
               origin: cur.origin || s.origin,
               moq: 'moq' in cur ? cur.moq : s.moq,
               qty: cur.qty < 100 && s.qty >= 100 ? s.qty : cur.qty,
             }
           })
-          const extras = existing.filter((l) => !SEED_LOTS.some((s) => s.id === l.id))
+          const extras = existing
+            .filter((l) => !SEED_LOTS.some((s) => s.id === l.id))
+            .map((l) => ({ ...l, auctionType: migrateLotAuctionType(l.auctionType) }))
           return [...fromSeed, ...extras]
         })(),
         bids: mergeHistoryBids(
@@ -402,6 +455,7 @@ function loadData(): Persisted {
           })),
         ),
         cart: parsed.cart || [],
+        offers: Array.isArray(parsed.offers) ? parsed.offers : [],
         notices: parsed.notices || [],
         settings: mergeSettings(parsed.settings),
         accounts: mergeAccounts(parsed.accounts),
@@ -417,6 +471,7 @@ function loadData(): Persisted {
     invoices: demoInvoices(),
     notices: [],
     cart: [],
+    offers: [],
     settings: DEFAULT_SETTINGS,
     accounts: mergeAccounts([]),
   }
@@ -683,18 +738,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (lot.endsAt <= Date.now()) return data.settings.copy.warnClosed
       const qtyErr = checkOrderQty(lot, qty, data.settings.copy)
       if (qtyErr) return qtyErr
-      const min = lot.startPrice
-      if (amount < min) {
-        return data.settings.copy.warnMinPrice.replace('{price}', String(min))
-      }
       const accountId = user?.accountId || 'DEMO-1001'
+      const independent = isSealedLot(lot, data.settings)
+      const mine = data.bids.filter((b) => b.lotId === lotId && b.accountId === accountId)
+      const lastOwn = mine.length
+        ? mine.reduce((a, b) => (a.at > b.at ? a : b)).amount
+        : undefined
+      const priceErr = checkBidPrice(lot, amount, data.settings.copy, {
+        independent,
+        lastOwnAmount: lastOwn,
+      })
+      if (priceErr) return priceErr
       setData((prev) => ({
         ...prev,
         lots: prev.lots.map((l) =>
           l.id === lotId
             ? {
                 ...l,
-                currentPrice: Math.max(l.currentPrice, amount),
+                currentPrice: independent ? l.currentPrice : Math.max(l.currentPrice, amount),
                 bidCount: l.bidCount + 1,
               }
             : l,
@@ -703,7 +764,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }))
       return null
     },
-    [data.lots, data.settings, user],
+    [data.lots, data.bids, data.settings, user],
   )
 
   const placeBids = useCallback(
@@ -711,7 +772,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const copy = data.settings.copy
       const accountId = user?.accountId
       const errors: Array<{ lotId: string; message: string }> = []
-      const ok: Array<{ lotId: string; amount: number; qty: number }> = []
+      const ok: Array<{ lotId: string; amount: number; qty: number; independent: boolean }> = []
       if (!data.settings.features.bidding) {
         return { ok: 0, errors: [{ lotId: '—', message: copy.warnNoBid }] }
       }
@@ -719,6 +780,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return { ok: 0, errors: [{ lotId: '—', message: copy.warnLogin }] }
       }
       const now = Date.now()
+      const lastSeen = new Map<string, number>()
       for (const entry of entries) {
         const lot = data.lots.find((l) => l.id.toUpperCase() === entry.lotId.trim().toUpperCase())
         if (!lot || lot.channel !== 'auction') {
@@ -734,14 +796,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           errors.push({ lotId: lot.id, message: qtyErr })
           continue
         }
-        if (!Number.isFinite(entry.amount) || entry.amount < lot.startPrice) {
-          errors.push({
-            lotId: lot.id,
-            message: copy.warnMinPrice.replace('{price}', String(lot.startPrice)),
-          })
+        const independent = isSealedLot(lot, data.settings)
+        const mine = data.bids.filter((b) => b.lotId === lot.id && b.accountId === accountId)
+        const storedLast = mine.length
+          ? mine.reduce((a, b) => (a.at > b.at ? a : b)).amount
+          : undefined
+        const lastOwn = lastSeen.has(lot.id) ? lastSeen.get(lot.id) : storedLast
+        const priceErr = checkBidPrice(lot, entry.amount, copy, {
+          independent,
+          lastOwnAmount: lastOwn,
+        })
+        if (priceErr) {
+          errors.push({ lotId: lot.id, message: priceErr })
           continue
         }
-        ok.push({ lotId: lot.id, amount: entry.amount, qty: entry.qty })
+        lastSeen.set(lot.id, entry.amount)
+        ok.push({ lotId: lot.id, amount: entry.amount, qty: entry.qty, independent })
       }
       if (!ok.length) return { ok: 0, errors }
       const at = Date.now()
@@ -753,7 +823,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             l.id === entry.lotId
               ? {
                   ...l,
-                  currentPrice: Math.max(l.currentPrice, entry.amount),
+                  currentPrice: entry.independent
+                    ? l.currentPrice
+                    : Math.max(l.currentPrice, entry.amount),
                   bidCount: l.bidCount + 1,
                 }
               : l,
@@ -764,7 +836,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       })
       return { ok: ok.length, errors }
     },
-    [data.lots, data.settings, user],
+    [data.lots, data.bids, data.settings, user],
   )
 
   const buyNow = useCallback(
@@ -867,6 +939,158 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }))
     return null
   }, [data.cart, data.lots, data.settings, user])
+
+  const placeOffer = useCallback(
+    (lotId: string, qty: number, unitPrice: number) => {
+      if (!user) return data.settings.copy.warnLogin
+      if (!data.settings.features.offers) return data.settings.copy.warnOffers
+      const lot = data.lots.find((l) => l.id === lotId)
+      if (!lot || lot.channel !== 'marketplace' || !lot.buyNowPrice) {
+        return data.settings.copy.warnListingGone.replace('{id}', lotId)
+      }
+      const qtyErr = checkOrderQty(lot, qty, data.settings.copy)
+      if (qtyErr) return qtyErr
+      if (!Number.isFinite(unitPrice) || unitPrice < 1) return data.settings.copy.warnMinPrice.replace('{price}', '$1')
+      if (unitPrice >= lot.buyNowPrice) {
+        return data.settings.copy.warnOfferPrice.replace('{price}', String(lot.buyNowPrice))
+      }
+      const open = (data.offers || []).find(
+        (o) => o.lotId === lotId && o.accountId === user.accountId && o.status === 'accepted',
+      )
+      if (open) return data.settings.copy.warnOfferOpen
+      const offer: MarketOffer = {
+        id: `OFF-${Date.now().toString().slice(-8)}`,
+        lotId,
+        accountId: user.accountId,
+        qty,
+        unitPrice: Math.round(unitPrice),
+        listedPrice: lot.buyNowPrice,
+        status: 'pending',
+        createdAt: Date.now(),
+      }
+      setData((prev) => {
+        const rest = (prev.offers || []).filter(
+          (o) => !(o.lotId === lotId && o.accountId === user.accountId && o.status === 'pending'),
+        )
+        const staff = prev.accounts.filter((a) => a.role === 'admin' || a.role === 'superadmin')
+        const notices: Notice[] = [
+          ...staff.map((a) => ({
+            id: `N-OFFR-${offer.id}-${a.accountId}`,
+            accountId: a.accountId,
+            kind: 'offer' as const,
+            title: 'New marketplace offer',
+            body: `${user.company} · ${lot.manufacturer} ${lot.model} · ${qty} pcs @ ${offer.unitPrice}`,
+            href: '/admin',
+            at: Date.now(),
+          })),
+          ...(prev.notices || []),
+        ]
+        return { ...prev, offers: [offer, ...rest], notices }
+      })
+      return null
+    },
+    [data.lots, data.offers, data.settings, user],
+  )
+
+  const reviewOffer = useCallback(
+    (id: string, decision: 'accepted' | 'declined') => {
+      if (user?.role !== 'admin' && user?.role !== 'superadmin') return 'Only staff can review offers.'
+      const offer = (data.offers || []).find((o) => o.id === id)
+      if (!offer || offer.status !== 'pending') return 'That offer is not waiting for review.'
+      setData((prev) => ({
+        ...prev,
+        offers: (prev.offers || []).map((o) =>
+          o.id === id
+            ? { ...o, status: decision, reviewedAt: Date.now(), reviewedBy: user.accountId }
+            : o,
+        ),
+        notices: [
+          {
+            id: `N-OFF-${id}-${decision}`,
+            accountId: offer.accountId,
+            kind: 'offer' as const,
+            title: decision === 'accepted' ? 'Offer accepted' : 'Offer declined',
+            body:
+              decision === 'accepted'
+                ? 'Confirm the offer on Marketplace to create an invoice.'
+                : 'Your marketplace offer was declined.',
+            href: '/marketplace',
+            at: Date.now(),
+          },
+          ...(prev.notices || []),
+        ],
+      }))
+      return null
+    },
+    [data.offers, user],
+  )
+
+  const confirmOffer = useCallback(
+    (id: string) => {
+      if (!user) return data.settings.copy.warnLogin
+      const offer = (data.offers || []).find((o) => o.id === id)
+      if (!offer || offer.accountId !== user.accountId) return 'Offer not found.'
+      if (offer.status !== 'accepted') return 'This offer is not accepted yet.'
+      const lot = data.lots.find((l) => l.id === offer.lotId)
+      if (!lot || lot.channel !== 'marketplace') {
+        return data.settings.copy.warnListingGone.replace('{id}', offer.lotId)
+      }
+      const qtyErr = checkOrderQty(lot, offer.qty, data.settings.copy)
+      if (qtyErr) return qtyErr
+      const invoice: Invoice = {
+        id: `INV-${Date.now().toString().slice(-6)}-${offer.lotId.slice(-3)}`,
+        lotId: offer.lotId,
+        channel: 'marketplace',
+        qty: offer.qty,
+        unitPrice: offer.unitPrice,
+        amount: offer.unitPrice * offer.qty,
+        status: 'unpaid',
+        createdAt: Date.now(),
+        accountId: user.accountId,
+        remarks: `Accepted offer ${offer.id}`,
+      }
+      setData((prev) => ({
+        ...prev,
+        offers: (prev.offers || []).map((o) => (o.id === id ? { ...o, status: 'confirmed' as const } : o)),
+        invoices: [invoice, ...prev.invoices],
+        lots: prev.lots
+          .map((l) => (l.id === offer.lotId ? { ...l, qty: l.qty - offer.qty } : l))
+          .filter((l) => l.channel !== 'marketplace' || l.qty > 0),
+        notices: [
+          {
+            id: `N-OFFINV-${id}`,
+            accountId: user.accountId,
+            kind: 'invoice' as const,
+            title: 'Invoice from offer',
+            body: `Unpaid invoice ${invoice.id} at your offered price.`,
+            href: '/account/invoices',
+            at: Date.now(),
+          },
+          ...(prev.notices || []),
+        ],
+      }))
+      return null
+    },
+    [data.lots, data.offers, data.settings, user],
+  )
+
+  const cancelOffer = useCallback(
+    (id: string) => {
+      if (!user) return data.settings.copy.warnLogin
+      const offer = (data.offers || []).find((o) => o.id === id)
+      if (!offer) return 'Offer not found.'
+      const mine = offer.accountId === user.accountId
+      const staff = user.role === 'admin' || user.role === 'superadmin'
+      if (!mine && !staff) return 'Offer not found.'
+      if (offer.status !== 'pending' && offer.status !== 'accepted') return 'This offer cannot be cancelled.'
+      setData((prev) => ({
+        ...prev,
+        offers: (prev.offers || []).map((o) => (o.id === id ? { ...o, status: 'cancelled' as const } : o)),
+      }))
+      return null
+    },
+    [data.offers, user],
+  )
 
   const toggleWatch = useCallback((lotId: string) => {
     setData((prev) => ({
@@ -1153,6 +1377,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       invoices: data.invoices,
       notices: data.notices || [],
       cart: data.cart,
+      offers: data.offers || [],
       accounts: data.accounts,
       settings: data.settings,
       isSuperAdmin: user?.role === 'superadmin',
@@ -1168,6 +1393,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       addToCart,
       removeFromCart,
       checkoutCart,
+      placeOffer,
+      reviewOffer,
+      confirmOffer,
+      cancelOffer,
       toggleWatch,
       submitPayment,
       reviewPayment,
@@ -1202,6 +1431,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       addToCart,
       removeFromCart,
       checkoutCart,
+      placeOffer,
+      reviewOffer,
+      confirmOffer,
+      cancelOffer,
       toggleWatch,
       submitPayment,
       reviewPayment,

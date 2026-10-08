@@ -23,7 +23,14 @@ import type { ReactNode } from 'react'
 function Guard({ children }: { children: ReactNode }) {
   const { user } = useStore()
   const location = useLocation()
-  if (!user) return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />
+  if (!user)
+    return (
+      <Navigate
+        to="/login"
+        replace
+        state={{ from: location.pathname + location.search + location.hash }}
+      />
+    )
   return children
 }
 

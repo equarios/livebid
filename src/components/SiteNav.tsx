@@ -1,14 +1,15 @@
 import { useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
-import { useStore } from '../store'
+import { useNow, useStore } from '../store'
 
 export function SiteNav({ onNavigate }: { onNavigate?: () => void }) {
   const { lots, invoices, cart, settings, isSuperAdmin, isStaff, accounts } = useStore()
+  const now = useNow()
   const location = useLocation()
   const [helpOpen, setHelpOpen] = useState(false)
   const pendingCount = accounts.filter((a) => a.status === 'pending').length
   const payCount = invoices.filter((i) => i.status === 'pending_review').length
-  const liveCount = lots.filter((l) => l.channel === 'auction' && l.endsAt > Date.now()).length
+  const liveCount = lots.filter((l) => l.channel === 'auction' && l.endsAt > now).length
   const auctionsOpen = location.pathname.startsWith('/auctions')
   const myPage = location.pathname.startsWith('/account')
   const helpOn = ['/device-spec', '/info', '/tutorial'].includes(location.pathname)
@@ -35,7 +36,10 @@ export function SiteNav({ onNavigate }: { onNavigate?: () => void }) {
       <NavLink to="/account" className={myPage ? 'active' : undefined}>
         {settings.copy.navAccount}
       </NavLink>
-      <div className={`help-menu ${helpOpen ? 'open' : ''}`}>
+      <div
+        className={`help-menu ${helpOpen ? 'open' : ''}`}
+        onClick={(e) => e.stopPropagation()}
+      >
         <button
           type="button"
           className={`help-menu-btn ${helpOn ? 'active' : ''}`}
@@ -49,7 +53,13 @@ export function SiteNav({ onNavigate }: { onNavigate?: () => void }) {
           <span aria-hidden>▾</span>
         </button>
         {helpOpen ? (
-          <div className="help-menu-panel" onClick={() => setHelpOpen(false)}>
+          <div
+            className="help-menu-panel"
+            onClick={() => {
+              setHelpOpen(false)
+              onNavigate?.()
+            }}
+          >
             <NavLink to="/device-spec">Device spec</NavLink>
             <NavLink to="/info">Info</NavLink>
             <NavLink to="/tutorial">Tutorial</NavLink>

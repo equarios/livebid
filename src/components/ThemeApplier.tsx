@@ -17,8 +17,11 @@ export function ThemeApplier() {
     r.style.setProperty('--win', t.win)
     r.style.setProperty('--lose', t.lose)
     r.style.setProperty('--live', t.live)
+    r.style.setProperty('--teal', t.live)
     r.style.setProperty('--radius', t.radius)
     r.style.setProperty('--font', t.font)
+    r.style.setProperty('--shadow', '0 8px 28px rgba(18, 44, 62, 0.08)')
+    r.style.setProperty('--shadow-sm', '0 1px 2px rgba(18, 44, 62, 0.06)')
     r.style.fontFamily = t.font
     r.style.color = t.ink
     r.style.background = t.bg

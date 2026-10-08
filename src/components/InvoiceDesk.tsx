@@ -60,6 +60,82 @@ export function InvoiceDesk({
 
   const selected = invoices.find((i) => i.id === editingId)
 
+  function invoiceActions(inv: Invoice) {
+    return (
+      <div className="row-actions">
+        {inv.receiptData && inv.status !== 'paid' ? (
+          <>
+            {canAdmin ? (
+              <>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={() => reviewPayment(inv.id, 'admin', 'accepted')}
+                >
+                  {copy.btnAccept} (admin)
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => reviewPayment(inv.id, 'admin', 'declined')}
+                >
+                  {copy.btnDecline} (admin)
+                </button>
+              </>
+            ) : null}
+            {canSuper ? (
+              <>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={() => reviewPayment(inv.id, 'super', 'accepted')}
+                >
+                  {copy.btnAccept} (super)
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => reviewPayment(inv.id, 'super', 'declined')}
+                >
+                  {copy.btnDecline} (super)
+                </button>
+              </>
+            ) : null}
+          </>
+        ) : null}
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => load(inv)}>
+          Edit
+        </button>
+        {inv.receiptData ? (
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => {
+              const clearErr = clearPaymentConfirmation(inv.id)
+              setErr(clearErr)
+              setMsg(clearErr ? null : `Removed receipt on ${inv.id}`)
+            }}
+          >
+            Delete receipt
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm"
+          onClick={() => {
+            if (!window.confirm(`Delete invoice ${inv.id}?`)) return
+            const delErr = removeInvoice(inv.id)
+            setErr(delErr)
+            setMsg(delErr ? null : `Deleted ${inv.id}`)
+            if (editingId === inv.id) resetForm()
+          }}
+        >
+          Delete invoice
+        </button>
+      </div>
+    )
+  }
+
   function resetForm() {
     setEditingId(null)
     setId(newId())
@@ -335,83 +411,32 @@ export function InvoiceDesk({
                   <td>
                     <span className={`pill ${invoicePill(inv.status)}`}>{invoiceStatusLabel(inv.status)}</span>
                   </td>
-                  <td className="row-actions">
-                    {inv.receiptData && inv.status !== 'paid' ? (
-                      <>
-                        {canAdmin ? (
-                          <>
-                            <button
-                              type="button"
-                              className="btn btn-primary btn-sm"
-                              onClick={() => reviewPayment(inv.id, 'admin', 'accepted')}
-                            >
-                              {copy.btnAccept} (admin)
-                            </button>
-                            <button
-                              type="button"
-                              className="btn btn-ghost btn-sm"
-                              onClick={() => reviewPayment(inv.id, 'admin', 'declined')}
-                            >
-                              {copy.btnDecline} (admin)
-                            </button>
-                          </>
-                        ) : null}
-                        {canSuper ? (
-                          <>
-                            <button
-                              type="button"
-                              className="btn btn-primary btn-sm"
-                              onClick={() => reviewPayment(inv.id, 'super', 'accepted')}
-                            >
-                              {copy.btnAccept} (super)
-                            </button>
-                            <button
-                              type="button"
-                              className="btn btn-ghost btn-sm"
-                              onClick={() => reviewPayment(inv.id, 'super', 'declined')}
-                            >
-                              {copy.btnDecline} (super)
-                            </button>
-                          </>
-                        ) : null}
-                      </>
-                    ) : null}
-                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => load(inv)}>
-                      Edit
-                    </button>
-                    {inv.receiptData ? (
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm"
-                        onClick={() => {
-                          const clearErr = clearPaymentConfirmation(inv.id)
-                          setErr(clearErr)
-                          setMsg(clearErr ? null : `Removed receipt on ${inv.id}`)
-                        }}
-                      >
-                        Delete receipt
-                      </button>
-                    ) : null}
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm"
-                      onClick={() => {
-                        if (!window.confirm(`Delete invoice ${inv.id}?`)) return
-                        const delErr = removeInvoice(inv.id)
-                        setErr(delErr)
-                        setMsg(delErr ? null : `Deleted ${inv.id}`)
-                        if (editingId === inv.id) resetForm()
-                      }}
-                    >
-                      Delete invoice
-                    </button>
-                  </td>
+                  <td>{invoiceActions(inv)}</td>
                 </tr>
               )
             })}
           </tbody>
         </table>
         {!rows.length ? <p className="empty">No invoices yet. Add one above.</p> : null}
+      </div>
+      <div className="auction-cards pay-cards">
+        {rows.map((inv) => {
+          const lot = lots.find((l) => l.id === inv.lotId)
+          return (
+            <article key={inv.id} className="auction-card">
+              <strong>{inv.id}</strong>
+              <div className="muted tiny">{inv.accountId || '—'}</div>
+              <div>
+                {lot ? `${lot.model} ${lot.modelNumber || ''}`.trim() : inv.lotId} · {inv.qty} pcs
+              </div>
+              <div className="inv-card-meta">
+                <span>{usd(inv.amount)}</span>
+                <span className={`pill ${invoicePill(inv.status)}`}>{invoiceStatusLabel(inv.status)}</span>
+              </div>
+              {invoiceActions(inv)}
+            </article>
+          )
+        })}
       </div>
     </div>
   )

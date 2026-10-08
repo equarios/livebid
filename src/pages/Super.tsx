@@ -44,7 +44,9 @@ const COPY_LABEL: Record<keyof typeof DEFAULT_SETTINGS.copy, string> = {
   emptyInvoices: 'Empty invoices',
   btnBid: 'Bid button',
   btnTakeAll: 'Take all button',
-  btnAddCart: 'Add to cart button',
+  btnAddCart: 'Buy / cart button',
+  btnBuy: 'Buy button',
+  btnOffer: 'Offer button',
   btnCheckout: 'Checkout button',
   btnPay: 'I have paid button',
   btnAccept: 'Accept payment',
@@ -59,8 +61,12 @@ const COPY_LABEL: Record<keyof typeof DEFAULT_SETTINGS.copy, string> = {
   confirmBidBody: 'Popup · bid body',
   confirmTakeAllTitle: 'Popup · take-all title',
   confirmTakeAllBody: 'Popup · take-all body ({n} = pcs)',
-  confirmCartTitle: 'Popup · cart title',
-  confirmCartBody: 'Popup · cart body ({n} = pcs)',
+  confirmCartTitle: 'Popup · buy title',
+  confirmCartBody: 'Popup · buy body ({n} = pcs)',
+  confirmOfferTitle: 'Popup · send offer title',
+  confirmOfferBody: 'Popup · send offer body',
+  confirmAcceptOfferTitle: 'Popup · confirm accepted offer',
+  confirmAcceptOfferBody: 'Popup · confirm accepted offer body',
   confirmCheckoutTitle: 'Popup · checkout title',
   confirmCheckoutBody: 'Popup · checkout body',
   confirmPayTitle: 'Popup · pay title',
@@ -82,6 +88,8 @@ const COPY_LABEL: Record<keyof typeof DEFAULT_SETTINGS.copy, string> = {
   siteNotice: 'Site-wide notice banner',
   endingSoon: 'Ending-soon warning ({n} = minutes)',
   okAddedCart: 'Success · added to cart ({n})',
+  okOffer: 'Success · offer sent',
+  okOfferInvoiced: 'Success · offer invoiced',
   okCheckout: 'Success · checkout',
   okBid: 'Success · bid ({qty} {price})',
   okPaid: 'Success · paid',
@@ -92,11 +100,16 @@ const COPY_LABEL: Record<keyof typeof DEFAULT_SETTINGS.copy, string> = {
   warnQty: 'Warning · invalid qty',
   warnOverQty: 'Warning · over stock ({n} = qty)',
   warnMinPrice: 'Warning · min price ({price})',
+  warnOwnBidLower: 'Warning · cannot reduce own bid ({price})',
+  warnStartPrice: 'Warning · offline start price ({price})',
   warnNoBid: 'Warning · bidding off',
   warnPending: 'Warning · pending account',
   warnDisabled: 'Warning · disabled account',
   warnClosed: 'Warning · closed lot',
   warnCart: 'Warning · cart off',
+  warnOffers: 'Warning · offers off',
+  warnOfferPrice: 'Warning · offer must be below list ({price})',
+  warnOfferOpen: 'Warning · accepted offer already open',
   warnLogin: 'Warning · bad login',
   warnRegister: 'Warning · sign-up fields',
   warnAccountTaken: 'Warning · account ID taken',
@@ -146,7 +159,7 @@ function AddAuctionTypeDialog({
         onClick={(e) => e.stopPropagation()}
       >
         <h2 id="add-auction-type-title">Add auction type</h2>
-        <p className="muted">Creates its own inventory list. Buyers open it from Auctions like Real-time or Sealed bid.</p>
+        <p className="muted">Creates its own inventory list. Buyers open it from Auctions like Live Auctions or Offline Auctions.</p>
         <label>
           Type name
           <input
@@ -170,11 +183,11 @@ function AddAuctionTypeDialog({
             }}
           />
         </label>
-        <p className="muted tiny">List URL: /auctions/{value || '…'}</p>
+        <p className="muted tiny">Section on auctions: /auctions#{value || '…'}</p>
         <label>
           Fill mode
           <select value={fillMode} onChange={(e) => setFillMode(e.target.value as AuctionFillMode)}>
-            <option value="live">Real-time fill</option>
+            <option value="live">Live fill</option>
             <option value="sealed">Sealed (hidden fill)</option>
             <option value="hybrid">Hybrid</option>
           </select>
@@ -519,7 +532,7 @@ export function Super() {
                 ['card', 'Cards'],
                 ['win', 'Win / paid'],
                 ['lose', 'Error / unpaid'],
-                ['live', 'Live accent'],
+                ['live', 'Brand teal / live'],
               ] as const
             ).map(([key, label]) => (
               <label key={key}>
@@ -611,6 +624,7 @@ export function Super() {
                   ['takeAll', 'Take all'],
                   ['favourites', 'Favourites'],
                   ['cart', 'Marketplace cart'],
+                  ['offers', 'Marketplace offers'],
                   ['register', 'Public sign-up'],
                   ['forgotPassword', 'Forgot-password popup'],
                   ['bots', 'Live bid bots (demo)'],
@@ -792,9 +806,8 @@ export function Super() {
           <div className="type-manager admin-span">
             <h3>Auction types</h3>
             <p className="muted tiny">
-              Each type is its own inventory list at /auctions/&lt;id&gt;. Fill mode chooses whether
-              buyers see live fill, sealed bids, or hybrid. Add types for regions, private sales, or
-              extra catalogs — do not mix huge inventories on one list.
+              Live Auctions and Offline Auctions are the main lists. Add more types here later if you need
+              extra catalogs. Fill mode is how bids show to buyers.
             </p>
             <div className="type-rows">
               {draft.auctionTypes.map((t, i) => {
@@ -829,7 +842,7 @@ export function Super() {
                           setDraft({ ...draft, auctionTypes })
                         }}
                       >
-                        <option value="live">Real-time fill</option>
+                        <option value="live">Live fill</option>
                         <option value="sealed">Sealed (hidden fill)</option>
                         <option value="hybrid">Hybrid</option>
                       </select>
@@ -925,7 +938,7 @@ export function Super() {
           </fieldset>
           <fieldset className="admin-toggles">
             <legend>Filters clients see</legend>
-            {(['type', 'maker', 'grade', 'capacity', 'price'] as const).map((key) => (
+            {(['maker', 'grade', 'capacity'] as const).map((key) => (
               <label key={key}>
                 <input
                   type="checkbox"
@@ -937,9 +950,12 @@ export function Super() {
                     })
                   }
                 />
-                {key === 'price' ? 'Price' : key[0].toUpperCase() + key.slice(1)}
+                {key[0].toUpperCase() + key.slice(1)}
               </label>
             ))}
+            <p className="muted tiny" style={{ flexBasis: '100%', margin: 0 }}>
+              Type is the auction list menu (All / Live / Offline / Ongoing / Closed).
+            </p>
           </fieldset>
           <button className="btn btn-primary" type="submit">
             Save settings
@@ -955,7 +971,7 @@ export function Super() {
             <div>
               <h2>Auction types</h2>
               <p className="muted">
-                Click Add auction type. Each type gets its own list at /auctions/&lt;id&gt;.
+                Click Add auction type. Each type appears as a section on /auctions.
               </p>
             </div>
             <button type="button" className="btn btn-primary" onClick={() => setAddTypeOpen(true)}>
@@ -971,7 +987,7 @@ export function Super() {
                   <div>
                     <strong>{t.label}</strong>
                     <div className="muted tiny">
-                      /auctions/{t.value} · {t.fillMode === 'sealed' ? 'Sealed' : t.fillMode === 'hybrid' ? 'Hybrid' : 'Real-time'} fill
+                      /auctions#{t.value} · {t.fillMode === 'sealed' ? 'Sealed' : t.fillMode === 'hybrid' ? 'Hybrid' : 'Live'} fill
                     </div>
                   </div>
                   <span className={`pill pill-${t.fillMode || 'live'}`}>{t.label}</span>

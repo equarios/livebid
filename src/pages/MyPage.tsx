@@ -16,7 +16,7 @@ const TABS = [
 export function MyPage() {
   const now = useNow()
   const { lots, invoices, user, isStaff } = useStore()
-  const live = lots.filter((l) => l.channel === 'auction' && l.endsAt > Date.now()).length
+  const live = lots.filter((l) => l.channel === 'auction' && l.endsAt > now).length
   const mine = invoices.filter((i) => isStaff || !i.accountId || i.accountId === user?.accountId)
   const unpaid = mine.filter((i) => i.status !== 'paid' && !i.shippedAt)
   const due = unpaid.reduce((n, i) => n + i.amount, 0)

@@ -21,21 +21,16 @@ export const DEFAULT_SETTINGS: SiteSettings = {
   auctionTypes: [
     {
       value: 'live',
-      label: 'Real-time',
+      label: 'Live Auctions',
       fillMode: 'live',
-      intro: 'Real-time list: last bid per account fills this inventory. You only see your own fill.',
+      intro: 'Live Auctions list: last bid per account fills this inventory. You only see your own fill.',
     },
     {
-      value: 'sealed',
-      label: 'Sealed bid',
+      value: 'offline',
+      label: 'Offline Auctions',
       fillMode: 'sealed',
-      intro: 'Sealed-bid list: other fills stay hidden until close. Separate catalog from live lots.',
-    },
-    {
-      value: 'hybrid',
-      label: 'Hybrid',
-      fillMode: 'hybrid',
-      intro: 'Hybrid list: live fill now, then a sealed stage. Its own inventory, not mixed with live.',
+      intro:
+        'Offline Auctions: the fill bar shows which models you already bid on (your qty). Other clients’ highs and win/lose stay hidden. You cannot reduce your own previous bid.',
     },
   ],
   defaultMoq: 0,
@@ -45,18 +40,18 @@ export const DEFAULT_SETTINGS: SiteSettings = {
   extendMinutes: 120,
   endingSoonMinutes: 15,
   theme: {
-    navy: '#133a8a',
-    navy2: '#0d2c6b',
-    ink: '#1a1a1a',
-    muted: '#5b6570',
-    line: '#e6e6e6',
-    bg: '#ffffff',
+    navy: '#1a3d54',
+    navy2: '#122c3e',
+    ink: '#163040',
+    muted: '#5c6d75',
+    line: '#d5e0e4',
+    bg: '#f3f6f7',
     card: '#ffffff',
-    win: '#0f7a3c',
-    lose: '#c62828',
-    live: '#c4161c',
-    font: "'Segoe UI', system-ui, sans-serif",
-    radius: '4px',
+    win: '#2a8a72',
+    lose: '#b23b3b',
+    live: '#3b92a3',
+    font: "'Source Sans 3', 'Segoe UI', system-ui, sans-serif",
+    radius: '8px',
   },
   features: {
     bidding: true,
@@ -68,6 +63,7 @@ export const DEFAULT_SETTINGS: SiteSettings = {
     confirmCheckout: true,
     confirmPay: true,
     cart: true,
+    offers: true,
     bots: true,
     register: true,
     forgotPassword: true,
@@ -92,7 +88,8 @@ export const DEFAULT_SETTINGS: SiteSettings = {
     auctionsIntro:
       'Place a bid for the pcs you want. You only see how many pcs you are winning — other clients’ fills stay private.',
     marketTitle: 'Marketplace',
-    marketIntro: 'Fixed wholesale prices. Add to cart on this page — no extra listing screen.',
+    marketIntro:
+      'Buy at the listed price, or send your best offer. Admin reviews offers; you confirm to create the invoice.',
     favouritesTitle: 'Favourites',
     favouritesIntro:
       'Favourites in one place. Bid auction lots here, or add marketplace lots to cart — no need to leave this page.',
@@ -105,11 +102,13 @@ export const DEFAULT_SETTINGS: SiteSettings = {
     searchMarket: 'Search model, SKU, maker, lot ID',
     emptyFilters: 'No lots match those filters.',
     emptyFavourites: 'Nothing favourited yet.',
-    emptyCart: 'Cart is empty. Choose desired qty and add to cart.',
+    emptyCart: 'Cart is empty. Buy at the listed price, then checkout.',
     emptyInvoices: 'No invoices yet. Buy a marketplace lot to generate one.',
     btnBid: 'Bid',
     btnTakeAll: 'Take all',
-    btnAddCart: 'Add to cart',
+    btnAddCart: 'Buy',
+    btnBuy: 'Buy',
+    btnOffer: 'Offer',
     btnCheckout: 'Checkout',
     btnPay: 'I have paid',
     btnAccept: 'Accept',
@@ -124,8 +123,12 @@ export const DEFAULT_SETTINGS: SiteSettings = {
     confirmBidBody: 'Check qty and price, then confirm.',
     confirmTakeAllTitle: 'Take all remaining pcs?',
     confirmTakeAllBody: 'This sets your desired qty to the full lot ({n} pcs). You still need to bid.',
-    confirmCartTitle: 'Add this to cart?',
-    confirmCartBody: 'Check qty and price, then confirm.',
+    confirmCartTitle: 'Buy at listed price?',
+    confirmCartBody: 'This adds {n} pcs to your cart at the listed price.',
+    confirmOfferTitle: 'Send this offer?',
+    confirmOfferBody: 'Admin will review your price. If they accept, you confirm to create an invoice.',
+    confirmAcceptOfferTitle: 'Confirm this accepted offer?',
+    confirmAcceptOfferBody: 'This creates an unpaid invoice at your offered price. Pay from Invoices.',
     confirmCheckoutTitle: 'Confirm checkout?',
     confirmCheckoutBody: 'This creates unpaid invoices for every item in the cart. Pay from Invoices.',
     confirmPayTitle: 'Have you already made payment?',
@@ -147,7 +150,9 @@ export const DEFAULT_SETTINGS: SiteSettings = {
     emptyMarket: 'No marketplace listings right now.',
     siteNotice: 'Invoices are due within 48 hours. Unpaid lots may be reopened to other buyers.',
     endingSoon: 'Closing soon — under {n} min left.',
-    okAddedCart: 'Added {n} pcs',
+    okAddedCart: 'Added {n} pcs to cart',
+    okOffer: 'Offer sent. Waiting for admin review.',
+    okOfferInvoiced: 'Invoice created from your accepted offer.',
     okCheckout: 'Checkout complete. Invoice created.',
     okBid: 'Confirmed {qty} pcs @ {price}',
     okPaid: 'Invoice marked paid after admin and super admin both accepted.',
@@ -157,12 +162,20 @@ export const DEFAULT_SETTINGS: SiteSettings = {
     warnMoq: 'MOQ for this model is {n} pcs.',
     warnQty: 'Desired qty must be a whole number of 1 or more.',
     warnOverQty: 'Desired qty cannot exceed total pcs ({n}).',
-    warnMinPrice: 'Minimum price per pc is {price}.',
+    warnMinPrice:
+      'Price must be at least {price} per pc ($1 above the current high). You cannot bid lower.',
+    warnOwnBidLower:
+      'Your previous bid was {price} / pc. You cannot reduce it. Enter the same or a higher price.',
+    warnStartPrice:
+      'Price must be at least {price} per pc. Other clients’ prices are not shown on Offline Auctions.',
     warnNoBid: 'Bidding is turned off by super admin.',
     warnPending: 'This account is waiting for super admin approval.',
     warnDisabled: 'This account is disabled. Contact super admin.',
     warnClosed: 'This auction has closed.',
     warnCart: 'Cart is turned off by super admin.',
+    warnOffers: 'Offers are turned off by super admin.',
+    warnOfferPrice: 'Offer must be below the listed price ({price}). Use Buy for the list price.',
+    warnOfferOpen: 'You already have an accepted offer on this lot. Confirm or cancel it first.',
     warnLogin: 'Invalid email, account ID, or password.',
     warnRegister: 'Fill all fields. Password must be at least 6 characters.',
     warnAccountTaken: 'That account ID is already registered.',
@@ -243,7 +256,7 @@ const CORE_LOTS: Lot[] = [
   lot({
     id: 'LB-24084',
     channel: 'auction',
-    auctionType: 'sealed',
+    auctionType: 'offline',
     manufacturer: 'Google',
     model: 'Pixel 8 Pro',
     modelNumber: 'GP4BC',
@@ -257,13 +270,13 @@ const CORE_LOTS: Lot[] = [
     currentPrice: 340,
     bidCount: 6,
     endsAt: Date.now() + 18 * hour,
-    description: 'Sealed-bid lot. Highest bid wins. Status hidden until close.',
+    description: 'Offline auction lot. Bid independently; other clients’ prices stay hidden.',
     accent: '#2b2b2b',
   }),
   lot({
     id: 'LB-24085',
     channel: 'auction',
-    auctionType: 'hybrid',
+    auctionType: 'offline',
     manufacturer: 'Apple',
     model: 'iPad Air 5',
     modelNumber: 'MM9F3LL/A',
@@ -277,7 +290,7 @@ const CORE_LOTS: Lot[] = [
     currentPrice: 328,
     bidCount: 11,
     endsAt: Date.now() + 6 * hour,
-    description: 'Multi-unit hybrid. Live phase now; extra sealed stage after close.',
+    description: 'Multi-unit offline auction lot.',
     accent: '#3d6fb8',
   }),
   lot({
@@ -302,7 +315,7 @@ const CORE_LOTS: Lot[] = [
   lot({
     id: 'LB-24087',
     channel: 'auction',
-    auctionType: 'sealed',
+    auctionType: 'offline',
     manufacturer: 'Sony',
     model: 'Xperia 1 V',
     modelNumber: 'XQ-DQ54',
@@ -420,7 +433,7 @@ const CORE_LOTS: Lot[] = [
   lot({
     id: 'LB-24089',
     channel: 'auction',
-    auctionType: 'hybrid',
+    auctionType: 'offline',
     manufacturer: 'Apple',
     model: 'iPhone 12',
     modelNumber: 'A2403',
@@ -480,7 +493,7 @@ const CORE_LOTS: Lot[] = [
 
 function moreInventory(): Lot[] {
   const bases = CORE_LOTS.filter((l) => l.channel === 'auction')
-  const types: AuctionType[] = ['live', 'sealed', 'hybrid']
+  const types: AuctionType[] = ['live', 'offline']
   const extra: Lot[] = []
   let n = 24201
   for (const auctionType of types) {
@@ -498,7 +511,7 @@ function moreInventory(): Lot[] {
           bidCount: i % 9,
           endsAt:
             Date.now() +
-            (auctionType === 'sealed' ? 8 + i : auctionType === 'hybrid' ? 3 + i * 0.4 : 0.6 + i * 0.35) *
+            (auctionType === 'offline' ? 8 + i : 0.6 + i * 0.35) *
               hour,
           description: `${base.description} · ${ORIGINS[i % ORIGINS.length]} origin catalog.`,
         }),

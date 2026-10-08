@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { ItemLink } from '../components/ItemLink'
 import { InvoiceDesk } from '../components/InvoiceDesk'
+import { OfferDesk } from '../components/OfferDesk'
 import { TimeLeft } from '../components/TimeLeft'
 import { ORIGINS, typePillClass } from '../lib/auctionLists'
 import { listingLabel, listingMinutes } from '../lib/duration'
@@ -13,6 +14,7 @@ export function Admin() {
     lots,
     bids,
     invoices,
+    offers,
     settings,
     addLot,
     updateLot,
@@ -24,6 +26,7 @@ export function Admin() {
   const market = lots.filter((l) => l.channel === 'marketplace')
   const unpaid = invoices.filter((i) => i.status !== 'paid')
   const unpaidTotal = unpaid.reduce((s, i) => s + i.amount, 0)
+  const pendingOffers = (offers || []).filter((o) => o.status === 'pending')
 
   const [editingId, setEditingId] = useState<string | null>(null)
   const [id, setId] = useState(`LB-${Date.now().toString().slice(-5)}`)
@@ -158,7 +161,17 @@ export function Admin() {
           <strong>{usd(unpaidTotal)}</strong>
           <span className="muted tiny">{unpaid.length} open</span>
         </div>
+        <div className="bid-total-card">
+          <span className="label">Pending offers</span>
+          <strong>{pendingOffers.length}</strong>
+        </div>
       </div>
+
+      <section className="card admin-section pay-queue-card">
+        <h2>Marketplace offers</h2>
+        <p className="muted tiny">Accept a buyer’s price. They confirm, then an invoice is created at the offered rate.</p>
+        <OfferDesk staff />
+      </section>
 
       <section className="card admin-section pay-queue-card">
         <h2>Invoices &amp; payment confirmations</h2>
@@ -293,8 +306,9 @@ export function Admin() {
         {msg ? <p className="ok">{msg}</p> : null}
       </section>
 
-      <section className="table-wrap card admin-section">
+      <section className="card admin-section">
         <h2>All lots</h2>
+        <div className="table-wrap auction-table-wrap">
         <table className="auction-table">
           <thead>
             <tr>
@@ -353,6 +367,43 @@ export function Admin() {
             ))}
           </tbody>
         </table>
+        </div>
+        <div className="auction-cards">
+          {lots.map((lot) => (
+            <article
+              key={lot.id}
+              className={`auction-card ${lot.endsAt <= Date.now() && lot.channel === 'auction' ? 'is-closed' : ''}`}
+            >
+              <ItemLink lot={lot} />
+              <div className="auction-card-meta">
+                <span className={`pill pill-${typePillClass(lot, settings)}`}>
+                  {lotTypeLabel(lot, settings)}
+                </span>
+                <span>{lot.qty.toLocaleString()} pcs</span>
+                <span>{usd(lot.buyNowPrice ?? lot.currentPrice)}</span>
+              </div>
+              <div className="row-actions">
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => loadLot(lot)}>
+                  Edit
+                </button>
+                {lot.channel === 'auction' ? (
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => extendLot(lot.id)}>
+                    +{listingLabel(listingMinutes(settings, 'extend'))}
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => {
+                    if (window.confirm(`Remove ${lot.id}?`)) removeLot(lot.id)
+                  }}
+                >
+                  Remove
+                </button>
+              </div>
+            </article>
+          ))}
+        </div>
       </section>
 
       <section className="table-wrap card admin-section">

@@ -8,16 +8,26 @@ type Props = {
   onCancel: () => void
   onConfirm: () => void
   children?: ReactNode
+  className?: string
+  confirmDisabled?: boolean
 }
 
-export function ConfirmDialog({ title, body, onCancel, onConfirm, children }: Props) {
+export function ConfirmDialog({
+  title,
+  body,
+  onCancel,
+  onConfirm,
+  children,
+  className,
+  confirmDisabled,
+}: Props) {
   const { settings } = useStore()
   const copy = settings.copy
 
   return (
     <ModalShell onClose={onCancel}>
       <div
-        className="modal card"
+        className={`modal card${className ? ` ${className}` : ''}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="confirm-action-title"
@@ -30,7 +40,7 @@ export function ConfirmDialog({ title, body, onCancel, onConfirm, children }: Pr
           <button type="button" className="btn" onClick={onCancel}>
             {copy.btnCancel}
           </button>
-          <button type="button" className="btn btn-primary" onClick={onConfirm}>
+          <button type="button" className="btn btn-primary" onClick={onConfirm} disabled={confirmDisabled}>
             {copy.btnConfirm}
           </button>
         </div>

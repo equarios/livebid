@@ -90,7 +90,7 @@ export function buyerCareNotices(
           kind: 'closing',
           title: 'Watchlist lot closing soon',
           body: `${lot.manufacturer} ${lot.model} · ${lot.id}`,
-          href: `/auctions/${lot.auctionType || 'live'}`,
+          href: `/auctions#${lot.auctionType || 'live'}`,
           at: nowTs,
           read: false,
         })
@@ -107,7 +107,7 @@ export function buyerCareNotices(
           kind: 'fill',
           title: 'You are out of fill',
           body: `${lot.manufacturer} ${lot.model} — raise price or qty to get units`,
-          href: `/auctions/${lot.auctionType || 'live'}`,
+          href: `/auctions#${lot.auctionType || 'live'}`,
           at: nowTs,
           read: false,
         })
