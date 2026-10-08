@@ -1,137 +1,24 @@
-import { useEffect, useState, type FormEvent } from 'react'
-import { ConfirmBidDialog } from './ConfirmBidDialog'
 import { FillBar } from './FillBar'
-import { fillStats } from '../lib/allocate'
-import { timeLeft, typeLabel, usd } from '../lib/format'
+import { InlineBid } from './InlineBid'
+import { ItemLink } from './ItemLink'
+import { bidStatus, fillStats } from '../lib/allocate'
+import { isSealedLot, typePillClass } from '../lib/auctionLists'
+import { lotTypeLabel, usd } from '../lib/format'
+import { moqLabel } from '../lib/moq'
 import { useStore } from '../store'
 import type { Lot } from '../types'
+import { TimeLeft } from './TimeLeft'
 
-function statusFor(lot: Lot, myPcs: number, desired: number | undefined, now: number) {
-  if (lot.endsAt <= now) return { label: 'Closed', className: 'muted' }
-  if (lot.auctionType === 'sealed') {
-    return desired != null ? { label: 'Bid in', className: 'status sealed' } : { label: '—', className: 'muted' }
-  }
-  if (desired == null) return { label: '—', className: 'muted' }
-  if (myPcs <= 0) return { label: 'Outbid', className: 'status lose' }
-  if (myPcs < desired) return { label: `Partial ${myPcs}/${desired}`, className: 'status lose' }
-  return { label: 'Winning', className: 'status win' }
-}
-
-function InlineBid({ lot }: { lot: Lot }) {
-  const { now, placeBid, myLastBid } = useStore()
-  const min = lot.startPrice
-  const closed = lot.endsAt <= now
-  const last = myLastBid(lot.id)
-  const [qty, setQty] = useState('1')
-  const [amount, setAmount] = useState(String(min))
-  const [msg, setMsg] = useState<string | null>(null)
-  const [ok, setOk] = useState(false)
-  const [pending, setPending] = useState<{ qty: number; unitPrice: number } | null>(null)
-
-  useEffect(() => {
-    setAmount((prev) => {
-      const n = Number(prev)
-      if (!Number.isFinite(n) || n < min) return String(min)
-      return prev
-    })
-  }, [min])
-
-  function parseEntry() {
-    const q = Number(qty)
-    const p = Number(amount)
-    if (!Number.isInteger(q) || q < 1) return 'Desired qty must be a whole number of 1 or more.'
-    if (q > lot.qty) return `Desired qty cannot exceed total pcs (${lot.qty}).`
-    if (!Number.isFinite(p) || p < min) return `Minimum price per pc is ${usd(min)}.`
-    return { qty: q, unitPrice: p }
-  }
-
-  function onBid(e: FormEvent) {
-    e.preventDefault()
-    if (closed) return
-    const parsed = parseEntry()
-    if (typeof parsed === 'string') {
-      setOk(false)
-      setMsg(parsed)
-      return
-    }
-    setMsg(null)
-    setPending(parsed)
-  }
-
-  function confirm() {
-    if (!pending) return
-    const err = placeBid(lot.id, pending.unitPrice, pending.qty)
-    setPending(null)
-    if (err) {
-      setOk(false)
-      setMsg(err)
-      return
-    }
-    setOk(true)
-    setMsg(`Confirmed ${pending.qty} pcs @ ${usd(pending.unitPrice)}`)
-  }
-
-  return (
-    <>
-      <form className="inline-bid" onSubmit={onBid}>
-        <label className="inline-field">
-          <span>Desired qty</span>
-          <input
-            type="number"
-            min={1}
-            max={lot.qty}
-            step={1}
-            disabled={closed}
-            value={closed ? '' : qty}
-            aria-label={`Desired qty for ${lot.id}`}
-            onChange={(e) => setQty(e.target.value)}
-          />
-        </label>
-        <label className="inline-field">
-          <span>Your price / pc</span>
-          <input
-            type="number"
-            min={min}
-            step={1}
-            disabled={closed}
-            value={closed ? '' : amount}
-            aria-label={`Unit price for ${lot.id}`}
-            onChange={(e) => setAmount(e.target.value)}
-          />
-        </label>
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
-          disabled={closed}
-          onClick={() => setQty(String(lot.qty))}
-        >
-          Take all
-        </button>
-        <button className="btn btn-primary btn-sm" type="submit" disabled={closed}>
-          Bid
-        </button>
-        {last ? (
-          <span className="muted tiny">
-            Last: {last.qty} pcs @ {usd(last.amount)}
-          </span>
-        ) : null}
-        {msg ? <span className={ok ? 'ok tiny' : 'error tiny'}>{msg}</span> : null}
-      </form>
-      {pending ? (
-        <ConfirmBidDialog
-          lot={lot}
-          qty={pending.qty}
-          unitPrice={pending.unitPrice}
-          onCancel={() => setPending(null)}
-          onConfirm={confirm}
-        />
-      ) : null}
-    </>
-  )
-}
-
-export function AuctionTable({ lots }: { lots: Lot[] }) {
-  const { now, myLastBid, watchlist, toggleWatch, bids, user } = useStore()
+export function AuctionTable({
+  lots,
+  compareIds,
+  onToggleCompare,
+}: {
+  lots: Lot[]
+  compareIds?: string[]
+  onToggleCompare?: (id: string) => void
+}) {
+  const { myLastBid, bids, user, settings } = useStore()
   const me = user?.accountId
 
   let alreadyBid = 0
@@ -141,7 +28,7 @@ export function AuctionTable({ lots }: { lots: Lot[] }) {
     if (!last) continue
     alreadyBid += last.qty * last.amount
     const stats = fillStats(lot, bids, me)
-    if (lot.auctionType !== 'sealed' && stats.myPcs > 0) {
+    if (!isSealedLot(lot, settings) && stats.myPcs > 0) {
       winningAmount += stats.myPcs * last.amount
     }
   }
@@ -160,62 +47,64 @@ export function AuctionTable({ lots }: { lots: Lot[] }) {
           <span className="muted tiny">Pcs you are currently allocated × your price</span>
         </div>
       </div>
-      <div className="fill-key">
-        <span><i className="fill-take" /> Take-all pcs</span>
-        <span><i className="fill-small" /> Small qty (often higher $/pc)</span>
-        <span><i className="fill-open" /> Open pcs</span>
-      </div>
       <div className="table-wrap card auction-table-wrap">
         <table className="auction-table">
           <thead>
             <tr>
+              {onToggleCompare ? <th>Cmp</th> : null}
               <th>Lot</th>
-              <th>Type</th>
               <th>Item</th>
               <th>Grade</th>
-              <th>Batt</th>
               <th>Total pcs</th>
-              <th>Pcs fill</th>
+              <th>You</th>
               <th>High / pc</th>
               <th>Your bid total</th>
               <th>Winning amount</th>
               <th>Time left</th>
-              <th>Status</th>
               <th>Your order</th>
-              <th />
             </tr>
           </thead>
           <tbody>
             {lots.map((lot) => {
               const last = myLastBid(lot.id)
               const stats = fillStats(lot, bids, me)
-              const closed = lot.endsAt <= now
-              const st = statusFor(lot, stats.myPcs, last?.qty, now)
-              const watching = watchlist.includes(lot.id)
+              const closed = lot.endsAt <= Date.now()
+              const st = bidStatus(lot, stats.myPcs, last?.qty, Date.now(), settings)
               const yourTotal = last ? last.qty * last.amount : null
               const winTotal =
-                lot.auctionType === 'sealed' ? null : stats.myPcs > 0 && last ? stats.myPcs * last.amount : 0
+                isSealedLot(lot, settings) ? null : stats.myPcs > 0 && last ? stats.myPcs * last.amount : 0
               return (
                 <tr key={lot.id} className={closed ? 'is-closed' : ''}>
+                  {onToggleCompare ? (
+                    <td>
+                      <input
+                        type="checkbox"
+                        checked={compareIds?.includes(lot.id) || false}
+                        aria-label={`Compare ${lot.id}`}
+                        onChange={() => onToggleCompare(lot.id)}
+                      />
+                    </td>
+                  ) : null}
                   <td className="mono">{lot.id}</td>
                   <td>
-                    <span className={`pill pill-${lot.auctionType || 'market'}`}>
-                      {typeLabel[lot.auctionType || 'live']}
-                    </span>
-                  </td>
-                  <td>
-                    <div className="item-name">
-                      {lot.manufacturer} {lot.model} {lot.capacity}
-                    </div>
-                    <div className="muted tiny">{lot.color}</div>
+                    <ItemLink lot={lot} />
                   </td>
                   <td>
                     <span className={`grade-inline grade-${lot.grade}`}>{lot.grade}</span>
                   </td>
-                  <td>{lot.battery}%</td>
-                <td>{lot.qty}</td>
+                <td>
+                  {lot.qty.toLocaleString()}
+                  <div className="muted tiny">{moqLabel(lot, settings.copy.noMoq)}</div>
+                </td>
                 <td className="fill-cell">
-                  <FillBar total={lot.qty} stats={stats} sealed={lot.auctionType === 'sealed'} me={me} />
+                  <FillBar
+                    total={lot.qty}
+                    myPcs={stats.myPcs}
+                    sealed={isSealedLot(lot, settings)}
+                    status={st}
+                    kind={lotTypeLabel(lot, settings)}
+                    kindClass={typePillClass(lot, settings)}
+                  />
                 </td>
                 <td className="price-cell">{usd(lot.currentPrice)}</td>
                 <td className="price-cell">
@@ -241,27 +130,70 @@ export function AuctionTable({ lots }: { lots: Lot[] }) {
                       </>
                     )}
                   </td>
-                  <td className={`countdown ${closed ? 'closed' : ''}`}>
-                    {closed ? 'Closed' : timeLeft(lot.endsAt, now)}
-                  </td>
-                  <td className={st.className}>{st.label}</td>
                   <td>
-                    <InlineBid lot={lot} />
+                    <TimeLeft endsAt={lot.endsAt} warn />
                   </td>
-                  <td className="row-actions">
-                    <button
-                      type="button"
-                      className={`btn btn-ghost btn-sm ${watching ? 'on' : ''}`}
-                      onClick={() => toggleWatch(lot.id)}
-                    >
-                      {watching ? 'Watching' : 'Watch'}
-                    </button>
+                  <td>
+                    <InlineBid lot={lot} withWatch />
                   </td>
                 </tr>
               )
             })}
           </tbody>
         </table>
+      </div>
+      <div className="auction-cards" aria-label="Auction lots">
+        {lots.map((lot) => {
+          const last = myLastBid(lot.id)
+          const stats = fillStats(lot, bids, me)
+          const closed = lot.endsAt <= Date.now()
+          const st = bidStatus(lot, stats.myPcs, last?.qty, Date.now(), settings)
+          const yourTotal = last ? last.qty * last.amount : null
+          const winTotal =
+            isSealedLot(lot, settings) ? null : stats.myPcs > 0 && last ? stats.myPcs * last.amount : 0
+          return (
+            <article key={lot.id} className={`auction-card ${closed ? 'is-closed' : ''}`}>
+              {onToggleCompare ? (
+                <label className="compare-check">
+                  <input
+                    type="checkbox"
+                    checked={compareIds?.includes(lot.id) || false}
+                    onChange={() => onToggleCompare(lot.id)}
+                  />
+                  Compare
+                </label>
+              ) : null}
+              <ItemLink lot={lot} />
+              <div className="auction-card-meta">
+                <span className={`grade-inline grade-${lot.grade}`}>{lot.grade}</span>
+                <span>{lot.qty.toLocaleString()} pcs</span>
+                <TimeLeft endsAt={lot.endsAt} warn />
+              </div>
+              <FillBar
+                total={lot.qty}
+                myPcs={stats.myPcs}
+                sealed={isSealedLot(lot, settings)}
+                status={st}
+                kind={lotTypeLabel(lot, settings)}
+                kindClass={typePillClass(lot, settings)}
+              />
+              <div className="auction-card-prices">
+                <span>
+                  High / pc <strong>{usd(lot.currentPrice)}</strong>
+                </span>
+                <span>
+                  Your bid{' '}
+                  <strong>{yourTotal != null && last ? usd(yourTotal) : '—'}</strong>
+                </span>
+                <span>
+                  Winning{' '}
+                  <strong>{winTotal == null ? 'Hidden' : usd(winTotal)}</strong>
+                </span>
+              </div>
+              <InlineBid lot={lot} withWatch />
+            </article>
+          )
+        })}
       </div>
     </>
   )

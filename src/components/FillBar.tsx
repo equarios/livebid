@@ -1,60 +1,40 @@
-import { usd } from '../lib/format'
-import type { FillStats } from '../lib/allocate'
-
 export function FillBar({
   total,
-  stats,
+  myPcs,
   sealed,
-  me,
+  status,
+  kind,
+  kindClass,
 }: {
   total: number
-  stats: FillStats
+  myPcs: number
   sealed?: boolean
-  me?: string
+  status: { label: string; className: string }
+  kind?: string
+  kindClass?: string
 }) {
-  if (sealed) {
-    return <span className="muted tiny">Hidden until close</span>
-  }
-
-  const takePct = (stats.takeAllPcs / total) * 100
-  const smallPct = (stats.smallPcs / total) * 100
-  const openPct = (stats.openPcs / total) * 100
-  const lostToSmall = stats.myTakeAll ? stats.smallPcs : 0
+  const minePct = total > 0 ? (myPcs / total) * 100 : 0
+  const restPct = Math.max(0, 100 - minePct)
 
   return (
-    <div className="fill-bar">
-      <div className="fill-track" title={`${stats.takeAllPcs} take-all · ${stats.smallPcs} small · ${stats.openPcs} open`}>
-        {stats.takeAllPcs > 0 ? (
-          <span className="fill-take" style={{ width: `${takePct}%` }} />
-        ) : null}
-        {stats.smallPcs > 0 ? (
-          <span className="fill-small" style={{ width: `${smallPct}%` }} />
-        ) : null}
-        {stats.openPcs > 0 ? (
-          <span className="fill-open" style={{ width: `${openPct}%` }} />
-        ) : null}
+    <div className="you-cell">
+      <div className="you-cell-top">
+        {kind ? <span className={`pill pill-${kindClass || 'market'}`}>{kind}</span> : null}
+        <div className={status.className}>{status.label}</div>
       </div>
-      <div className="fill-legend">
-        <span>
-          Take-all <strong>{stats.takeAllPcs}</strong>
-          {stats.takeAllPrice ? <em> @ {usd(stats.takeAllPrice)}</em> : null}
-        </span>
-        <span>
-          Small <strong>{stats.smallPcs}</strong>
-          {stats.smallHighPrice ? <em> @ {usd(stats.smallHighPrice)}</em> : null}
-        </span>
-        <span>
-          Open <strong>{stats.openPcs}</strong>
-        </span>
-      </div>
-      {me && stats.myPcs > 0 ? (
-        <div className={`tiny ${stats.myTakeAll && lostToSmall ? 'warn-tiny' : 'ok'}`}>
-          You winning {stats.myPcs}/{total} pcs
-          {stats.myTakeAll && lostToSmall > 0
-            ? ` · ${lostToSmall} pcs taken by higher small bids`
-            : ''}
-        </div>
-      ) : null}
+      {sealed ? (
+        <div className="muted tiny">Pcs hidden until close</div>
+      ) : (
+        <>
+          <div className="fill-track" title={`You are winning ${myPcs} of ${total} pcs`}>
+            {myPcs > 0 ? <span className="fill-mine" style={{ width: `${minePct}%` }} /> : null}
+            {restPct > 0 ? <span className="fill-open" style={{ width: `${restPct}%` }} /> : null}
+          </div>
+          <div className="muted tiny">
+            {myPcs}/{total} pcs
+          </div>
+        </>
+      )}
     </div>
   )
 }

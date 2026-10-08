@@ -1,4 +1,30 @@
-import type { Bid, Lot } from '../types'
+import type { Bid, Lot, SiteSettings } from '../types'
+import { isSealedLot } from './auctionLists'
+
+export type BidOutcome = 'won' | 'partial' | 'lost'
+
+export function bidOutcome(
+  _lot: Lot,
+  myPcs: number,
+  desired: number | undefined,
+  _now: number,
+): BidOutcome | null {
+  if (desired == null) return null
+  if (myPcs <= 0) return 'lost'
+  if (myPcs < desired) return 'partial'
+  return 'won'
+}
+
+export function bidStatus(lot: Lot, myPcs: number, desired: number | undefined, now: number, settings?: SiteSettings) {
+  if (lot.endsAt <= now) return { label: 'Closed', className: 'muted' }
+  if (isSealedLot(lot, settings)) {
+    return desired != null ? { label: 'Bid in', className: 'status sealed' } : { label: '—', className: 'muted' }
+  }
+  if (desired == null) return { label: '—', className: 'muted' }
+  if (myPcs <= 0) return { label: 'Outbid', className: 'status lose' }
+  if (myPcs < desired) return { label: `Partial ${myPcs}/${desired}`, className: 'status lose' }
+  return { label: 'Winning', className: 'status win' }
+}
 
 export type FillSlice = {
   accountId: string

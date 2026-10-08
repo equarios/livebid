@@ -1,61 +1,130 @@
 import { useState, type FormEvent } from 'react'
-import { timeLeft, typeLabel, usd } from '../lib/format'
+import { ItemLink } from '../components/ItemLink'
+import { InvoiceDesk } from '../components/InvoiceDesk'
+import { TimeLeft } from '../components/TimeLeft'
+import { ORIGINS, typePillClass } from '../lib/auctionLists'
+import { listingLabel, listingMinutes } from '../lib/duration'
+import { lotTypeLabel, usd } from '../lib/format'
 import { useStore } from '../store'
 import type { AuctionType, Channel, Grade, Lot } from '../types'
 
 export function Admin() {
-  const { lots, bids, invoices, now, addLot, extendLot, reopenAuctions, payInvoice } = useStore()
-  const live = lots.filter((l) => l.channel === 'auction' && l.endsAt > now)
+  const {
+    lots,
+    bids,
+    invoices,
+    settings,
+    addLot,
+    updateLot,
+    removeLot,
+    extendLot,
+    reopenAuctions,
+  } = useStore()
+  const live = lots.filter((l) => l.channel === 'auction' && l.endsAt > Date.now())
   const market = lots.filter((l) => l.channel === 'marketplace')
-  const unpaid = invoices.filter((i) => i.status === 'unpaid')
+  const unpaid = invoices.filter((i) => i.status !== 'paid')
   const unpaidTotal = unpaid.reduce((s, i) => s + i.amount, 0)
 
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [id, setId] = useState(`LB-${Date.now().toString().slice(-5)}`)
   const [channel, setChannel] = useState<Channel>('auction')
   const [auctionType, setAuctionType] = useState<AuctionType>('live')
   const [manufacturer, setManufacturer] = useState('Apple')
   const [model, setModel] = useState('')
+  const [modelNumber, setModelNumber] = useState('')
   const [capacity, setCapacity] = useState('128GB')
   const [color, setColor] = useState('Black')
-  const [grade, setGrade] = useState<Grade>('A')
+  const [grade, setGrade] = useState<Grade>(settings.grades[0] || 'A')
   const [battery, setBattery] = useState('90')
   const [qty, setQty] = useState('1')
+  const [moq, setMoq] = useState(settings.defaultMoq > 1 ? String(settings.defaultMoq) : '')
   const [price, setPrice] = useState('100')
-  const [hours, setHours] = useState('4')
+  const defaultMins = listingMinutes(settings, 'reopen')
+  const [hours, setHours] = useState(String(Math.floor(defaultMins / 60)))
+  const [minutes, setMinutes] = useState(String(defaultMins % 60 || (defaultMins < 60 ? defaultMins : 0)))
+  const [origin, setOrigin] = useState('INT')
+  const [description, setDescription] = useState('')
   const [msg, setMsg] = useState<string | null>(null)
 
-  function onAdd(e: FormEvent) {
+  function loadLot(lot: Lot) {
+    setEditingId(lot.id)
+    setId(lot.id)
+    setChannel(lot.channel)
+    setAuctionType(lot.auctionType || 'live')
+    setManufacturer(lot.manufacturer)
+    setModel(lot.model)
+    setModelNumber(lot.modelNumber)
+    setCapacity(lot.capacity)
+    setColor(lot.color)
+    setGrade(lot.grade)
+    setBattery(String(lot.battery))
+    setQty(String(lot.qty))
+    setMoq(lot.moq && lot.moq > 1 ? String(lot.moq) : '')
+    setPrice(String(lot.buyNowPrice ?? lot.currentPrice))
+    setOrigin(lot.origin || 'INT')
+    setDescription(lot.description)
+    const left = Math.max(1, Math.round((lot.endsAt - Date.now()) / 60000))
+    setHours(String(Math.floor(left / 60)))
+    setMinutes(String(left % 60))
+    setMsg(`Editing ${lot.id}`)
+  }
+
+  function onSaveLot(e: FormEvent) {
     e.preventDefault()
     const q = Number(qty)
     const p = Number(price)
     const b = Number(battery)
     const h = Number(hours)
+    const min = Number(minutes)
+    const totalMins = (Number.isFinite(h) ? h : 0) * 60 + (Number.isFinite(min) ? min : 0)
     if (!model.trim() || !Number.isInteger(q) || q < 1 || !Number.isFinite(p) || p < 1) {
       setMsg('Fill model, qty, and a valid price.')
       return
     }
+    if (!Number.isFinite(totalMins) || totalMins < 1) {
+      setMsg('Listing duration must be at least 1 minute.')
+      return
+    }
+    const m = moq.trim() === '' ? undefined : Number(moq)
+    if (m != null && (!Number.isInteger(m) || m < 1 || m > q)) {
+      setMsg('MOQ must be empty (no MOQ) or a whole number between 1 and total pcs.')
+      return
+    }
+    const existing = editingId ? lots.find((l) => l.id === editingId) : undefined
     const lot: Lot = {
-      id: id.trim() || `LB-${Date.now().toString().slice(-5)}`,
+      id: (editingId || id).trim() || `LB-${Date.now().toString().slice(-5)}`,
       channel,
       auctionType: channel === 'auction' ? auctionType : undefined,
       manufacturer,
       model: model.trim(),
+      modelNumber: modelNumber.trim(),
       capacity,
       color,
       grade,
       battery: Number.isFinite(b) ? b : 90,
       qty: q,
-      startPrice: p,
+      moq: m && m > 1 ? m : undefined,
+      startPrice: existing?.startPrice ?? p,
       currentPrice: p,
       buyNowPrice: channel === 'marketplace' ? p : undefined,
-      bidCount: 0,
-      endsAt: Date.now() + (Number.isFinite(h) ? h : 4) * 60 * 60 * 1000,
-      description: 'Added from admin.',
-      accent: '#1d3348',
+      bidCount: existing?.bidCount ?? 0,
+      endsAt: Date.now() + totalMins * 60 * 1000,
+      description: description.trim() || existing?.description || 'Added from admin.',
+      accent: existing?.accent ?? '#1d3348',
+      origin,
     }
-    addLot(lot)
-    setMsg(`Listed ${lot.id}`)
+    if (editingId) {
+      updateLot(lot)
+      setMsg(`Saved ${lot.id}`)
+    } else {
+      addLot(lot)
+      setMsg(`Listed ${lot.id}`)
+    }
+    setEditingId(null)
     setModel('')
+    setModelNumber('')
+    setDescription('')
+    setMoq(settings.defaultMoq > 1 ? String(settings.defaultMoq) : '')
     setId(`LB-${Date.now().toString().slice(-5)}`)
   }
 
@@ -64,10 +133,10 @@ export function Admin() {
       <div className="page-head">
         <div>
           <h1>Admin</h1>
-          <p className="muted">Lots, bids, invoices, and session controls for LiveBid.</p>
+          <p className="muted">Listings, bids, and invoices. User accounts are managed by super admin only.</p>
         </div>
         <button type="button" className="btn btn-primary" onClick={reopenAuctions}>
-          Reopen all auctions (4h)
+          Reopen all auctions ({listingLabel(listingMinutes(settings, 'reopen'))})
         </button>
       </div>
 
@@ -77,7 +146,7 @@ export function Admin() {
           <strong>{live.length}</strong>
         </div>
         <div className="bid-total-card">
-          <span className="label">Marketplace SKUs</span>
+          <span className="label">{settings.marketplaceLabel} SKUs</span>
           <strong>{market.length}</strong>
         </div>
         <div className="bid-total-card">
@@ -91,18 +160,23 @@ export function Admin() {
         </div>
       </div>
 
+      <section className="card admin-section pay-queue-card">
+        <h2>Invoices &amp; payment confirmations</h2>
+        <InvoiceDesk canAdmin />
+      </section>
+
       <section className="card admin-section">
-        <h2>Add listing</h2>
-        <form className="admin-form" onSubmit={onAdd}>
+        <h2>{editingId ? `Edit listing ${editingId}` : 'Add listing'}</h2>
+        <form className="admin-form" onSubmit={onSaveLot}>
           <label>
             Lot ID
-            <input value={id} onChange={(e) => setId(e.target.value)} />
+            <input value={id} onChange={(e) => setId(e.target.value)} disabled={Boolean(editingId)} />
           </label>
           <label>
             Channel
             <select value={channel} onChange={(e) => setChannel(e.target.value as Channel)}>
               <option value="auction">Auction</option>
-              <option value="marketplace">Marketplace</option>
+              <option value="marketplace">{settings.marketplaceLabel}</option>
             </select>
           </label>
           {channel === 'auction' ? (
@@ -112,9 +186,11 @@ export function Admin() {
                 value={auctionType}
                 onChange={(e) => setAuctionType(e.target.value as AuctionType)}
               >
-                <option value="live">Real-time</option>
-                <option value="sealed">Sealed</option>
-                <option value="hybrid">Hybrid</option>
+                {settings.auctionTypes.map((t) => (
+                  <option key={t.value} value={t.value}>
+                    {t.label}
+                  </option>
+                ))}
               </select>
             </label>
           ) : null}
@@ -127,6 +203,14 @@ export function Admin() {
             <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="iPhone 14" />
           </label>
           <label>
+            Model #
+            <input
+              value={modelNumber}
+              onChange={(e) => setModelNumber(e.target.value)}
+              placeholder="A2882"
+            />
+          </label>
+          <label>
             Capacity
             <input value={capacity} onChange={(e) => setCapacity(e.target.value)} />
           </label>
@@ -135,12 +219,21 @@ export function Admin() {
             <input value={color} onChange={(e) => setColor(e.target.value)} />
           </label>
           <label>
+            Origin
+            <select value={origin} onChange={(e) => setOrigin(e.target.value)}>
+              {ORIGINS.map((o) => (
+                <option key={o} value={o}>
+                  {o}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
             Grade
-            <select value={grade} onChange={(e) => setGrade(e.target.value as Grade)}>
-              <option>S</option>
-              <option>A</option>
-              <option>B</option>
-              <option>C</option>
+            <select value={grade} onChange={(e) => setGrade(e.target.value)}>
+              {settings.grades.map((g) => (
+                <option key={g}>{g}</option>
+              ))}
             </select>
           </label>
           <label>
@@ -152,16 +245,50 @@ export function Admin() {
             <input type="number" min={1} value={qty} onChange={(e) => setQty(e.target.value)} />
           </label>
           <label>
+            MOQ (empty = none)
+            <input
+              type="number"
+              min={1}
+              placeholder="No MOQ"
+              value={moq}
+              onChange={(e) => setMoq(e.target.value)}
+            />
+          </label>
+          <label>
             Price / pc (USD)
             <input type="number" min={1} value={price} onChange={(e) => setPrice(e.target.value)} />
           </label>
           <label>
             Hours open
-            <input type="number" min={1} value={hours} onChange={(e) => setHours(e.target.value)} />
+            <input type="number" min={0} step={1} value={hours} onChange={(e) => setHours(e.target.value)} />
+          </label>
+          <label>
+            Minutes open
+            <input type="number" min={0} step={1} value={minutes} onChange={(e) => setMinutes(e.target.value)} />
+          </label>
+          <label className="admin-span">
+            Condition notes
+            <input value={description} onChange={(e) => setDescription(e.target.value)} />
           </label>
           <button className="btn btn-primary" type="submit">
-            Publish
+            {editingId ? 'Save listing' : 'Publish'}
           </button>
+          {editingId ? (
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => {
+                setEditingId(null)
+                setModel('')
+                setModelNumber('')
+                setDescription('')
+                setId(`LB-${Date.now().toString().slice(-5)}`)
+                setMsg(null)
+              }}
+            >
+              Cancel edit
+            </button>
+          ) : null}
         </form>
         {msg ? <p className="ok">{msg}</p> : null}
       </section>
@@ -175,6 +302,7 @@ export function Admin() {
               <th>Channel</th>
               <th>Item</th>
               <th>Pcs</th>
+              <th>MOQ</th>
               <th>Price / pc</th>
               <th>Time left</th>
               <th />
@@ -182,85 +310,49 @@ export function Admin() {
           </thead>
           <tbody>
             {lots.map((lot) => (
-              <tr key={lot.id} className={lot.endsAt <= now && lot.channel === 'auction' ? 'is-closed' : ''}>
+              <tr key={lot.id} className={lot.endsAt <= Date.now() && lot.channel === 'auction' ? 'is-closed' : ''}>
                 <td className="mono">{lot.id}</td>
                 <td>
-                  <span className={`pill pill-${lot.auctionType || 'market'}`}>
-                    {lot.channel === 'marketplace'
-                      ? typeLabel.marketplace
-                      : typeLabel[lot.auctionType || 'live']}
+                  <span className={`pill pill-${typePillClass(lot, settings)}`}>
+                    {lotTypeLabel(lot, settings)}
                   </span>
                 </td>
                 <td>
-                  {lot.manufacturer} {lot.model} {lot.capacity}
+                  <ItemLink lot={lot} />
                 </td>
-                <td>{lot.qty}</td>
+                <td>{lot.qty.toLocaleString()}</td>
+                <td>{lot.moq && lot.moq > 1 ? lot.moq : '—'}</td>
                 <td className="price-cell">{usd(lot.buyNowPrice ?? lot.currentPrice)}</td>
-                <td className="countdown">
-                  {lot.channel === 'auction'
-                    ? lot.endsAt <= now
-                      ? 'Closed'
-                      : timeLeft(lot.endsAt, now)
-                    : '—'}
-                </td>
                 <td>
+                  {lot.channel === 'auction' ? <TimeLeft endsAt={lot.endsAt} closedLabel="Closed" /> : '—'}
+                </td>
+                <td className="row-actions">
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => loadLot(lot)}>
+                    Edit
+                  </button>
                   {lot.channel === 'auction' ? (
                     <button
                       type="button"
                       className="btn btn-ghost btn-sm"
-                      onClick={() => extendLot(lot.id, 2)}
+                      onClick={() => extendLot(lot.id)}
                     >
-                      +2h
+                      +{listingLabel(listingMinutes(settings, 'extend'))}
                     </button>
                   ) : null}
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => {
+                      if (window.confirm(`Remove ${lot.id}?`)) removeLot(lot.id)
+                    }}
+                  >
+                    Remove
+                  </button>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
-      </section>
-
-      <section className="table-wrap card admin-section">
-        <h2>Invoices</h2>
-        <table className="auction-table">
-          <thead>
-            <tr>
-              <th>Invoice</th>
-              <th>Lot</th>
-              <th>Pcs</th>
-              <th>Total</th>
-              <th>Status</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {invoices.map((inv) => (
-              <tr key={inv.id}>
-                <td>{inv.id}</td>
-                <td>{inv.lotId}</td>
-                <td>{inv.qty}</td>
-                <td className="price-cell">{usd(inv.amount)}</td>
-                <td>
-                  <span className={`pill ${inv.status === 'paid' ? 'pill-live' : 'pill-sealed'}`}>
-                    {inv.status}
-                  </span>
-                </td>
-                <td>
-                  {inv.status === 'unpaid' ? (
-                    <button
-                      type="button"
-                      className="btn btn-primary btn-sm"
-                      onClick={() => payInvoice(inv.id)}
-                    >
-                      Mark paid
-                    </button>
-                  ) : null}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {!invoices.length ? <p className="empty">No invoices yet.</p> : null}
       </section>
 
       <section className="table-wrap card admin-section">

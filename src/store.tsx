@@ -7,8 +7,24 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { ADMIN_USER, DEMO_USER, SEED_LOTS } from './data'
-import type { Bid, CartItem, Invoice, Lot, User } from './types'
+import { DEFAULT_SETTINGS, SEED_ACCOUNTS, SEED_LOTS, SUPER_USER } from './data'
+import { isSealedLot, normalizeAuctionTypes } from './lib/auctionLists'
+import { settleInvoice } from './lib/invoices'
+import { buyerCareNotices, settleClosedAuctions } from './lib/settle'
+import { checkOrderQty, lotMoq } from './lib/moq'
+import type {
+  Account,
+  Bid,
+  CartItem,
+  Invoice,
+  Lot,
+  Notice,
+  PayDecision,
+  PayReviewSide,
+  SiteSettings,
+  ThemeSettings,
+  User,
+} from './types'
 
 type Store = {
   user: User | null
@@ -16,26 +32,52 @@ type Store = {
   bids: Bid[]
   watchlist: string[]
   invoices: Invoice[]
+  notices: Notice[]
   cart: CartItem[]
-  now: number
+  accounts: Account[]
+  settings: SiteSettings
+  isSuperAdmin: boolean
+  isStaff: boolean
   login: (accountId: string, password: string) => string | null
   register: (accountId: string, company: string, email: string, password: string) => string | null
+  requestPasswordReset: (ident: string) => { error: string } | { code: string; email: string }
+  resetPassword: (ident: string, code: string, password: string) => string | null
   logout: () => void
   placeBid: (lotId: string, amount: number, qty: number) => string | null
+  placeBids: (
+    entries: Array<{ lotId: string; amount: number; qty: number }>,
+  ) => { ok: number; errors: Array<{ lotId: string; message: string }> }
   buyNow: (lotId: string, qty?: number) => string | null
   addToCart: (lotId: string, qty: number) => string | null
   removeFromCart: (lotId: string) => void
   checkoutCart: () => string | null
   toggleWatch: (lotId: string) => void
-  payInvoice: (id: string) => void
+  submitPayment: (id: string, receiptName: string, receiptData: string) => string | null
+  reviewPayment: (id: string, side: PayReviewSide, decision: PayDecision) => string | null
+  saveInvoice: (invoice: Invoice, previousId?: string) => string | null
+  removeInvoice: (id: string) => string | null
+  clearPaymentConfirmation: (id: string) => string | null
+  markInvoiceOpened: (id: string) => void
+  markNoticesRead: () => void
   myBid: (lotId: string) => number | undefined
   myLastBid: (lotId: string) => Bid | undefined
   addLot: (lot: Lot) => void
-  extendLot: (lotId: string, hours: number) => void
+  updateLot: (lot: Lot) => void
+  removeLot: (lotId: string) => void
+  saveSettings: (next: SiteSettings) => void
+  saveAccount: (account: Account, previousId?: string) => string | null
+  removeAccount: (accountId: string) => string | null
+  setAccountStatus: (accountId: string, status: Account['status']) => string | null
+  extendLot: (lotId: string, minutes?: number) => void
   reopenAuctions: () => void
 }
 
 const StoreContext = createContext<Store | null>(null)
+const NowContext = createContext(0)
+
+export function useNow() {
+  return useContext(NowContext)
+}
 const AUTH_KEY = 'livebid-auth'
 const DATA_KEY = 'livebid-data'
 
@@ -44,15 +86,267 @@ type Persisted = {
   bids: Bid[]
   watchlist: string[]
   invoices: Invoice[]
+  notices: Notice[]
   cart: CartItem[]
+  settings: SiteSettings
+  accounts: Account[]
+}
+
+function sessionUser(account: Account): User {
+  return {
+    accountId: account.accountId,
+    company: account.company,
+    email: account.email,
+    role: account.role,
+    status: account.status,
+  }
+}
+
+function mergeAccounts(stored?: Account[] | null): Account[] {
+  let extra: Account[] = []
+  try {
+    const raw = localStorage.getItem('livebid-members')
+    if (raw) {
+      extra = (JSON.parse(raw) as Array<Partial<Account> & { accountId: string; password: string }>).map(
+        (m) => ({
+          accountId: m.accountId.toUpperCase(),
+          password: m.password,
+          company: m.company || '',
+          email: m.email || '',
+          role: m.role === 'admin' || m.role === 'superadmin' ? m.role : 'member',
+          status: m.status === 'pending' || m.status === 'disabled' ? m.status : 'active',
+        }),
+      )
+    }
+  } catch {
+    /* ignore */
+  }
+  const byId = new Map<string, Account>()
+  for (const a of [...SEED_ACCOUNTS, ...extra, ...(stored || [])]) {
+    byId.set(a.accountId.toUpperCase(), {
+      ...a,
+      accountId: a.accountId.toUpperCase(),
+      role: a.role || 'member',
+      status: a.status || 'active',
+    })
+  }
+  const superAcc = byId.get(SUPER_USER.accountId) || SUPER_USER
+  byId.set(SUPER_USER.accountId, {
+    ...superAcc,
+    role: 'superadmin',
+    status: 'active',
+    company: SUPER_USER.company,
+  })
+  return [...byId.values()]
+}
+
+const LEGACY_NAVY = new Set(['#164e78', '#0b2c4d', '#123a63'])
+
+function mergeTheme(partial?: Partial<ThemeSettings> | null): ThemeSettings {
+  const navy = partial?.navy?.toLowerCase()
+  if (!navy || LEGACY_NAVY.has(navy)) return { ...DEFAULT_SETTINGS.theme }
+  return { ...DEFAULT_SETTINGS.theme, ...partial }
+}
+
+function mergeBrand(partial?: Partial<SiteSettings> | null) {
+  const legacyName = !partial?.brandName || partial.brandName === 'LiveBid'
+  return {
+    brandName: (legacyName ? DEFAULT_SETTINGS.brandName : partial?.brandName || DEFAULT_SETTINGS.brandName).trim(),
+    brandMark:
+      legacyName || !partial?.brandMark || partial.brandMark === 'LB'
+        ? DEFAULT_SETTINGS.brandMark
+        : partial.brandMark,
+    brandLogo:
+      !partial?.brandLogo?.trim() || partial.brandLogo.includes('equarios-logo.jpg')
+        ? DEFAULT_SETTINGS.brandLogo
+        : partial.brandLogo.trim(),
+    tagline:
+      !partial?.tagline || partial.tagline === 'Wholesale auctions and marketplace'
+        ? DEFAULT_SETTINGS.tagline
+        : partial.tagline,
+  }
+}
+
+function mergeSettings(partial?: Partial<SiteSettings> | null): SiteSettings {
+  return {
+    ...DEFAULT_SETTINGS,
+    ...partial,
+    ...mergeBrand(partial),
+    filters: { ...DEFAULT_SETTINGS.filters, ...partial?.filters },
+    grades: partial?.grades?.length ? partial.grades : DEFAULT_SETTINGS.grades,
+    auctionTypes: (() => {
+      const next = normalizeAuctionTypes(partial?.auctionTypes)
+      return next.length ? next : DEFAULT_SETTINGS.auctionTypes
+    })(),
+    theme: mergeTheme(partial?.theme),
+    features: { ...DEFAULT_SETTINGS.features, ...partial?.features },
+    copy: (() => {
+      const copy = { ...DEFAULT_SETTINGS.copy, ...partial?.copy }
+      if (copy.navAuctions === 'Auction') copy.navAuctions = DEFAULT_SETTINGS.copy.navAuctions
+      return copy
+    })(),
+    icons: { ...DEFAULT_SETTINGS.icons, ...partial?.icons },
+    reopenMinutes: Math.max(
+      1,
+      Math.round(partial?.reopenMinutes ?? (partial?.reopenHours ?? DEFAULT_SETTINGS.reopenHours) * 60),
+    ),
+    extendMinutes: Math.max(
+      1,
+      Math.round(partial?.extendMinutes ?? (partial?.extendHours ?? DEFAULT_SETTINGS.extendHours) * 60),
+    ),
+  }
+}
+
+function demoInvoices(): Invoice[] {
+  const accounts = ['DEMO-1001', 'SUPER-0001', 'ADMIN-0001']
+  const day = (n: number) => Date.now() - n * 86400000
+  const rows: Omit<Invoice, 'accountId'>[] = [
+    {
+      id: 'KDP-26-284-018',
+      lotId: 'LB-24081',
+      channel: 'auction',
+      qty: 1,
+      unitPrice: 837.42,
+      amount: 837.42,
+      status: 'unpaid',
+      createdAt: day(2),
+      opened: false,
+      auctionLabel: 'JPN SIM Unlocked iPhone (KDP-26-284)',
+    },
+    {
+      id: 'KDP-26-282-009',
+      lotId: 'LB-24082',
+      channel: 'auction',
+      qty: 70,
+      unitPrice: 1147.93,
+      amount: 80355.3,
+      status: 'unpaid',
+      createdAt: day(2),
+      opened: false,
+      auctionLabel: 'JPN SIM Unlocked Android (KDP-26-282)',
+    },
+    {
+      id: 'HYB-26-288-039',
+      lotId: 'LB-24085',
+      channel: 'auction',
+      qty: 40,
+      unitPrice: 1928.33,
+      amount: 77133.42,
+      status: 'pending_review',
+      createdAt: day(2),
+      opened: false,
+      auctionLabel: 'JPN SIM Unlocked iPhone and Android (HYB-26-288)',
+    },
+    {
+      id: 'KDP-26-269-003',
+      lotId: 'LB-24088',
+      channel: 'auction',
+      qty: 22,
+      unitPrice: 318.52,
+      amount: 7007.4,
+      status: 'paid',
+      createdAt: day(16),
+      shippedAt: day(7),
+      trackingNo: '877859012190',
+      opened: true,
+      auctionLabel: 'JPN SIM Unlocked iPhone & Earphone (KDP-26-269)',
+    },
+    {
+      id: 'KDP-26-268-008',
+      lotId: 'LB-24091',
+      channel: 'auction',
+      qty: 40,
+      unitPrice: 194.31,
+      amount: 7772.4,
+      status: 'paid',
+      createdAt: day(16),
+      shippedAt: day(7),
+      trackingNo: '877859012190',
+      opened: true,
+      poNumber: 'PO-4401',
+      auctionLabel: 'JPN SIM Unlocked Android (KDP-26-268)',
+    },
+    {
+      id: 'KDP-26-260-010',
+      lotId: 'LB-24083',
+      channel: 'marketplace',
+      qty: 20,
+      unitPrice: 319.02,
+      amount: 6380.3,
+      status: 'paid',
+      createdAt: day(23),
+      shippedAt: day(8),
+      trackingNo: '877804200901',
+      opened: true,
+      auctionLabel: 'JPN SIM Unlocked Android (KDP-26-260)',
+    },
+    {
+      id: 'KDP-26-203-018',
+      lotId: 'LB-24086',
+      channel: 'auction',
+      qty: 1,
+      unitPrice: 27737.88,
+      amount: 27737.88,
+      status: 'paid',
+      createdAt: day(23),
+      shippedAt: day(22),
+      trackingNo: '877213823034',
+      opened: true,
+      auctionLabel: 'JPN SIM Unlocked iPhone (KDP-26-203)',
+    },
+    {
+      id: 'KDP-26-254-010',
+      lotId: 'LB-24090',
+      channel: 'auction',
+      qty: 1,
+      unitPrice: 21752.52,
+      amount: 21752.52,
+      status: 'paid',
+      createdAt: day(30),
+      shippedAt: day(22),
+      trackingNo: '877213823034',
+      opened: true,
+      auctionLabel: 'JPN SIM Unlocked Android (KDP-26-254)',
+    },
+  ]
+  return accounts.flatMap((accountId) =>
+    rows.map((row) => ({ ...row, id: `${row.id}-${accountId.slice(-4)}`, accountId })),
+  )
+}
+
+function mergeDemoInvoices(invoices: Invoice[]): Invoice[] {
+  const seed = demoInvoices()
+  const have = new Set(invoices.map((i) => i.id))
+  const extra = seed.filter((i) => !have.has(i.id))
+  return extra.length ? [...invoices, ...extra] : invoices
+}
+
+function mergeHistoryBids(bids: Bid[]): Bid[] {
+  const seed = demoFillBids()
+  const have = new Set(bids.map((b) => `${b.lotId}:${b.accountId}`))
+  const extra = seed.filter((b) => !have.has(`${b.lotId}:${b.accountId}`))
+  return extra.length ? [...bids, ...extra] : bids
 }
 
 function demoFillBids(): Bid[] {
+  const at = Date.now()
+  const clients = ['DEMO-1001', 'SUPER-0001', 'ADMIN-0001']
+  const clientBids: Bid[] = clients.flatMap((accountId, i) => [
+    { lotId: 'LB-24083', accountId, amount: 320, qty: 80, at: at - 86400000 * 2 - i },
+    { lotId: 'LB-24084', accountId, amount: 355, qty: 60, at: at - 86400000 - i },
+    { lotId: 'LB-24085', accountId, amount: 340, qty: 70, at: at - 7200000 - i },
+    { lotId: 'LB-24087', accountId, amount: 230, qty: 82, at: at - 3600000 - i },
+    { lotId: 'LB-24088', accountId, amount: 401, qty: 22, at: at - 1800000 - i },
+    { lotId: 'LB-24089', accountId, amount: 120, qty: 72, at: at - 900000 - i },
+    { lotId: 'LB-24091', accountId, amount: 640, qty: 40, at: at - 600000 - i },
+    { lotId: 'LB-24086', accountId, amount: 655, qty: 1, at: at - 400000 - i },
+  ])
   return [
-    { lotId: 'LB-24089', accountId: 'BOT-SMALL', amount: 400, qty: 3, at: Date.now() - 8000 },
-    { lotId: 'LB-24089', accountId: 'BOT-ALL', amount: 350, qty: 15, at: Date.now() - 4000 },
-    { lotId: 'LB-24085', accountId: 'BOT-SMALL', amount: 640, qty: 2, at: Date.now() - 6000 },
-    { lotId: 'LB-24085', accountId: 'BOT-ALL', amount: 590, qty: 8, at: Date.now() - 3000 },
+    { lotId: 'LB-24089', accountId: 'BOT-SMALL', amount: 400, qty: 40, at: Date.now() - 8000 },
+    { lotId: 'LB-24089', accountId: 'BOT-ALL', amount: 350, qty: 400, at: Date.now() - 4000 },
+    { lotId: 'LB-24085', accountId: 'BOT-SMALL', amount: 640, qty: 40, at: Date.now() - 6000 },
+    { lotId: 'LB-24085', accountId: 'BOT-ALL', amount: 590, qty: 200, at: Date.now() - 3000 },
+    ...clientBids,
   ]
 }
 
@@ -68,21 +362,64 @@ function loadData(): Persisted {
       }))
       return {
         ...parsed,
-        bids: bids.some((b) => b.accountId === 'BOT-SMALL' || b.accountId === 'BOT-ALL')
-          ? bids
-          : [...bids, ...demoFillBids()],
-        invoices: (parsed.invoices || []).map((inv) => ({
-          ...inv,
-          qty: inv.qty || 1,
-          unitPrice: inv.unitPrice || inv.amount,
-        })),
+        lots: (() => {
+          const existing = parsed.lots || []
+          const byId = new Map(existing.map((l) => [l.id, l]))
+          const fromSeed = SEED_LOTS.map((s) => {
+            const cur = byId.get(s.id)
+            if (!cur) return s
+            return {
+              ...cur,
+              modelNumber: cur.modelNumber || s.modelNumber,
+              origin: cur.origin || s.origin,
+              moq: 'moq' in cur ? cur.moq : s.moq,
+              qty: cur.qty < 100 && s.qty >= 100 ? s.qty : cur.qty,
+            }
+          })
+          const extras = existing.filter((l) => !SEED_LOTS.some((s) => s.id === l.id))
+          return [...fromSeed, ...extras]
+        })(),
+        bids: mergeHistoryBids(
+          bids.some((b) => b.accountId === 'BOT-SMALL' || b.accountId === 'BOT-ALL')
+            ? bids
+            : [...bids, ...demoFillBids()],
+        ),
+        invoices: mergeDemoInvoices(
+          (parsed.invoices || []).map((inv) => ({
+            ...inv,
+            qty: inv.qty || 1,
+            unitPrice: inv.unitPrice || inv.amount,
+            channel:
+              inv.channel ||
+              parsed.lots.find((x) => x.id === inv.lotId)?.channel ||
+              'marketplace',
+            status:
+              inv.status === 'paid' ||
+              inv.status === 'pending_review' ||
+              inv.status === 'declined'
+                ? inv.status
+                : 'unpaid',
+          })),
+        ),
         cart: parsed.cart || [],
+        notices: parsed.notices || [],
+        settings: mergeSettings(parsed.settings),
+        accounts: mergeAccounts(parsed.accounts),
       }
     }
   } catch {
     /* ignore */
   }
-  return { lots: SEED_LOTS, bids: demoFillBids(), watchlist: [], invoices: [], cart: [] }
+  return {
+    lots: SEED_LOTS,
+    bids: demoFillBids(),
+    watchlist: [],
+    invoices: demoInvoices(),
+    notices: [],
+    cart: [],
+    settings: DEFAULT_SETTINGS,
+    accounts: mergeAccounts([]),
+  }
 }
 
 export function StoreProvider({ children }: { children: ReactNode }) {
@@ -91,9 +428,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const raw = localStorage.getItem(AUTH_KEY)
       if (!raw) return null
       const parsed = JSON.parse(raw) as User
+      if (parsed.accountId === SUPER_USER.accountId) {
+        return { ...parsed, role: 'superadmin', status: 'active' }
+      }
       return {
         ...parsed,
-        role: parsed.accountId === ADMIN_USER.accountId ? 'admin' : 'member',
+        role: parsed.role === 'superadmin' ? 'member' : parsed.role || 'member',
+        status: parsed.status || 'active',
       }
     } catch {
       return null
@@ -108,22 +449,59 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
-    localStorage.setItem(DATA_KEY, JSON.stringify(data))
+    try {
+      localStorage.setItem(DATA_KEY, JSON.stringify(data))
+    } catch {
+      try {
+        const slim = {
+          ...data,
+          invoices: data.invoices.map((inv) => ({
+            ...inv,
+            receiptData: inv.receiptData && inv.receiptData.length > 120000 ? undefined : inv.receiptData,
+          })),
+        }
+        localStorage.setItem(DATA_KEY, JSON.stringify(slim))
+      } catch {
+        /* quota — keep in-memory invoices so admin can still review this session */
+      }
+    }
   }, [data])
+
+  useEffect(() => {
+    function onStorage(e: StorageEvent) {
+      if (e.key !== DATA_KEY || !e.newValue) return
+      try {
+        const parsed = JSON.parse(e.newValue) as Persisted
+        if (!parsed.invoices) return
+        setData((prev) => {
+          if (prev.invoices === parsed.invoices) return prev
+          return { ...prev, invoices: parsed.invoices }
+        })
+      } catch {
+        /* ignore */
+      }
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [])
 
   useEffect(() => {
     const t = setInterval(() => {
       setData((prev) => {
         const nowTs = Date.now()
-        const extraInvoices: Invoice[] = []
         const extraBids: Bid[] = []
+        if (!prev.settings.features.bots) return prev
         const lots = prev.lots.map((lot) => {
           if (lot.channel !== 'auction') return lot
           if (lot.endsAt <= nowTs) return lot
-          if (lot.auctionType === 'sealed') return lot
+          if (lot.endsAt - nowTs < 2 * 60 * 1000) return lot
+          if (isSealedLot(lot, prev.settings)) return lot
           if (Math.random() > 0.4) return lot
           const takeAll = lot.qty > 1 && Math.random() > 0.55
-          const qty = takeAll ? lot.qty : Math.max(1, Math.min(lot.qty, 1 + Math.floor(Math.random() * 3)))
+          const minQty = lotMoq(lot)
+          const qty = takeAll
+            ? lot.qty
+            : Math.max(minQty, Math.min(lot.qty, minQty + Math.floor(Math.random() * 10)))
           const bump = takeAll ? 1 : 2 + Math.floor(Math.random() * 8)
           const amount = lot.currentPrice + bump
           extraBids.push({
@@ -139,121 +517,138 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             bidCount: lot.bidCount + 1,
           }
         })
-        lots.forEach((lot) => {
-          if (lot.channel !== 'auction' || lot.endsAt > nowTs) return
-          const mine = prev.bids.filter((b) => b.lotId === lot.id)
-          if (!mine.length) return
-          const last = mine.reduce((a, b) => (a.at > b.at ? a : b))
-          const stillWinning = lot.auctionType === 'sealed' || last.amount >= lot.currentPrice
-          const already = prev.invoices.some((inv) => inv.lotId === lot.id)
-          if (stillWinning && !already) {
-            extraInvoices.push({
-              id: `INV-${lot.id.slice(-5)}`,
-              lotId: lot.id,
-              qty: last.qty,
-              unitPrice: last.amount,
-              amount: last.amount * last.qty,
-              status: 'unpaid',
-              createdAt: nowTs,
-            })
-          }
-        })
-        if (!extraBids.length && !extraInvoices.length) return prev
+        if (!extraBids.length) return prev
         return {
           ...prev,
           lots,
-          bids: extraBids.length ? [...prev.bids, ...extraBids] : prev.bids,
-          invoices: extraInvoices.length ? [...extraInvoices, ...prev.invoices] : prev.invoices,
+          bids: [...prev.bids, ...extraBids],
         }
       })
-    }, 4500)
+    }, 12000)
     return () => clearInterval(t)
   }, [])
 
+  useEffect(() => {
+    const tick = () => {
+      setData((prev) => {
+        const settled = settleClosedAuctions(
+          prev.lots,
+          prev.bids,
+          prev.invoices,
+          prev.notices || [],
+          Date.now(),
+        )
+        const notices = buyerCareNotices(
+          prev.lots,
+          prev.bids,
+          prev.watchlist,
+          user?.accountId,
+          settled.notices,
+          Date.now(),
+          prev.settings.endingSoonMinutes,
+          prev.settings,
+        )
+        if (settled.invoices === prev.invoices && notices === (prev.notices || [])) return prev
+        return { ...prev, invoices: settled.invoices, notices }
+      })
+    }
+    tick()
+    const t = setInterval(tick, 1000)
+    return () => clearInterval(t)
+  }, [user?.accountId])
+
   const login = useCallback((accountId: string, password: string) => {
-    const id = accountId.trim().toUpperCase()
-    if (id === ADMIN_USER.accountId && password === ADMIN_USER.password) {
-      const next = {
-        accountId: ADMIN_USER.accountId,
-        company: ADMIN_USER.company,
-        email: ADMIN_USER.email,
-        role: 'admin' as const,
-      }
-      setUser(next)
-      localStorage.setItem(AUTH_KEY, JSON.stringify(next))
-      return null
-    }
-    if (id === DEMO_USER.accountId && password === DEMO_USER.password) {
-      const next = {
-        accountId: DEMO_USER.accountId,
-        company: DEMO_USER.company,
-        email: DEMO_USER.email,
-        role: 'member' as const,
-      }
-      setUser(next)
-      localStorage.setItem(AUTH_KEY, JSON.stringify(next))
-      return null
-    }
-    try {
-      const extra = JSON.parse(localStorage.getItem('livebid-members') || '[]') as Array<{
-        accountId: string
-        password: string
-        company: string
-        email: string
-      }>
-      const found = extra.find(
-        (m) => m.accountId.toUpperCase() === id && m.password === password,
-      )
-      if (found) {
-        const next = {
-          accountId: found.accountId.toUpperCase(),
-          company: found.company,
-          email: found.email,
-          role: 'member' as const,
-        }
-        setUser(next)
-        localStorage.setItem(AUTH_KEY, JSON.stringify(next))
-        return null
-      }
-    } catch {
-      /* ignore */
-    }
-    return 'Invalid account ID or password.'
-  }, [])
+    const key = accountId.trim()
+    const found = data.accounts.find(
+      (a) =>
+        a.accountId === key.toUpperCase() || a.email.toLowerCase() === key.toLowerCase(),
+    )
+    if (!found || found.password !== password) return data.settings.copy.warnLogin
+    if (found.status === 'pending') return data.settings.copy.warnPending
+    if (found.status === 'disabled') return data.settings.copy.warnDisabled
+    const next = sessionUser(found)
+    setUser(next)
+    localStorage.setItem(AUTH_KEY, JSON.stringify(next))
+    return null
+  }, [data.accounts, data.settings.copy])
 
   const register = useCallback(
     (accountId: string, company: string, email: string, password: string) => {
       if (!accountId.trim() || !company.trim() || !email.trim() || password.length < 6) {
-        return 'Fill all fields. Password must be at least 6 characters.'
+        return data.settings.copy.warnRegister
       }
-      const members = JSON.parse(localStorage.getItem('livebid-members') || '[]') as Array<{
-        accountId: string
-        password: string
-        company: string
-        email: string
-      }>
       const id = accountId.trim().toUpperCase()
-      if (
-        id === DEMO_USER.accountId ||
-        id === ADMIN_USER.accountId ||
-        members.some((m) => m.accountId.toUpperCase() === id)
-      ) {
-        return 'That account ID is already registered.'
+      if (data.accounts.some((a) => a.accountId === id)) {
+        return data.settings.copy.warnAccountTaken
       }
-      members.push({ accountId: id, password, company: company.trim(), email: email.trim() })
-      localStorage.setItem('livebid-members', JSON.stringify(members))
-      const next = {
-        accountId: id,
-        company: company.trim(),
-        email: email.trim(),
-        role: 'member' as const,
-      }
-      setUser(next)
-      localStorage.setItem(AUTH_KEY, JSON.stringify(next))
+      setData((prev) => ({
+        ...prev,
+        accounts: [
+          ...prev.accounts,
+          {
+            accountId: id,
+            password,
+            company: company.trim(),
+            email: email.trim(),
+            role: 'member',
+            status: 'pending',
+          },
+        ],
+      }))
       return null
     },
-    [],
+    [data.accounts, data.settings.copy],
   )
+
+  const RESET_KEY = 'equarios-reset'
+
+  const requestPasswordReset = useCallback((ident: string) => {
+    const key = ident.trim()
+    const found = data.accounts.find(
+      (a) =>
+        a.accountId === key.toUpperCase() || a.email.toLowerCase() === key.toLowerCase(),
+    )
+    if (!found) return { error: data.settings.copy.warnLogin }
+    if (found.status === 'disabled') return { error: data.settings.copy.warnDisabled }
+    const code = String(1000 + Math.floor(Math.random() * 9000))
+    try {
+      localStorage.setItem(
+        RESET_KEY,
+        JSON.stringify({ accountId: found.accountId, code, at: Date.now() }),
+      )
+    } catch {
+      return { error: 'Could not start a reset on this device.' }
+    }
+    return { code, email: found.email }
+  }, [data.accounts, data.settings.copy])
+
+  const resetPassword = useCallback((ident: string, code: string, password: string) => {
+    if (password.length < 6) return data.settings.copy.warnRegister
+    let packed: { accountId: string; code: string; at: number } | null = null
+    try {
+      packed = JSON.parse(localStorage.getItem(RESET_KEY) || 'null')
+    } catch {
+      packed = null
+    }
+    if (!packed?.code) return 'Request a reset code first.'
+    if (Date.now() - packed.at > 30 * 60 * 1000) return 'That reset code expired. Request a new one.'
+    if (packed.code !== code.trim()) return 'That reset code does not match.'
+    const key = ident.trim()
+    const found = data.accounts.find(
+      (a) =>
+        a.accountId === packed.accountId &&
+        (a.accountId === key.toUpperCase() || a.email.toLowerCase() === key.toLowerCase()),
+    )
+    if (!found) return data.settings.copy.warnLogin
+    setData((prev) => ({
+      ...prev,
+      accounts: prev.accounts.map((a) =>
+        a.accountId === found.accountId ? { ...a, password } : a,
+      ),
+    }))
+    localStorage.removeItem(RESET_KEY)
+    return null
+  }, [data.accounts, data.settings.copy])
 
   const logout = useCallback(() => {
     setUser(null)
@@ -283,12 +678,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const placeBid = useCallback(
     (lotId: string, amount: number, qty: number) => {
       const lot = data.lots.find((l) => l.id === lotId)
-      if (!lot || lot.channel !== 'auction') return 'Lot not found.'
-      if (lot.endsAt <= Date.now()) return 'This auction has closed.'
-      if (!Number.isInteger(qty) || qty < 1) return 'Desired qty must be a whole number of 1 or more.'
-      if (qty > lot.qty) return `Desired qty cannot exceed total pcs (${lot.qty}).`
+      if (!data.settings.features.bidding) return data.settings.copy.warnNoBid
+      if (!lot || lot.channel !== 'auction') return data.settings.copy.warnLotMissing
+      if (lot.endsAt <= Date.now()) return data.settings.copy.warnClosed
+      const qtyErr = checkOrderQty(lot, qty, data.settings.copy)
+      if (qtyErr) return qtyErr
       const min = lot.startPrice
-      if (amount < min) return `Minimum price per pc is ${min}.`
+      if (amount < min) {
+        return data.settings.copy.warnMinPrice.replace('{price}', String(min))
+      }
       const accountId = user?.accountId || 'DEMO-1001'
       setData((prev) => ({
         ...prev,
@@ -305,26 +703,89 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }))
       return null
     },
-    [data.lots, user],
+    [data.lots, data.settings, user],
+  )
+
+  const placeBids = useCallback(
+    (entries: Array<{ lotId: string; amount: number; qty: number }>) => {
+      const copy = data.settings.copy
+      const accountId = user?.accountId
+      const errors: Array<{ lotId: string; message: string }> = []
+      const ok: Array<{ lotId: string; amount: number; qty: number }> = []
+      if (!data.settings.features.bidding) {
+        return { ok: 0, errors: [{ lotId: '—', message: copy.warnNoBid }] }
+      }
+      if (!accountId) {
+        return { ok: 0, errors: [{ lotId: '—', message: copy.warnLogin }] }
+      }
+      const now = Date.now()
+      for (const entry of entries) {
+        const lot = data.lots.find((l) => l.id.toUpperCase() === entry.lotId.trim().toUpperCase())
+        if (!lot || lot.channel !== 'auction') {
+          errors.push({ lotId: entry.lotId || '—', message: copy.warnLotMissing })
+          continue
+        }
+        if (lot.endsAt <= now) {
+          errors.push({ lotId: lot.id, message: copy.warnClosed })
+          continue
+        }
+        const qtyErr = checkOrderQty(lot, entry.qty, copy)
+        if (qtyErr) {
+          errors.push({ lotId: lot.id, message: qtyErr })
+          continue
+        }
+        if (!Number.isFinite(entry.amount) || entry.amount < lot.startPrice) {
+          errors.push({
+            lotId: lot.id,
+            message: copy.warnMinPrice.replace('{price}', String(lot.startPrice)),
+          })
+          continue
+        }
+        ok.push({ lotId: lot.id, amount: entry.amount, qty: entry.qty })
+      }
+      if (!ok.length) return { ok: 0, errors }
+      const at = Date.now()
+      setData((prev) => {
+        let lots = prev.lots
+        let bids = prev.bids
+        for (const entry of ok) {
+          lots = lots.map((l) =>
+            l.id === entry.lotId
+              ? {
+                  ...l,
+                  currentPrice: Math.max(l.currentPrice, entry.amount),
+                  bidCount: l.bidCount + 1,
+                }
+              : l,
+          )
+          bids = [...bids, { lotId: entry.lotId, accountId, amount: entry.amount, qty: entry.qty, at }]
+        }
+        return { ...prev, lots, bids }
+      })
+      return { ok: ok.length, errors }
+    },
+    [data.lots, data.settings, user],
   )
 
   const buyNow = useCallback(
     (lotId: string, qty?: number) => {
       const lot = data.lots.find((l) => l.id === lotId)
       if (!lot || lot.channel !== 'marketplace' || !lot.buyNowPrice) {
-        return 'Listing not available.'
+        return data.settings.copy.warnListingGone.replace('{id}', lotId)
       }
       const pcs = qty ?? lot.qty
-      if (!Number.isInteger(pcs) || pcs < 1) return 'Desired qty must be a whole number of 1 or more.'
-      if (pcs > lot.qty) return `Desired qty cannot exceed total pcs (${lot.qty}).`
+      const qtyErr = checkOrderQty(lot, pcs, data.settings.copy)
+      if (qtyErr) return qtyErr
       const invoice: Invoice = {
         id: `INV-${Date.now().toString().slice(-6)}`,
         lotId,
+        channel: 'marketplace',
         qty: pcs,
         unitPrice: lot.buyNowPrice,
         amount: lot.buyNowPrice * pcs,
         status: 'unpaid',
         createdAt: Date.now(),
+        accountId: user?.accountId,
       }
       setData((prev) => ({
         ...prev,
@@ -338,19 +799,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }))
       return null
     },
-    [data.lots],
+    [data.lots, data.settings.copy, user],
   )
 
   const addToCart = useCallback(
     (lotId: string, qty: number) => {
       const lot = data.lots.find((l) => l.id === lotId)
+      if (!data.settings.features.cart) return data.settings.copy.warnCart
       if (!lot || lot.channel !== 'marketplace' || !lot.buyNowPrice) {
-        return 'Listing not available.'
+        return data.settings.copy.warnListingGone.replace('{id}', lotId)
       }
-      if (!Number.isInteger(qty) || qty < 1) return 'Desired qty must be a whole number of 1 or more.'
+      if (!Number.isInteger(qty) || qty < 1) return data.settings.copy.warnQty
       const already = data.cart.find((c) => c.lotId === lotId)?.qty ?? 0
       const nextQty = already + qty
-      if (nextQty > lot.qty) return `Cart cannot exceed total pcs (${lot.qty}).`
+      const qtyErr = checkOrderQty(lot, nextQty, data.settings.copy)
+      if (qtyErr) return qtyErr
       setData((prev) => {
         const exists = prev.cart.some((c) => c.lotId === lotId)
         const cart = exists
@@ -360,7 +823,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       })
       return null
     },
-    [data.lots, data.cart],
+    [data.lots, data.cart, data.settings],
   )
 
   const removeFromCart = useCallback((lotId: string) => {
@@ -368,22 +831,25 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const checkoutCart = useCallback(() => {
-    if (!data.cart.length) return 'Cart is empty.'
+    if (!data.cart.length) return data.settings.copy.emptyCart
     const invoices: Invoice[] = []
     for (const item of data.cart) {
       const lot = data.lots.find((l) => l.id === item.lotId)
       if (!lot || lot.channel !== 'marketplace' || !lot.buyNowPrice) {
-        return `Listing ${item.lotId} is no longer available.`
+        return data.settings.copy.warnListingGone.replace('{id}', item.lotId)
       }
-      if (item.qty > lot.qty) return `${lot.model}: only ${lot.qty} pcs left.`
+      const qtyErr = checkOrderQty(lot, item.qty, data.settings.copy)
+      if (qtyErr) return `${lot.model}: ${qtyErr}`
       invoices.push({
         id: `INV-${Date.now().toString().slice(-6)}-${item.lotId.slice(-3)}`,
         lotId: item.lotId,
+        channel: 'marketplace',
         qty: item.qty,
         unitPrice: lot.buyNowPrice,
         amount: lot.buyNowPrice * item.qty,
         status: 'unpaid',
         createdAt: Date.now(),
+        accountId: user?.accountId,
       })
     }
     const byId = new Map(data.cart.map((c) => [c.lotId, c.qty]))
@@ -400,7 +866,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       invoices: [...invoices, ...prev.invoices],
     }))
     return null
-  }, [data.cart, data.lots])
+  }, [data.cart, data.lots, data.settings, user])
 
   const toggleWatch = useCallback((lotId: string) => {
     setData((prev) => ({
@@ -415,33 +881,268 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setData((prev) => ({ ...prev, lots: [lot, ...prev.lots] }))
   }, [])
 
-  const extendLot = useCallback((lotId: string, hours: number) => {
+  const updateLot = useCallback((lot: Lot) => {
     setData((prev) => ({
       ...prev,
-      lots: prev.lots.map((l) =>
-        l.id === lotId ? { ...l, endsAt: Math.max(l.endsAt, Date.now()) + hours * 60 * 60 * 1000 } : l,
-      ),
+      lots: prev.lots.map((l) => (l.id === lot.id ? { ...l, ...lot } : l)),
     }))
+  }, [])
+
+  const removeLot = useCallback((lotId: string) => {
+    setData((prev) => ({
+      ...prev,
+      lots: prev.lots.filter((l) => l.id !== lotId),
+      cart: prev.cart.filter((c) => c.lotId !== lotId),
+      watchlist: prev.watchlist.filter((id) => id !== lotId),
+    }))
+  }, [])
+
+  const saveSettings = useCallback((next: SiteSettings) => {
+    if (user?.role !== 'superadmin') return
+    setData((prev) => ({ ...prev, settings: mergeSettings(next) }))
+  }, [user])
+
+  const saveAccount = useCallback(
+    (account: Account) => {
+      if (user?.role !== 'superadmin') return 'Only super admin can manage accounts.'
+      const id = account.accountId.trim().toUpperCase()
+      if (!id || !account.company.trim() || !account.email.trim()) return 'Fill account ID, company, and email.'
+      if (account.role === 'superadmin' && id !== SUPER_USER.accountId) {
+        return 'You cannot create another super admin.'
+      }
+      const existing = data.accounts.find((a) => a.accountId === id)
+      if (!existing && account.password.length < 6) return 'Password must be at least 6 characters.'
+      const password = account.password || existing?.password
+      if (!password || password.length < 6) return 'Password must be at least 6 characters.'
+      const next: Account = {
+        accountId: id,
+        password,
+        company: account.company.trim(),
+        email: account.email.trim(),
+        role: id === SUPER_USER.accountId ? 'superadmin' : account.role === 'admin' ? 'admin' : 'member',
+        status: id === SUPER_USER.accountId ? 'active' : account.status,
+      }
+      setData((prev) => ({
+        ...prev,
+        accounts: existing
+          ? prev.accounts.map((a) => (a.accountId === id ? next : a))
+          : [...prev.accounts, next],
+      }))
+      if (user.accountId === id) {
+        const session = sessionUser(next)
+        setUser(session)
+        localStorage.setItem(AUTH_KEY, JSON.stringify(session))
+      }
+      return null
+    },
+    [user, data.accounts],
+  )
+
+  const removeAccount = useCallback(
+    (accountId: string) => {
+      if (user?.role !== 'superadmin') return 'Only super admin can manage accounts.'
+      const id = accountId.toUpperCase()
+      if (id === SUPER_USER.accountId) return 'The super admin account cannot be removed.'
+      if (id === user.accountId) return 'You cannot remove your own account.'
+      setData((prev) => ({
+        ...prev,
+        accounts: prev.accounts.filter((a) => a.accountId !== id),
+      }))
+      return null
+    },
+    [user],
+  )
+
+  const setAccountStatus = useCallback(
+    (accountId: string, status: Account['status']) => {
+      if (user?.role !== 'superadmin') return 'Only super admin can manage accounts.'
+      const id = accountId.toUpperCase()
+      if (id === SUPER_USER.accountId) return 'The super admin account stays active.'
+      setData((prev) => ({
+        ...prev,
+        accounts: prev.accounts.map((a) => (a.accountId === id ? { ...a, status } : a)),
+      }))
+      return null
+    },
+    [user],
+  )
+
+  const extendLot = useCallback((lotId: string, minutes?: number) => {
+    setData((prev) => {
+      const mins = Math.max(1, minutes ?? prev.settings.extendMinutes ?? (prev.settings.extendHours || 2) * 60)
+      return {
+        ...prev,
+        lots: prev.lots.map((l) =>
+          l.id === lotId ? { ...l, endsAt: Math.max(l.endsAt, Date.now()) + mins * 60 * 1000 } : l,
+        ),
+      }
+    })
   }, [])
 
   const reopenAuctions = useCallback(() => {
-    const hour = 60 * 60 * 1000
+    setData((prev) => {
+      const mins = Math.max(1, prev.settings.reopenMinutes ?? (prev.settings.reopenHours || 4) * 60)
+      return {
+        ...prev,
+        lots: prev.lots.map((l) =>
+          l.channel === 'auction' ? { ...l, endsAt: Date.now() + mins * 60 * 1000 } : l,
+        ),
+      }
+    })
+  }, [])
+
+  const submitPayment = useCallback(
+    (id: string, receiptName: string, receiptData: string) => {
+      const copy = data.settings.copy
+      const inv = data.invoices.find((i) => i.id === id)
+      if (!inv) return copy.warnLotMissing
+      if (inv.status === 'paid') return copy.okPaid
+      if (inv.status === 'pending_review' && user?.role === 'member') return copy.payWaiting
+      if (user?.role === 'member' && inv.accountId && inv.accountId !== user.accountId) {
+        return copy.warnLotMissing
+      }
+      if (!receiptData || !receiptName) return copy.warnReceipt
+      setData((prev) => ({
+        ...prev,
+        invoices: prev.invoices.map((row) =>
+          row.id === id
+            ? settleInvoice({
+                ...row,
+                receiptName,
+                receiptData,
+                paidDeclaredAt: Date.now(),
+                adminReview: undefined,
+                superReview: undefined,
+              })
+            : row,
+        ),
+      }))
+      return null
+    },
+    [data.invoices, data.settings.copy, user],
+  )
+
+  const reviewPayment = useCallback(
+    (id: string, side: PayReviewSide, decision: PayDecision) => {
+      if (user?.role !== 'admin' && user?.role !== 'superadmin') {
+        return 'Only admin or super admin can review payments.'
+      }
+      if (side === 'super' && user.role !== 'superadmin') {
+        return 'Only super admin can give the super-admin decision.'
+      }
+      if (side === 'admin' && user.role !== 'admin' && user.role !== 'superadmin') {
+        return 'Only admin can give the admin decision.'
+      }
+      const inv = data.invoices.find((i) => i.id === id)
+      if (!inv) return data.settings.copy.warnLotMissing
+      if (!inv.receiptData) return data.settings.copy.warnReceipt
+      const review = { decision, by: user.accountId, at: Date.now() }
+      setData((prev) => ({
+        ...prev,
+        invoices: prev.invoices.map((row) => {
+          if (row.id !== id) return row
+          const next = {
+            ...row,
+            adminReview: side === 'admin' ? review : row.adminReview,
+            superReview: side === 'super' ? review : row.superReview,
+          }
+          return settleInvoice(next)
+        }),
+      }))
+      return null
+    },
+    [data.invoices, data.settings.copy, user],
+  )
+
+  const saveInvoice = useCallback(
+    (invoice: Invoice, previousId?: string) => {
+      if (user?.role !== 'admin' && user?.role !== 'superadmin') {
+        return 'Only admin or super admin can edit invoices.'
+      }
+      const id = invoice.id.trim().toUpperCase()
+      if (!id) return 'Invoice ID is required.'
+      if (!invoice.lotId) return 'Choose a lot.'
+      if (!Number.isInteger(invoice.qty) || invoice.qty < 1) return 'Qty must be a whole number of 1 or more.'
+      if (!Number.isFinite(invoice.unitPrice) || invoice.unitPrice < 1) return 'Enter a valid unit price.'
+      const lot = data.lots.find((l) => l.id === invoice.lotId)
+      const next: Invoice = {
+        ...invoice,
+        id,
+        lotId: invoice.lotId,
+        channel: lot?.channel || invoice.channel || 'marketplace',
+        qty: invoice.qty,
+        unitPrice: invoice.unitPrice,
+        amount: invoice.qty * invoice.unitPrice,
+        accountId: invoice.accountId?.trim().toUpperCase() || undefined,
+        createdAt: invoice.createdAt || Date.now(),
+      }
+      const replaceId = (previousId || id).toUpperCase()
+      setData((prev) => ({
+        ...prev,
+        invoices: [
+          next,
+          ...prev.invoices.filter((row) => row.id !== replaceId && row.id !== id),
+        ],
+      }))
+      return null
+    },
+    [data.lots, user],
+  )
+
+  const removeInvoice = useCallback(
+    (id: string) => {
+      if (user?.role !== 'admin' && user?.role !== 'superadmin') {
+        return 'Only admin or super admin can delete invoices.'
+      }
+      setData((prev) => ({ ...prev, invoices: prev.invoices.filter((row) => row.id !== id) }))
+      return null
+    },
+    [user],
+  )
+
+  const clearPaymentConfirmation = useCallback(
+    (id: string) => {
+      if (user?.role !== 'admin' && user?.role !== 'superadmin') {
+        return 'Only admin or super admin can edit payment confirmations.'
+      }
+      setData((prev) => ({
+        ...prev,
+        invoices: prev.invoices.map((row) => {
+          if (row.id !== id) return row
+          return settleInvoice({
+            ...row,
+            receiptName: undefined,
+            receiptData: undefined,
+            paidDeclaredAt: undefined,
+            adminReview: undefined,
+            superReview: undefined,
+          })
+        }),
+      }))
+      return null
+    },
+    [user],
+  )
+
+  const markInvoiceOpened = useCallback((id: string) => {
     setData((prev) => ({
       ...prev,
-      lots: prev.lots.map((l) =>
-        l.channel === 'auction' ? { ...l, endsAt: Date.now() + 4 * hour } : l,
-      ),
+      invoices: prev.invoices.map((row) => (row.id === id ? { ...row, opened: true } : row)),
     }))
   }, [])
 
-  const payInvoice = useCallback((id: string) => {
-    setData((prev) => ({
-      ...prev,
-      invoices: prev.invoices.map((inv) =>
-        inv.id === id ? { ...inv, status: 'paid' } : inv,
-      ),
-    }))
-  }, [])
+  const markNoticesRead = useCallback(() => {
+    setData((prev) => {
+      const mine = user?.accountId
+      if (!mine) return prev
+      const list = prev.notices || []
+      if (!list.some((n) => n.accountId === mine && !n.read)) return prev
+      return {
+        ...prev,
+        notices: list.map((n) => (n.accountId === mine && !n.read ? { ...n, read: true } : n)),
+      }
+    })
+  }, [user])
 
   const value = useMemo(
     () => ({
@@ -450,47 +1151,84 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       bids: data.bids,
       watchlist: data.watchlist,
       invoices: data.invoices,
+      notices: data.notices || [],
       cart: data.cart,
-      now,
+      accounts: data.accounts,
+      settings: data.settings,
+      isSuperAdmin: user?.role === 'superadmin',
+      isStaff: user?.role === 'admin' || user?.role === 'superadmin',
       login,
       register,
+      requestPasswordReset,
+      resetPassword,
       logout,
       placeBid,
+      placeBids,
       buyNow,
       addToCart,
       removeFromCart,
       checkoutCart,
       toggleWatch,
-      payInvoice,
+      submitPayment,
+      reviewPayment,
+      saveInvoice,
+      removeInvoice,
+      clearPaymentConfirmation,
+      markInvoiceOpened,
+      markNoticesRead,
       myBid,
       myLastBid,
       addLot,
+      updateLot,
+      removeLot,
+      saveSettings,
+      saveAccount,
+      removeAccount,
+      setAccountStatus,
       extendLot,
       reopenAuctions,
     }),
     [
       user,
       data,
-      now,
       login,
       register,
+      requestPasswordReset,
+      resetPassword,
       logout,
       placeBid,
+      placeBids,
       buyNow,
       addToCart,
       removeFromCart,
       checkoutCart,
       toggleWatch,
-      payInvoice,
+      submitPayment,
+      reviewPayment,
+      saveInvoice,
+      removeInvoice,
+      clearPaymentConfirmation,
+      markInvoiceOpened,
+      markNoticesRead,
       myBid,
       myLastBid,
       addLot,
+      updateLot,
+      removeLot,
+      saveSettings,
+      saveAccount,
+      removeAccount,
+      setAccountStatus,
       extendLot,
       reopenAuctions,
     ],
   )
 
-  return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>
+  return (
+    <StoreContext.Provider value={value}>
+      <NowContext.Provider value={now}>{children}</NowContext.Provider>
+    </StoreContext.Provider>
+  )
 }
 
 export function useStore() {

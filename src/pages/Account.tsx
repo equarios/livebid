@@ -1,13 +1,13 @@
 import { useStore } from '../store'
 
 export function Account() {
-  const { user } = useStore()
+  const { user, settings } = useStore()
   return (
     <div>
       <div className="page-head">
         <div>
-          <h1>Account</h1>
-          <p className="muted">Member profile for this demo workspace.</p>
+          <h1>{settings.copy.accountTitle}</h1>
+          <p className="muted">{settings.copy.accountIntro}</p>
         </div>
       </div>
       <div className="card account-card">
@@ -26,7 +26,17 @@ export function Account() {
           </div>
           <div>
             <dt>Role</dt>
-            <dd>{user?.role || 'member'}</dd>
+            <dd>
+              {user?.role === 'superadmin'
+                ? 'Super admin'
+                : user?.role === 'admin'
+                  ? 'Admin'
+                  : 'Client'}
+            </dd>
+          </div>
+          <div>
+            <dt>Status</dt>
+            <dd>{user?.status || 'active'}</dd>
           </div>
           <div>
             <dt>Currency</dt>
