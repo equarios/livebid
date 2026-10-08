@@ -3,7 +3,7 @@ import { TimeLeft } from './TimeLeft'
 import { isSealedLot, typePillClass } from '../lib/auctionLists'
 import { lotTypeLabel, specLocks, usd } from '../lib/format'
 import { moqLabel } from '../lib/moq'
-import { useStore } from '../store'
+import { useNow, useStore } from '../store'
 import type { Lot } from '../types'
 
 export function LotCompare({
@@ -16,6 +16,7 @@ export function LotCompare({
   onClear: (id: string) => void
 }) {
   const { lots, settings } = useStore()
+  const now = useNow()
   const rows = ids.map((id) => lots.find((l) => l.id === id)).filter((l): l is Lot => Boolean(l))
   if (rows.length < 2) return null
 
@@ -63,7 +64,7 @@ export function LotCompare({
               </div>
               <div>
                 <dt>
-                  {lot.channel === 'auction' && isSealedLot(lot, settings) && lot.endsAt > Date.now()
+                  {lot.channel === 'auction' && isSealedLot(lot, settings) && lot.endsAt > now
                     ? 'Start / pc'
                     : 'Price / pc'}
                 </dt>
@@ -72,7 +73,7 @@ export function LotCompare({
                     lot.buyNowPrice ??
                       (lot.channel === 'auction' &&
                       isSealedLot(lot, settings) &&
-                      lot.endsAt > Date.now()
+                      lot.endsAt > now
                         ? lot.startPrice
                         : lot.currentPrice),
                   )}

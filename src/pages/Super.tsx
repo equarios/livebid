@@ -1,9 +1,11 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { InvoiceDesk } from '../components/InvoiceDesk'
+import { ListingReview } from '../components/ListingReview'
 import { ModalShell } from '../components/ModalShell'
+import { TimeLeft } from '../components/TimeLeft'
 import { DEFAULT_SETTINGS } from '../data'
 import { RESERVED_LIST_SLUGS, slugAuctionType } from '../lib/auctionLists'
-import { useStore } from '../store'
+import { useNow, useStore } from '../store'
 import type { Account, AccountRole, AccountStatus, AuctionFillMode, AuctionTypeDef, FeatureFlags, SiteSettings } from '../types'
 
 const ROLE_LABEL: Record<AccountRole, string> = {
@@ -129,6 +131,7 @@ function AddAuctionTypeDialog({
   const [label, setLabel] = useState('')
   const [slug, setSlug] = useState('')
   const [fillMode, setFillMode] = useState<AuctionFillMode>('live')
+  const [closeMinutes, setCloseMinutes] = useState(240)
   const [error, setError] = useState<string | null>(null)
   const value = slugAuctionType(slug || label)
 
@@ -146,7 +149,14 @@ function AddAuctionTypeDialog({
       setError(`“${value}” already exists.`)
       return
     }
-    onCreate({ value, label: name, fillMode })
+    const mins = Math.max(1, Math.floor(closeMinutes) || 240)
+    onCreate({
+      value,
+      label: name,
+      fillMode,
+      closeMinutes: mins,
+      closesAt: Date.now() + mins * 60 * 1000,
+    })
   }
 
   return (
@@ -192,6 +202,16 @@ function AddAuctionTypeDialog({
             <option value="hybrid">Hybrid</option>
           </select>
         </label>
+        <label>
+          Default close (minutes)
+          <input
+            type="number"
+            min={1}
+            value={closeMinutes}
+            onChange={(e) => setCloseMinutes(Number(e.target.value))}
+          />
+        </label>
+        <p className="muted tiny">First session starts now for that long. Later publishes join the open clock.</p>
         {error ? <p className="error">{error}</p> : null}
         <div className="modal-actions">
           <button type="button" className="btn" onClick={onClose}>
@@ -207,7 +227,9 @@ function AddAuctionTypeDialog({
 }
 
 export function Super() {
-  const { accounts, invoices, lots, settings, saveSettings, saveAccount, removeAccount, setAccountStatus } = useStore()
+  const { accounts, invoices, lots, listingDrops, settings, saveSettings, saveAccount, removeAccount, setAccountStatus } =
+    useStore()
+  const now = useNow()
   const [draft, setDraft] = useState<SiteSettings>(settings)
   const [settingsMsg, setSettingsMsg] = useState<string | null>(null)
   const [addTypeOpen, setAddTypeOpen] = useState(false)
@@ -215,6 +237,7 @@ export function Super() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [accountId, setAccountId] = useState('')
   const [company, setCompany] = useState('')
+  const [address, setAddress] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [role, setRole] = useState<AccountRole>('member')
@@ -222,9 +245,28 @@ export function Super() {
 
   const pending = accounts.filter((a) => a.status === 'pending')
   const payRequests = invoices.filter((i) => i.status === 'pending_review')
-  const [tab, setTab] = useState<'people' | 'payments' | 'design' | 'copy' | 'features' | 'catalog' | 'types'>(
-    payRequests.length ? 'payments' : 'people',
-  )
+  const issueWait = invoices.filter((i) => i.status === 'draft')
+  const catalogWait = (listingDrops || []).filter((d) => d.status === 'pending')
+  const [tab, setTab] = useState<
+    'confirm' | 'people' | 'payments' | 'site' | 'copy' | 'features' | 'types'
+  >(catalogWait.length ? 'confirm' : issueWait.length || payRequests.length ? 'payments' : 'people')
+
+  useEffect(() => {
+    setDraft((prev) => ({
+      ...prev,
+      auctionTypes: settings.auctionTypes.map((live) => {
+        const d = prev.auctionTypes.find((x) => x.value === live.value)
+        if (!d) return live
+        return {
+          ...live,
+          label: d.label,
+          fillMode: d.fillMode,
+          intro: d.intro,
+          closeMinutes: d.closeMinutes,
+        }
+      }),
+    }))
+  }, [settings.auctionTypes])
 
   function publishAuctionType(row: AuctionTypeDef) {
     const auctionTypes = [...settings.auctionTypes.filter((t) => t.value !== row.value), row]
@@ -239,6 +281,7 @@ export function Super() {
     setEditingId(null)
     setAccountId('')
     setCompany('')
+    setAddress('')
     setEmail('')
     setPassword('')
     setRole('member')
@@ -249,6 +292,7 @@ export function Super() {
     setEditingId(a.accountId)
     setAccountId(a.accountId)
     setCompany(a.company)
+    setAddress(a.address || '')
     setEmail(a.email)
     setPassword('')
     setRole(a.role === 'superadmin' ? 'superadmin' : a.role)
@@ -261,6 +305,7 @@ export function Super() {
     const err = saveAccount({
       accountId: editingId || accountId,
       company,
+      address,
       email,
       password,
       role: editingId === 'SUPER-0001' ? 'superadmin' : role === 'admin' ? 'admin' : 'member',
@@ -274,7 +319,7 @@ export function Super() {
     resetAccountForm()
   }
 
-  function onSaveSettings(e: FormEvent) {
+  function onSaveSettings(e: FormEvent, clocks: 'keep' | 'draft' = 'keep') {
     e.preventDefault()
     const grades = draft.grades.map((g) => g.trim()).filter(Boolean)
     if (!draft.brandName.trim() || !grades.length) {
@@ -293,6 +338,7 @@ export function Super() {
       tagline: draft.tagline.trim(),
       marketplaceLabel: draft.marketplaceLabel.trim() || 'Marketplace',
       grades,
+      auctionTypes: clocks === 'keep' ? settings.auctionTypes : draft.auctionTypes,
       defaultMoq: Math.max(0, Math.floor(Number(draft.defaultMoq) || 0)),
       reopenMinutes: Math.max(1, Math.floor(Number(draft.reopenMinutes ?? (draft.reopenHours || 4) * 60) || 1)),
       extendMinutes: Math.max(1, Math.floor(Number(draft.extendMinutes ?? (draft.extendHours || 2) * 60) || 1)),
@@ -300,92 +346,60 @@ export function Super() {
       extendHours: Math.max(1 / 60, Number(draft.extendMinutes ?? (draft.extendHours || 2) * 60) / 60),
       endingSoonMinutes: Math.max(1, Math.floor(Number(draft.endingSoonMinutes) || 15)),
     })
-    setSettingsMsg('Settings saved. Clients see these changes immediately.')
+    setSettingsMsg(
+      clocks === 'draft'
+        ? 'Auction types saved. Open lists keep their current close unless you started a new clock.'
+        : 'Settings saved. Auction close times were left unchanged.',
+    )
   }
 
   return (
-    <div>
-      <div className="page-head">
-        <div>
-          <h1>Super admin</h1>
-          <p className="muted">
-            Control accounts, colors, text, buttons, warnings, icons, and which features clients can use.
-            Regular admins cannot open this page.
-          </p>
+    <div className="staff-page">
+      <div className="auction-desk">
+        <div className="auction-desk-head">
+          <div>
+            <strong>Super admin</strong>
+            <p className="muted tiny auction-desk-recap">
+              Confirmations and site control. Admin lists stock and stamps receipts; you publish catalogs, final-confirm
+              payments, and own accounts plus settings.
+            </p>
+          </div>
+          {tab === 'types' ? (
+            <div className="auction-desk-head-actions">
+              <button type="button" className="btn btn-primary" onClick={() => setAddTypeOpen(true)}>
+                Add auction type
+              </button>
+            </div>
+          ) : null}
         </div>
-        <button type="button" className="btn btn-primary" onClick={() => setAddTypeOpen(true)}>
-          Add auction type
-        </button>
+        <div className="super-tabs staff-tabs">
+          {(
+            [
+              ['confirm', catalogWait.length ? `Confirm (${catalogWait.reduce((n, d) => n + d.items.length, 0)})` : 'Confirm'],
+              [
+                'payments',
+                issueWait.length || payRequests.length
+                  ? `Invoices (${issueWait.length + payRequests.length})`
+                  : 'Invoices',
+              ],
+              ['people', pending.length ? `Accounts (${pending.length})` : 'Accounts'],
+              ['site', 'Site'],
+              ['types', 'Auction types'],
+              ['copy', 'Text'],
+              ['features', 'Functions'],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              className={`btn btn-ghost ${tab === id ? 'on' : ''}`}
+              onClick={() => setTab(id)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
-      <div className="super-tabs">
-        {(
-          [
-            ['payments', payRequests.length ? `Invoices (${payRequests.length})` : 'Invoices'],
-            ['people', 'Accounts'],
-            ['design', 'Design'],
-            ['copy', 'Text & buttons'],
-            ['features', 'Functions'],
-            ['catalog', 'Catalog'],
-            ['types', 'Auction types'],
-          ] as const
-        ).map(([id, label]) => (
-          <button
-            key={id}
-            type="button"
-            className={`btn btn-ghost ${tab === id ? 'on' : ''}`}
-            onClick={() => setTab(id)}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-      {payRequests.length ? (
-        <p className="site-notice">
-          {payRequests.length} payment confirmation request{payRequests.length === 1 ? '' : 's'} waiting.
-          Open the Payments tab — both admin and super admin must accept.
-        </p>
-      ) : null}
-
-      {tab === 'people' && pending.length ? (
-        <section className="card admin-section">
-          <h2>Pending approvals ({pending.length})</h2>
-          <table className="auction-table">
-            <thead>
-              <tr>
-                <th>Account</th>
-                <th>Company</th>
-                <th>Email</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {pending.map((a) => (
-                <tr key={a.accountId}>
-                  <td className="mono">{a.accountId}</td>
-                  <td>{a.company}</td>
-                  <td>{a.email}</td>
-                  <td className="row-actions">
-                    <button
-                      type="button"
-                      className="btn btn-primary btn-sm"
-                      onClick={() => setAccountStatus(a.accountId, 'active')}
-                    >
-                      Approve
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm"
-                      onClick={() => setAccountStatus(a.accountId, 'disabled')}
-                    >
-                      Reject
-                    </button>
-                  </td>
-                </tr>
-            ))}
-            </tbody>
-          </table>
-        </section>
-      ) : null}
 
       {tab === 'people' ? <section className="card admin-section">
         <h2>{editingId ? `Edit ${editingId}` : 'Add admin or client'}</h2>
@@ -401,6 +415,10 @@ export function Super() {
           <label>
             Company
             <input value={company} onChange={(e) => setCompany(e.target.value)} />
+          </label>
+          <label className="admin-span">
+            Ship / bill address
+            <textarea rows={3} value={address} onChange={(e) => setAddress(e.target.value)} />
           </label>
           <label>
             Email
@@ -510,17 +528,214 @@ export function Super() {
         </table>
       </section> : null}
 
+      {tab === 'confirm' ? <ListingReview /> : null}
+
       {tab === 'payments' ? (
         <section className="card admin-section pay-queue-card">
-          <h2>Invoices &amp; payment confirmations</h2>
-          <InvoiceDesk canAdmin canSuper />
+          <h2>Issue invoices &amp; payment confirmations</h2>
+          <InvoiceDesk canSuper allowCreate={false} />
         </section>
       ) : null}
 
-      {tab === 'design' ? (
+      {tab === 'site' ? (
         <section className="card admin-section">
-          <h2>Design</h2>
-          <form className="admin-form" onSubmit={onSaveSettings}>
+          <h2>Site</h2>
+          <form className="admin-form" onSubmit={(e) => onSaveSettings(e, 'keep')}>
+            <label>
+              Brand name
+              <input
+                value={draft.brandName}
+                onChange={(e) => setDraft({ ...draft, brandName: e.target.value })}
+              />
+            </label>
+            <label>
+              Brand mark
+              <input
+                value={draft.brandMark}
+                onChange={(e) => setDraft({ ...draft, brandMark: e.target.value })}
+              />
+            </label>
+            <label className="admin-span">
+              Brand logo
+              <input
+                value={draft.brandLogo}
+                onChange={(e) => setDraft({ ...draft, brandLogo: e.target.value })}
+              />
+            </label>
+            <label>
+              Tagline
+              <input
+                value={draft.tagline}
+                onChange={(e) => setDraft({ ...draft, tagline: e.target.value })}
+              />
+            </label>
+            <label>
+              Marketplace label
+              <input
+                value={draft.marketplaceLabel}
+                onChange={(e) => setDraft({ ...draft, marketplaceLabel: e.target.value })}
+              />
+            </label>
+            <label>
+              Grades (comma separated)
+              <input
+                value={draft.grades.join(', ')}
+                onChange={(e) =>
+                  setDraft({
+                    ...draft,
+                    grades: e.target.value.split(',').map((g) => g.trim()).filter(Boolean),
+                  })
+                }
+              />
+            </label>
+            <label>
+              Default MOQ (0 = none)
+              <input
+                type="number"
+                min={0}
+                value={draft.defaultMoq}
+                onChange={(e) => setDraft({ ...draft, defaultMoq: Number(e.target.value) })}
+              />
+            </label>
+            <label>
+              Reopen minutes
+              <input
+                type="number"
+                min={1}
+                step={1}
+                value={draft.reopenMinutes ?? Math.round((draft.reopenHours || 4) * 60)}
+                onChange={(e) =>
+                  setDraft({
+                    ...draft,
+                    reopenMinutes: Number(e.target.value),
+                    reopenHours: Number(e.target.value) / 60,
+                  })
+                }
+              />
+            </label>
+            <label>
+              Extend minutes
+              <input
+                type="number"
+                min={1}
+                step={1}
+                value={draft.extendMinutes ?? Math.round((draft.extendHours || 2) * 60)}
+                onChange={(e) =>
+                  setDraft({
+                    ...draft,
+                    extendMinutes: Number(e.target.value),
+                    extendHours: Number(e.target.value) / 60,
+                  })
+                }
+              />
+            </label>
+            <label className="admin-span">
+              Invoice legal name
+              <input
+                value={draft.invoice.legalName}
+                onChange={(e) => setDraft({ ...draft, invoice: { ...draft.invoice, legalName: e.target.value } })}
+              />
+            </label>
+            <label className="admin-span">
+              Invoice address
+              <textarea
+                rows={3}
+                value={draft.invoice.address}
+                onChange={(e) => setDraft({ ...draft, invoice: { ...draft.invoice, address: e.target.value } })}
+              />
+            </label>
+            <label>
+              Invoice tel
+              <input
+                value={draft.invoice.tel}
+                onChange={(e) => setDraft({ ...draft, invoice: { ...draft.invoice, tel: e.target.value } })}
+              />
+            </label>
+            <label>
+              Terms
+              <input
+                value={draft.invoice.terms}
+                onChange={(e) => setDraft({ ...draft, invoice: { ...draft.invoice, terms: e.target.value } })}
+              />
+            </label>
+            <label>
+              Pay days
+              <input
+                type="number"
+                min={1}
+                value={draft.invoice.payDays}
+                onChange={(e) =>
+                  setDraft({ ...draft, invoice: { ...draft.invoice, payDays: Number(e.target.value) } })
+                }
+              />
+            </label>
+            <label>
+              Optional fee % (admin applies per invoice)
+              <input
+                type="number"
+                min={0}
+                step={0.1}
+                value={draft.invoice.feePct}
+                onChange={(e) =>
+                  setDraft({ ...draft, invoice: { ...draft.invoice, feePct: Number(e.target.value) } })
+                }
+              />
+            </label>
+            <label>
+              SWIFT
+              <input
+                value={draft.invoice.swift}
+                onChange={(e) => setDraft({ ...draft, invoice: { ...draft.invoice, swift: e.target.value } })}
+              />
+            </label>
+            <label className="admin-span">
+              Bank name
+              <input
+                value={draft.invoice.bankName}
+                onChange={(e) => setDraft({ ...draft, invoice: { ...draft.invoice, bankName: e.target.value } })}
+              />
+            </label>
+            <label>
+              Branch
+              <input
+                value={draft.invoice.branchName}
+                onChange={(e) => setDraft({ ...draft, invoice: { ...draft.invoice, branchName: e.target.value } })}
+              />
+            </label>
+            <label className="admin-span">
+              Branch address
+              <input
+                value={draft.invoice.branchAddress}
+                onChange={(e) =>
+                  setDraft({ ...draft, invoice: { ...draft.invoice, branchAddress: e.target.value } })
+                }
+              />
+            </label>
+            <label>
+              Account number
+              <input
+                value={draft.invoice.accountNumber}
+                onChange={(e) =>
+                  setDraft({ ...draft, invoice: { ...draft.invoice, accountNumber: e.target.value } })
+                }
+              />
+            </label>
+            <label className="admin-span">
+              Beneficiary
+              <input
+                value={draft.invoice.beneficiary}
+                onChange={(e) => setDraft({ ...draft, invoice: { ...draft.invoice, beneficiary: e.target.value } })}
+              />
+            </label>
+            <label>
+              Ending-soon minutes
+              <input
+                type="number"
+                min={1}
+                value={draft.endingSoonMinutes}
+                onChange={(e) => setDraft({ ...draft, endingSoonMinutes: Number(e.target.value) })}
+              />
+            </label>
             {(
               [
                 ['navy', 'Primary'],
@@ -565,8 +780,53 @@ export function Super() {
                 onChange={(e) => setDraft({ ...draft, icons: { favourite: e.target.value } })}
               />
             </label>
+            <fieldset className="admin-toggles">
+              <legend>Pages</legend>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={draft.showAuctions}
+                  onChange={(e) => setDraft({ ...draft, showAuctions: e.target.checked })}
+                />
+                Auctions
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={draft.showMarketplace}
+                  onChange={(e) => setDraft({ ...draft, showMarketplace: e.target.checked })}
+                />
+                Marketplace
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={draft.showFavourites}
+                  onChange={(e) => setDraft({ ...draft, showFavourites: e.target.checked })}
+                />
+                Favourites
+              </label>
+            </fieldset>
+            <fieldset className="admin-toggles">
+              <legend>Filters clients see</legend>
+              {(['maker', 'grade', 'capacity'] as const).map((key) => (
+                <label key={key}>
+                  <input
+                    type="checkbox"
+                    checked={draft.filters[key]}
+                    onChange={(e) =>
+                      setDraft({
+                        ...draft,
+                        filters: { ...draft.filters, [key]: e.target.checked },
+                      })
+                    }
+                  />
+                  {key[0].toUpperCase() + key.slice(1)}
+                </label>
+              ))}
+            </fieldset>
             <button className="btn btn-primary" type="submit">
-              Save design
+              Save site
             </button>
             <button
               className="btn btn-ghost"
@@ -579,7 +839,7 @@ export function Super() {
                 })
               }
             >
-              Reset design
+              Reset colors
             </button>
           </form>
           {settingsMsg ? <p className="ok">{settingsMsg}</p> : null}
@@ -589,7 +849,7 @@ export function Super() {
       {tab === 'copy' ? (
         <section className="card admin-section">
           <h2>Text, buttons &amp; warnings</h2>
-          <form className="admin-form" onSubmit={onSaveSettings}>
+          <form className="admin-form" onSubmit={(e) => onSaveSettings(e, 'keep')}>
             {(Object.keys(DEFAULT_SETTINGS.copy) as Array<keyof typeof DEFAULT_SETTINGS.copy>).map((key) => (
               <label key={key} className={draft.copy[key].length > 48 ? 'admin-span' : undefined}>
                 {COPY_LABEL[key]}
@@ -614,7 +874,7 @@ export function Super() {
           <h2>Functions clients can use</h2>
           <form
             className="admin-form"
-            onSubmit={onSaveSettings}
+            onSubmit={(e) => onSaveSettings(e, 'keep')}
           >
             <fieldset className="admin-toggles">
               <legend>Client actions</legend>
@@ -702,112 +962,15 @@ export function Super() {
         </section>
       ) : null}
 
-      {tab === 'catalog' ? (
-      <section className="card admin-section">
-        <h2>Site &amp; client filters</h2>
-        <form className="admin-form" onSubmit={onSaveSettings}>
-          <label>
-            Brand name
-            <input
-              value={draft.brandName}
-              onChange={(e) => setDraft({ ...draft, brandName: e.target.value })}
-            />
-          </label>
-          <label>
-            Brand mark
-            <input
-              value={draft.brandMark}
-              onChange={(e) => setDraft({ ...draft, brandMark: e.target.value })}
-            />
-          </label>
-          <label className="admin-span">
-            Brand logo
-            <input
-              value={draft.brandLogo}
-              onChange={(e) => setDraft({ ...draft, brandLogo: e.target.value })}
-            />
-          </label>
-          <label>
-            Tagline
-            <input
-              value={draft.tagline}
-              onChange={(e) => setDraft({ ...draft, tagline: e.target.value })}
-            />
-          </label>
-          <label>
-            Marketplace label
-            <input
-              value={draft.marketplaceLabel}
-              onChange={(e) => setDraft({ ...draft, marketplaceLabel: e.target.value })}
-            />
-          </label>
-          <label>
-            Grades (comma separated)
-            <input
-              value={draft.grades.join(', ')}
-              onChange={(e) =>
-                setDraft({
-                  ...draft,
-                  grades: e.target.value.split(',').map((g) => g.trim()).filter(Boolean),
-                })
-              }
-            />
-          </label>
-          <label>
-            Default MOQ (0 = none)
-            <input
-              type="number"
-              min={0}
-              value={draft.defaultMoq}
-              onChange={(e) => setDraft({ ...draft, defaultMoq: Number(e.target.value) })}
-            />
-          </label>
-          <label>
-            Reopen minutes (min 1)
-            <input
-              type="number"
-              min={1}
-              step={1}
-              value={draft.reopenMinutes ?? Math.round((draft.reopenHours || 4) * 60)}
-              onChange={(e) =>
-                setDraft({
-                  ...draft,
-                  reopenMinutes: Number(e.target.value),
-                  reopenHours: Number(e.target.value) / 60,
-                })
-              }
-            />
-          </label>
-          <label>
-            Extend minutes (min 1)
-            <input
-              type="number"
-              min={1}
-              step={1}
-              value={draft.extendMinutes ?? Math.round((draft.extendHours || 2) * 60)}
-              onChange={(e) =>
-                setDraft({
-                  ...draft,
-                  extendMinutes: Number(e.target.value),
-                  extendHours: Number(e.target.value) / 60,
-                })
-              }
-            />
-          </label>
-          <label>
-            Ending-soon minutes
-            <input
-              type="number"
-              min={1}
-              value={draft.endingSoonMinutes}
-              onChange={(e) => setDraft({ ...draft, endingSoonMinutes: Number(e.target.value) })}
-            />
-          </label>
+      {tab === 'types' ? (
+        <section className="card admin-section">
+          <h2>Auction types</h2>
+          <p className="muted tiny">Each type is a list on Auctions. This is the only place to add or edit types.</p>
+          <form className="admin-form" onSubmit={(e) => onSaveSettings(e, 'draft')}>
           <div className="type-manager admin-span">
-            <h3>Auction types</h3>
             <p className="muted tiny">
-              Live Auctions and Offline Auctions are the main lists. Add more types here later if you need
-              extra catalogs. Fill mode is how bids show to buyers.
+              Live Auctions and Offline Auctions are the main lists. Default minutes apply when a closed list is
+              published again. Saving labels does not move an open clock.
             </p>
             <div className="type-rows">
               {draft.auctionTypes.map((t, i) => {
@@ -830,6 +993,46 @@ export function Super() {
                         }}
                       />
                     </label>
+                    <label>
+                      Default close (min)
+                      <input
+                        type="number"
+                        min={1}
+                        value={t.closeMinutes || 240}
+                        onChange={(e) => {
+                          const mins = Math.max(1, Math.floor(Number(e.target.value) || 1))
+                          const auctionTypes = draft.auctionTypes.map((row, idx) =>
+                            idx === i ? { ...row, closeMinutes: mins } : row,
+                          )
+                          setDraft({ ...draft, auctionTypes })
+                        }}
+                      />
+                    </label>
+                    <div>
+                      <span className="muted tiny">Current close</span>
+                      <div className="type-row-actions">
+                        {t.closesAt && t.closesAt > now ? (
+                          <TimeLeft endsAt={t.closesAt} closedLabel="Closed" />
+                        ) : (
+                          <span className="muted tiny">Closed</span>
+                        )}
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => {
+                            const mins = Math.max(1, t.closeMinutes || 240)
+                            const auctionTypes = draft.auctionTypes.map((row, idx) =>
+                              idx === i
+                                ? { ...row, closeMinutes: mins, closesAt: Date.now() + mins * 60 * 1000 }
+                                : row,
+                            )
+                            setDraft({ ...draft, auctionTypes })
+                          }}
+                        >
+                          Start clock now
+                        </button>
+                      </div>
+                    </div>
                     <label>
                       Fill mode
                       <select
@@ -909,107 +1112,9 @@ export function Super() {
               Add auction type
             </button>
           </div>
-          <fieldset className="admin-toggles">
-            <legend>Pages</legend>
-            <label>
-              <input
-                type="checkbox"
-                checked={draft.showAuctions}
-                onChange={(e) => setDraft({ ...draft, showAuctions: e.target.checked })}
-              />
-              Auctions
-            </label>
-            <label>
-              <input
-                type="checkbox"
-                checked={draft.showMarketplace}
-                onChange={(e) => setDraft({ ...draft, showMarketplace: e.target.checked })}
-              />
-              Marketplace
-            </label>
-            <label>
-              <input
-                type="checkbox"
-                checked={draft.showFavourites}
-                onChange={(e) => setDraft({ ...draft, showFavourites: e.target.checked })}
-              />
-              Favourites
-            </label>
-          </fieldset>
-          <fieldset className="admin-toggles">
-            <legend>Filters clients see</legend>
-            {(['maker', 'grade', 'capacity'] as const).map((key) => (
-              <label key={key}>
-                <input
-                  type="checkbox"
-                  checked={draft.filters[key]}
-                  onChange={(e) =>
-                    setDraft({
-                      ...draft,
-                      filters: { ...draft.filters, [key]: e.target.checked },
-                    })
-                  }
-                />
-                {key[0].toUpperCase() + key.slice(1)}
-              </label>
-            ))}
-            <p className="muted tiny" style={{ flexBasis: '100%', margin: 0 }}>
-              Type is the auction list menu (All / Live / Offline / Ongoing / Closed).
-            </p>
-          </fieldset>
-          <button className="btn btn-primary" type="submit">
-            Save settings
-          </button>
-        </form>
-        {settingsMsg ? <p className="ok">{settingsMsg}</p> : null}
-      </section>
-      ) : null}
-
-      {tab === 'types' ? (
-        <section className="card admin-section">
-          <div className="page-head">
-            <div>
-              <h2>Auction types</h2>
-              <p className="muted">
-                Click Add auction type. Each type appears as a section on /auctions.
-              </p>
-            </div>
-            <button type="button" className="btn btn-primary" onClick={() => setAddTypeOpen(true)}>
-              Add auction type
-            </button>
-          </div>
+            <button className="btn btn-primary" type="submit">Save types</button>
+          </form>
           {settingsMsg ? <p className="ok">{settingsMsg}</p> : null}
-          <ul className="type-list">
-            {settings.auctionTypes.map((t) => {
-              const inUse = lots.some((l) => l.channel === 'auction' && (l.auctionType || 'live') === t.value)
-              return (
-                <li key={t.value}>
-                  <div>
-                    <strong>{t.label}</strong>
-                    <div className="muted tiny">
-                      /auctions#{t.value} · {t.fillMode === 'sealed' ? 'Sealed' : t.fillMode === 'hybrid' ? 'Hybrid' : 'Live'} fill
-                    </div>
-                  </div>
-                  <span className={`pill pill-${t.fillMode || 'live'}`}>{t.label}</span>
-                  <button
-                    type="button"
-                    className="btn btn-ghost"
-                    disabled={settings.auctionTypes.length < 2 || inUse}
-                    title={inUse ? 'Lots still use this type' : 'Remove type'}
-                    onClick={() => {
-                      if (settings.auctionTypes.length < 2 || inUse) return
-                      const auctionTypes = settings.auctionTypes.filter((row) => row.value !== t.value)
-                      saveSettings({ ...settings, auctionTypes })
-                      setDraft((prev) => ({ ...prev, auctionTypes }))
-                      setSettingsMsg(`Removed ${t.label}.`)
-                    }}
-                  >
-                    Remove
-                  </button>
-                </li>
-              )
-            })}
-          </ul>
         </section>
       ) : null}
 

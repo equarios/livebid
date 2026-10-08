@@ -1,11 +1,13 @@
 import { useMemo, useState } from 'react'
+import { InvoicePreview } from '../components/InvoicePreview'
 import { bidOutcome, fillStats } from '../lib/allocate'
 import { downloadCsv as exportCsvFile } from '../lib/csv'
 import { isSealedLot, typePillClass } from '../lib/auctionLists'
 import { formatDateTime, isoDate, lotTypeLabel, usdAmt } from '../lib/format'
-import { useStore } from '../store'
+import { invoiceCoversLot, invoiceVisibleToBuyer } from '../lib/invoices'
+import { useNow, useStore } from '../store'
 import type { BidOutcome } from '../lib/allocate'
-import type { Lot } from '../types'
+import type { Invoice, Lot } from '../types'
 
 function LockIcon({ open }: { open?: boolean }) {
   if (open) {
@@ -53,9 +55,17 @@ function Money({ unit, qty, hot }: { unit: number; qty: number; hot?: boolean })
 }
 
 export function BidHistory() {
-  const { lots, bids, user, settings } = useStore()
+  const { lots, bids, user, invoices, settings } = useStore()
   const me = user?.accountId
-  const now = Date.now()
+  const now = useNow()
+  const [preview, setPreview] = useState<Invoice | null>(null)
+
+  function issuedForLot(lotId: string) {
+    if (!me) return undefined
+    return invoices.find(
+      (inv) => invoiceVisibleToBuyer(inv) && invoiceCoversLot(inv, lotId, me),
+    )
+  }
 
   const [from, setFrom] = useState(isoDate(now - 30 * 86400000))
   const [to, setTo] = useState(isoDate(now + 14 * 86400000))
@@ -99,7 +109,7 @@ export function BidHistory() {
   const grades = [...new Set(allRows.map((r) => r.lot.grade))].sort()
 
   const filtered = allRows.filter((row) => {
-    const day = isoDate(Math.min(row.at, Date.now()))
+    const day = isoDate(Math.min(row.at, now))
     if (from && day < from) return false
     if (to && day > to) return false
     if (status !== 'all' && row.outcome !== status) return false
@@ -270,11 +280,13 @@ export function BidHistory() {
               <th>Winning Price</th>
               <th>Bid Value</th>
               <th>Gap Price</th>
+              <th>Invoice</th>
             </tr>
           </thead>
           <tbody>
             {slice.map((row) => {
               const gap = row.bid - row.win
+              const inv = row.outcome === 'lost' ? undefined : issuedForLot(row.lot.id)
               return (
                 <tr key={row.lot.id}>
                   <td className="mono">{formatDateTime(row.at)}</td>
@@ -314,6 +326,17 @@ export function BidHistory() {
                     <Money unit={row.bid} qty={row.qty} hot={row.bid !== row.win} />
                   </td>
                   <td>{gap ? usdAmt(gap) : ''}</td>
+                  <td>
+                    {inv ? (
+                      <button type="button" className="linkish" onClick={() => setPreview(inv)}>
+                        {inv.id}
+                      </button>
+                    ) : row.outcome === 'won' || row.outcome === 'partial' ? (
+                      <span className="muted tiny">Awaiting issue</span>
+                    ) : (
+                      ''
+                    )}
+                  </td>
                 </tr>
               )
             })}
@@ -324,6 +347,7 @@ export function BidHistory() {
       <div className="inv-cards">
         {slice.map((row) => {
           const gap = row.bid - row.win
+          const inv = row.outcome === 'lost' ? undefined : issuedForLot(row.lot.id)
           return (
             <article key={row.lot.id} className="inv-card">
               <div>
@@ -346,6 +370,11 @@ export function BidHistory() {
                 <span>Bid {usdAmt(row.bid)}</span>
                 {gap ? <span>Gap {usdAmt(gap)}</span> : null}
               </div>
+              {inv ? (
+                <button type="button" className="linkish" onClick={() => setPreview(inv)}>
+                  View invoice {inv.id}
+                </button>
+              ) : null}
             </article>
           )
         })}
@@ -375,6 +404,7 @@ export function BidHistory() {
           ›
         </button>
       </div>
+      {preview ? <InvoicePreview invoice={preview} onClose={() => setPreview(null)} /> : null}
     </div>
   )
 }

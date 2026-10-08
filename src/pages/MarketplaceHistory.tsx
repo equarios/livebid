@@ -1,14 +1,18 @@
+import { useState } from 'react'
+import { InvoicePreview } from '../components/InvoicePreview'
 import { ItemLink } from '../components/ItemLink'
 import { downloadCsv } from '../lib/csv'
-import { invoicePill, invoiceStatusLabel } from '../lib/invoices'
+import { invoicePill, invoiceStatusLabel, invoiceTotals, invoiceVisibleToBuyer } from '../lib/invoices'
 import { formatDateTime, usdAmt } from '../lib/format'
 import { OfferDesk } from '../components/OfferDesk'
 import { useStore } from '../store'
 
 export function MarketplaceHistory() {
-  const { invoices, lots, user, isStaff } = useStore()
+  const { invoices, lots, user, isStaff, settings } = useStore()
+  const [previewId, setPreviewId] = useState<string | null>(null)
   const rows = invoices.filter((inv) => {
     if (inv.channel !== 'marketplace') return false
+    if (!isStaff && !invoiceVisibleToBuyer(inv)) return false
     if (isStaff) return true
     return !inv.accountId || inv.accountId === user?.accountId
   })
@@ -25,7 +29,7 @@ export function MarketplaceHistory() {
           lot ? `${lot.manufacturer} ${lot.model}` : inv.lotId,
           inv.qty,
           inv.unitPrice,
-          inv.amount,
+          invoiceTotals(inv, settings).total,
           invoiceStatusLabel(inv.status),
         ]
       }),
@@ -53,6 +57,7 @@ export function MarketplaceHistory() {
             <th>Unit</th>
             <th>Total</th>
             <th>Status</th>
+            <th />
           </tr>
         </thead>
         <tbody>
@@ -65,9 +70,18 @@ export function MarketplaceHistory() {
                 <td>{lot ? <ItemLink lot={lot} /> : inv.lotId}</td>
                 <td>{inv.qty}</td>
                 <td>{usdAmt(inv.unitPrice)}</td>
-                <td>{usdAmt(inv.amount)}</td>
+                <td>{usdAmt(invoiceTotals(inv, settings).total)}</td>
                 <td>
                   <span className={`pill ${invoicePill(inv.status)}`}>{invoiceStatusLabel(inv.status)}</span>
+                </td>
+                <td>
+                  {invoiceVisibleToBuyer(inv) ? (
+                    <button type="button" className="linkish" onClick={() => setPreviewId(inv.id)}>
+                      View invoice
+                    </button>
+                  ) : (
+                    <span className="muted tiny">Awaiting issue</span>
+                  )}
                 </td>
               </tr>
             )
@@ -86,13 +100,21 @@ export function MarketplaceHistory() {
             <div className="inv-card-meta">
               <span>{inv.qty} pcs</span>
               <span>{usdAmt(inv.unitPrice)} / pc</span>
-              <span>{usdAmt(inv.amount)}</span>
+              <span>{usdAmt(invoiceTotals(inv, settings).total)}</span>
             </div>
             <span className={`pill ${invoicePill(inv.status)}`}>{invoiceStatusLabel(inv.status)}</span>
+            {invoiceVisibleToBuyer(inv) ? (
+              <button type="button" className="linkish" onClick={() => setPreviewId(inv.id)}>
+                View invoice
+              </button>
+            ) : null}
           </article>
         )
       })}
     </div>
+      {previewId && invoices.some((i) => i.id === previewId) ? (
+        <InvoicePreview invoice={invoices.find((i) => i.id === previewId)!} onClose={() => setPreviewId(null)} />
+      ) : null}
     </div>
   )
 }

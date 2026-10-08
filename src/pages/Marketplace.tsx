@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { AuctionTypeHead } from '../components/AuctionTypeHead'
 import {
   capacityOptions,
   CheckMenu,
@@ -20,7 +21,7 @@ function MarketLot({ lot, asCard }: { lot: Lot; asCard?: boolean }) {
   const { addToCart, invoices, settings, cart, offers, user, placeOffer, confirmOffer } = useStore()
   const inCart = cart.find((c) => c.lotId === lot.id)?.qty ?? 0
   const left = Math.max(0, lot.qty - inCart)
-  const lotMoney = moneyForLot(invoices, lot.id)
+  const lotMoney = moneyForLot(invoices, lot.id, settings)
   const lineTotal = (lot.buyNowPrice ?? lot.currentPrice) * lot.qty
   const [qty, setQty] = useState(String(lotMoq(lot)))
   const [msg, setMsg] = useState<string | null>(null)
@@ -270,7 +271,7 @@ export function Marketplace() {
   const navigate = useNavigate()
   const { lots, cart, removeFromCart, checkoutCart, invoices, settings } = useStore()
   const GRADES = settings.grades
-  const invoiceMoney = moneyForChannel(invoices, lots, 'marketplace')
+  const invoiceMoney = moneyForChannel(invoices, lots, 'marketplace', settings)
   const [q, setQ] = useState('')
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null)
   const [grades, setGrades] = useState<Grade[]>([])
@@ -278,6 +279,21 @@ export function Marketplace() {
   const [memories, setMemories] = useState<string[]>([])
   const [open, setOpen] = useState<'maker' | 'grade' | 'memory' | null>(null)
   const filtersRef = useRef<HTMLDivElement>(null)
+  const deskRef = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const el = deskRef.current
+    if (!el) return
+    const apply = () => {
+      document.documentElement.style.setProperty('--auction-desk-h', `${Math.round(el.getBoundingClientRect().height)}px`)
+    }
+    const ro = new ResizeObserver(apply)
+    ro.observe(el)
+    apply()
+    return () => {
+      ro.disconnect()
+      document.documentElement.style.removeProperty('--auction-desk-h')
+    }
+  }, [])
   const marketLots = useMemo(() => lots.filter((l) => l.channel === 'marketplace'), [lots])
   const makersList = useMemo(() => makerOptions(marketLots), [marketLots])
   const capacities = useMemo(() => capacityOptions(marketLots), [marketLots])
@@ -324,19 +340,13 @@ export function Marketplace() {
 
   return (
     <div>
-      <div className="page-head">
-        <div>
-          <h1>{settings.copy.marketTitle}</h1>
-          <p className="muted">{settings.copy.marketIntro}</p>
+      <div ref={deskRef} className="auction-desk">
+        <div className="auction-desk-head">
+          <div>
+            <strong>{settings.copy.marketTitle}</strong>
+          </div>
         </div>
-      </div>
-      <InvoiceSummary
-        total={invoiceMoney.total}
-        paid={invoiceMoney.paid}
-        unpaid={invoiceMoney.unpaid}
-        paidCount={invoiceMoney.paidCount}
-        unpaidCount={invoiceMoney.unpaidCount}
-      />
+        <div className="auction-desk-filters">
       <div className="filters" ref={filtersRef}>
         <input
           placeholder={settings.copy.searchMarket}
@@ -376,42 +386,60 @@ export function Marketplace() {
           ) : null}
         </div>
       </div>
-      {rows.length ? (
-        <div className="table-wrap card auction-table-wrap">
-          <table className="auction-table">
-            <thead>
-              <tr>
-                <th>Lot</th>
-                <th>Item</th>
-                <th>Grade</th>
-                <th>Total pcs</th>
-                <th>Price / pc</th>
-                <th>Total amount</th>
-                <th>Paid</th>
-                <th>Unpaid</th>
-                <th>Order</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((lot) => (
-                <MarketLot key={lot.id} lot={lot} />
-              ))}
-            </tbody>
-          </table>
         </div>
+        <InvoiceSummary
+          total={invoiceMoney.total}
+          paid={invoiceMoney.paid}
+          unpaid={invoiceMoney.unpaid}
+          paidCount={invoiceMoney.paidCount}
+          unpaidCount={invoiceMoney.unpaidCount}
+        />
+      </div>
+      {rows.length ? (
+        <section className="auction-type-block">
+          <AuctionTypeHead>
+            <div>
+              <h2>
+                {settings.copy.marketTitle}
+                <em>{rows.length}</em>
+              </h2>
+              <p className="muted tiny auction-type-block-intro">{settings.copy.marketIntro}</p>
+            </div>
+          </AuctionTypeHead>
+          <div className="table-wrap card auction-table-wrap">
+            <table className="auction-table">
+              <thead>
+                <tr>
+                  <th>Lot</th>
+                  <th>Item</th>
+                  <th>Grade</th>
+                  <th>Total pcs</th>
+                  <th>Price / pc</th>
+                  <th>Total amount</th>
+                  <th>Paid</th>
+                  <th>Unpaid</th>
+                  <th>Order</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((lot) => (
+                  <MarketLot key={lot.id} lot={lot} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="auction-cards market-cards" aria-label="Marketplace lots">
+            {rows.map((lot) => (
+              <MarketLot key={lot.id} lot={lot} asCard />
+            ))}
+          </div>
+        </section>
       ) : (
         <p className="empty">
           {marketLots.length ? settings.copy.emptyFilters : settings.copy.emptyMarket}
         </p>
       )}
-      {rows.length ? (
-        <div className="auction-cards market-cards" aria-label="Marketplace lots">
-          {rows.map((lot) => (
-            <MarketLot key={lot.id} lot={lot} asCard />
-          ))}
-        </div>
-      ) : null}
 
       <div className="cart-panel card">
         <h2>My offers</h2>

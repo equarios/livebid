@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { AuctionTable, BidTotals } from '../components/AuctionTable'
+import { AuctionTypeHead } from '../components/AuctionTypeHead'
 import { AuctionTypeNav, auctionTypeFilterOptions } from '../components/AuctionTypeNav'
 import { BidCsv } from '../components/BidCsv'
 import {
@@ -9,8 +10,6 @@ import {
   makerOptions,
   toggleValue,
 } from '../components/CheckMenu'
-import { ItemLink } from '../components/ItemLink'
-import { TimeLeft } from '../components/TimeLeft'
 import { LotCompare } from '../components/LotCompare'
 import {
   groupLotsByType,
@@ -22,7 +21,6 @@ import {
   migrateLotAuctionType,
   type AuctionListKind,
 } from '../lib/auctionLists'
-import { isEndingSoon } from '../lib/format'
 import { useNow, useStore } from '../store'
 import type { Grade, SiteSettings } from '../types'
 
@@ -144,12 +142,6 @@ function AuctionList() {
 
   const groups = groupLotsByType(filtered, settings, closedOnly ? 'close-late' : 'close-soon')
 
-  const closingSoon = useMemo(() => {
-    if (closedOnly) return []
-    const soon = filtered.filter((l) => isEndingSoon(l.endsAt, now, settings.endingSoonMinutes))
-    return groupLotsByType(soon, settings, 'close-soon').flatMap((g) => g.lots.slice(0, 3))
-  }, [filtered, settings, now, closedOnly])
-
   const hasBids = Boolean(user && bids.some((b) => b.accountId === user.accountId))
   const showCoach = coachOn && user && !hasBids && settings.features.bidding
 
@@ -183,17 +175,7 @@ function AuctionList() {
 
   return (
     <div>
-      <div className="page-head">
-        <div>
-          <h1>{settings.copy.auctionsTitle}</h1>
-          <p className="muted">
-            {listIntro(kind === 'ongoing' || kind === 'closed' ? kind : 'all', settings)}
-          </p>
-          <p className="muted tiny">
-            Prices in USD. Times in your local zone ({tz}). {filtered.length} lots on this page, grouped by type. Your bids sit together at the top of each list.
-          </p>
-        </div>
-      </div>
+      <h1 className="sr-only">{settings.copy.auctionsTitle}</h1>
       {showCoach ? (
         <div className="coach-panel">
           <div>
@@ -208,77 +190,6 @@ function AuctionList() {
           </button>
         </div>
       ) : null}
-      {settings.features.endingSoon && !closedOnly && closingSoon.length ? (
-        <div className="closing-strip">
-          <strong>Closing soon on this list</strong>
-          <div className="closing-row">
-            {closingSoon.map((lot) => (
-              <div key={lot.id} className="closing-chip">
-                <ItemLink lot={lot} />
-                <TimeLeft endsAt={lot.endsAt} warn />
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
-      <div className="filters" ref={filtersRef}>
-        <input
-          placeholder={settings.copy.searchAuctions}
-          value={q}
-          onChange={(e) => {
-            setQ(e.target.value)
-          }}
-        />
-        <div className="filter-groups">
-          <AuctionTypeNav
-            open={open === 'type'}
-            onOpen={() => setOpen((v) => (v === 'type' ? null : 'type'))}
-            selected={listFilters}
-            onToggle={toggleListFilter}
-            onSelectAll={() => setListFilters([])}
-          />
-          {settings.filters.maker ? (
-          <CheckMenu
-            title="Maker"
-            open={open === 'maker'}
-            onOpen={() => setOpen((v) => (v === 'maker' ? null : 'maker'))}
-            options={makersList}
-            selected={makers}
-            onToggle={(value) => setMakers((prev) => toggleValue(prev, value))}
-          />
-          ) : null}
-          {settings.filters.grade ? (
-          <CheckMenu
-            title="Grade"
-            open={open === 'grade'}
-            onOpen={() => setOpen((v) => (v === 'grade' ? null : 'grade'))}
-            options={GRADES}
-            selected={grades}
-            onToggle={(value) => setGrades((prev) => toggleValue(prev, value))}
-          />
-          ) : null}
-          {settings.filters.capacity ? (
-          <CheckMenu
-            title="Capacity"
-            open={open === 'memory'}
-            onOpen={() => setOpen((v) => (v === 'memory' ? null : 'memory'))}
-            options={capacities}
-            selected={memories}
-            onToggle={(value) => setMemories((prev) => toggleValue(prev, value))}
-          />
-          ) : null}
-          {!closedOnly ? (
-            <BidCsv
-              lots={csvLots}
-              listKind={wantOngoing && !selectedTypes.length ? 'ongoing' : 'all'}
-            />
-          ) : (
-            <p className="muted tiny bid-csv-hint">
-              Closed lots cannot take new bids. Clear Closed or add Ongoing for CSV.
-            </p>
-          )}
-        </div>
-      </div>
       {compareIds.length ? (
         <div className="compare-bar">
           <span>{compareIds.length} selected for compare (pick 2)</span>
@@ -295,7 +206,66 @@ function AuctionList() {
           </button>
         </div>
       ) : null}
-      {groups.length ? <BidTotals lots={filtered} /> : null}
+      <BidTotals lots={filtered}>
+        <div className="filters" ref={filtersRef}>
+          <input
+            placeholder={settings.copy.searchAuctions}
+            value={q}
+            onChange={(e) => {
+              setQ(e.target.value)
+            }}
+          />
+          <div className="filter-groups">
+            <AuctionTypeNav
+              open={open === 'type'}
+              onOpen={() => setOpen((v) => (v === 'type' ? null : 'type'))}
+              selected={listFilters}
+              onToggle={toggleListFilter}
+              onSelectAll={() => setListFilters([])}
+            />
+            {settings.filters.maker ? (
+            <CheckMenu
+              title="Maker"
+              open={open === 'maker'}
+              onOpen={() => setOpen((v) => (v === 'maker' ? null : 'maker'))}
+              options={makersList}
+              selected={makers}
+              onToggle={(value) => setMakers((prev) => toggleValue(prev, value))}
+            />
+            ) : null}
+            {settings.filters.grade ? (
+            <CheckMenu
+              title="Grade"
+              open={open === 'grade'}
+              onOpen={() => setOpen((v) => (v === 'grade' ? null : 'grade'))}
+              options={GRADES}
+              selected={grades}
+              onToggle={(value) => setGrades((prev) => toggleValue(prev, value))}
+            />
+            ) : null}
+            {settings.filters.capacity ? (
+            <CheckMenu
+              title="Capacity"
+              open={open === 'memory'}
+              onOpen={() => setOpen((v) => (v === 'memory' ? null : 'memory'))}
+              options={capacities}
+              selected={memories}
+              onToggle={(value) => setMemories((prev) => toggleValue(prev, value))}
+            />
+            ) : null}
+            {!closedOnly ? (
+              <BidCsv
+                lots={csvLots}
+                listKind={kind === 'closed' ? 'all' : kind}
+              />
+            ) : (
+              <p className="muted tiny bid-csv-hint">
+                Closed lots cannot take new bids. Clear Closed or add Ongoing for CSV.
+              </p>
+            )}
+          </div>
+        </div>
+      </BidTotals>
       {groups.length ? (
         <div className="auction-lists-stack">
           {groups.map((group) => (
@@ -304,12 +274,18 @@ function AuctionList() {
               id={`auction-list-${group.value}`}
               className="auction-type-block"
             >
-              <div className="auction-type-block-head">
-                <h2>
-                  {group.label}
-                  <em>{group.lots.length}</em>
-                </h2>
-              </div>
+              <AuctionTypeHead>
+                <div>
+                  <h2>
+                    {group.label}
+                    <em>{group.lots.length}</em>
+                  </h2>
+                  <p className="muted tiny auction-type-block-intro">
+                    {listIntro(group.value, settings)} Prices in USD. Times in your local zone ({tz}).
+                    Your bids sit together at the top of this list.
+                  </p>
+                </div>
+              </AuctionTypeHead>
               <AuctionTable
                 lots={group.lots}
                 compareIds={compareIds}

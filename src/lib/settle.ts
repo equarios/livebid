@@ -1,7 +1,8 @@
 import { allocate, fillStats } from './allocate'
 import { isEndingSoon, moneyPlain } from './format'
 import { isSealedLot } from './auctionLists'
-import type { Bid, Invoice, Lot, Notice, SiteSettings } from '../types'
+import { buildInvoice, invoiceCoversLot } from './invoices'
+import type { Bid, Invoice, InvoiceLine, Lot, Notice, SiteSettings } from '../types'
 
 function isBot(accountId: string) {
   return accountId.startsWith('BOT-')
@@ -11,47 +12,87 @@ export function auctionInvoiceId(lotId: string, accountId: string) {
   return `INV-${lotId.slice(-5)}-${accountId.replace(/[^A-Z0-9]/gi, '').slice(-4)}`.toUpperCase()
 }
 
+function kdpInvoiceId(nowTs: number, accountId: string, slug: string) {
+  const d = new Date(nowTs)
+  const yy = String(d.getFullYear()).slice(-2)
+  const start = Date.UTC(d.getFullYear(), 0, 0)
+  const doy = String(Math.floor((nowTs - start) / 86400000)).padStart(3, '0')
+  const tail = accountId.replace(/[^A-Z0-9]/gi, '').slice(-3).padStart(3, '0')
+  const list = slug.replace(/[^A-Z0-9]/gi, '').slice(0, 3).toUpperCase() || 'KDP'
+  return `${list}-${yy}-${doy}-${tail}`
+}
+
 export function settleClosedAuctions(
   lots: Lot[],
   bids: Bid[],
   invoices: Invoice[],
   notices: Notice[],
   nowTs: number,
+  staff: Array<{ accountId: string; role: string }> = [],
+  settings?: SiteSettings,
 ): { invoices: Invoice[]; notices: Notice[] } {
   const extraInv: Invoice[] = []
   const extraNotes: Notice[] = []
+  const groups = new Map<
+    string,
+    { accountId: string; slug: string; lines: InvoiceLine[]; models: string[] }
+  >()
 
   for (const lot of lots) {
     if (lot.channel !== 'auction' || lot.endsAt > nowTs) continue
     const slices = allocate(lot, bids)
     for (const slice of slices) {
       if (!slice.qty || isBot(slice.accountId)) continue
-      const id = auctionInvoiceId(lot.id, slice.accountId)
-      const exists =
-        invoices.some((inv) => inv.id === id || (inv.lotId === lot.id && inv.accountId === slice.accountId)) ||
-        extraInv.some((inv) => inv.id === id || (inv.lotId === lot.id && inv.accountId === slice.accountId))
-      if (exists) continue
-      const inv: Invoice = {
-        id,
-        lotId: lot.id,
+      const already =
+        invoices.some((inv) => invoiceCoversLot(inv, lot.id, slice.accountId)) ||
+        extraInv.some((inv) => invoiceCoversLot(inv, lot.id, slice.accountId))
+      if (already) continue
+      const slug = lot.auctionType || 'live'
+      const key = `${slice.accountId}::${slug}`
+      const row = groups.get(key) || { accountId: slice.accountId, slug, lines: [], models: [] }
+      row.lines.push({ lotId: lot.id, qty: slice.qty, unitPrice: slice.unitPrice })
+      row.models.push(lot.model)
+      groups.set(key, row)
+    }
+  }
+
+  for (const group of groups.values()) {
+    const id = kdpInvoiceId(nowTs, group.accountId, group.slug)
+    const uniqueId = extraInv.some((inv) => inv.id === id) || invoices.some((inv) => inv.id === id)
+      ? `${id}-${group.lines[0].lotId.slice(-3)}`
+      : id
+    const inv = buildInvoice(
+      {
+        id: uniqueId,
+        lotId: group.lines[0].lotId,
         channel: 'auction',
-        qty: slice.qty,
-        unitPrice: slice.unitPrice,
-        amount: slice.unitPrice * slice.qty,
-        status: 'unpaid',
         createdAt: nowTs,
-        accountId: slice.accountId,
+        accountId: group.accountId,
         opened: false,
-        auctionLabel: `JPN SIM Unlocked ${lot.model} (${lot.id})`,
-      }
-      extraInv.push(inv)
+        auctionLabel: `JPN SIM Unlocked ${[...new Set(group.models)].slice(0, 3).join(' / ')} (${uniqueId})`,
+        lines: group.lines,
+      },
+      settings,
+    )
+    extraInv.push(inv)
+    extraNotes.push({
+      id: `N-${uniqueId}`,
+      accountId: group.accountId,
+      kind: 'win',
+      title: 'You won an auction',
+      body: `${inv.qty} pcs · ${moneyPlain(inv.amount)} USD. Invoice ${inv.id} is with staff to issue.`,
+      href: '/account',
+      at: nowTs,
+      read: false,
+    })
+    for (const person of staff) {
       extraNotes.push({
-        id: `N-${id}`,
-        accountId: slice.accountId,
-        kind: 'win',
-        title: 'You won an auction',
-        body: `${lot.manufacturer} ${lot.model} · ${slice.qty} pcs · ${moneyPlain(inv.amount)} USD invoice ${inv.id}`,
-        href: '/account/invoices',
+        id: `N-ISSUE-${uniqueId}-${person.accountId}`,
+        accountId: person.accountId,
+        kind: 'invoice',
+        title: 'Invoice waiting to be issued',
+        body: `${inv.id} · ${inv.qty} pcs. Admin then Super must stamp it.`,
+        href: person.role === 'superadmin' ? '/super' : '/admin',
         at: nowTs,
         read: false,
       })

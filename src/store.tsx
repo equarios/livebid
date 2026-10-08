@@ -8,15 +8,27 @@ import {
   type ReactNode,
 } from 'react'
 import { DEFAULT_SETTINGS, SEED_ACCOUNTS, SEED_LOTS, SUPER_USER } from './data'
-import { isSealedLot, migrateLotAuctionType, normalizeAuctionTypes } from './lib/auctionLists'
-import { settleInvoice } from './lib/invoices'
+import {
+  applyDropClocks,
+  ensureAuctionClocks,
+  isSealedLot,
+  lotAuctionSlug,
+  migrateLotAuctionType,
+  normalizeAuctionTypes,
+} from './lib/auctionLists'
+import { inventoryFromLots, upsertInventory } from './lib/inventory'
+import { liveLotFromDrop } from './lib/listingDrops'
+import { buildInvoice, invoiceTotals, settleInvoice, settleInvoiceIssue } from './lib/invoices'
 import { buyerCareNotices, settleClosedAuctions } from './lib/settle'
 import { checkBidPrice, checkOrderQty, lotMoq } from './lib/moq'
 import type {
   Account,
   Bid,
   CartItem,
+  InventorySku,
   Invoice,
+  ListingDrop,
+  ListingDropItem,
   Lot,
   MarketOffer,
   Notice,
@@ -36,6 +48,8 @@ type Store = {
   notices: Notice[]
   cart: CartItem[]
   offers: MarketOffer[]
+  listingDrops: ListingDrop[]
+  inventory: InventorySku[]
   accounts: Account[]
   settings: SiteSettings
   isSuperAdmin: boolean
@@ -60,6 +74,7 @@ type Store = {
   toggleWatch: (lotId: string) => void
   submitPayment: (id: string, receiptName: string, receiptData: string) => string | null
   reviewPayment: (id: string, side: PayReviewSide, decision: PayDecision) => string | null
+  reviewInvoiceIssue: (id: string, side: PayReviewSide, decision: PayDecision) => string | null
   saveInvoice: (invoice: Invoice, previousId?: string) => string | null
   removeInvoice: (id: string) => string | null
   clearPaymentConfirmation: (id: string) => string | null
@@ -68,6 +83,12 @@ type Store = {
   myBid: (lotId: string) => number | undefined
   myLastBid: (lotId: string) => Bid | undefined
   addLot: (lot: Lot) => void
+  addLots: (lots: Lot[]) => void
+  submitListingDrop: (items: ListingDropItem[]) => string | null
+  withdrawListingDrop: (id: string) => string | null
+  reviewListingDrop: (id: string, decision: 'approved' | 'declined') => string | null
+  saveSku: (sku: InventorySku) => string | null
+  removeSku: (id: string) => string | null
   updateLot: (lot: Lot) => void
   removeLot: (lotId: string) => void
   saveSettings: (next: SiteSettings) => void
@@ -75,7 +96,8 @@ type Store = {
   removeAccount: (accountId: string) => string | null
   setAccountStatus: (accountId: string, status: Account['status']) => string | null
   extendLot: (lotId: string, minutes?: number) => void
-  reopenAuctions: () => void
+  extendAuctionType: (slug: string, minutes?: number) => void
+  reopenAuctions: (slug?: string) => void
 }
 
 const StoreContext = createContext<Store | null>(null)
@@ -95,6 +117,8 @@ type Persisted = {
   notices: Notice[]
   cart: CartItem[]
   offers: MarketOffer[]
+  listingDrops: ListingDrop[]
+  inventory: InventorySku[]
   settings: SiteSettings
   accounts: Account[]
 }
@@ -120,6 +144,7 @@ function mergeAccounts(stored?: Account[] | null): Account[] {
           password: m.password,
           company: m.company || '',
           email: m.email || '',
+          address: m.address || '',
           role: m.role === 'admin' || m.role === 'superadmin' ? m.role : 'member',
           status: m.status === 'pending' || m.status === 'disabled' ? m.status : 'active',
         }),
@@ -130,11 +155,15 @@ function mergeAccounts(stored?: Account[] | null): Account[] {
   }
   const byId = new Map<string, Account>()
   for (const a of [...SEED_ACCOUNTS, ...extra, ...(stored || [])]) {
-    byId.set(a.accountId.toUpperCase(), {
+    const id = a.accountId.toUpperCase()
+    const prev = byId.get(id)
+    byId.set(id, {
+      ...prev,
       ...a,
-      accountId: a.accountId.toUpperCase(),
-      role: a.role || 'member',
-      status: a.status || 'active',
+      accountId: id,
+      address: a.address || prev?.address || '',
+      role: a.role || prev?.role || 'member',
+      status: a.status || prev?.status || 'active',
     })
   }
   const superAcc = byId.get(SUPER_USER.accountId) || SUPER_USER
@@ -212,6 +241,9 @@ function mergeSettings(partial?: Partial<SiteSettings> | null): SiteSettings {
                   ? 'Live Auctions'
                   : existingLive.label,
               fillMode: existingLive.fillMode || 'live',
+              intro: existingLive.intro || liveDef.intro,
+              closesAt: existingLive.closesAt || liveDef.closesAt,
+              closeMinutes: existingLive.closeMinutes || liveDef.closeMinutes,
             }
           : liveDef,
         existingOffline
@@ -223,6 +255,8 @@ function mergeSettings(partial?: Partial<SiteSettings> | null): SiteSettings {
                   ? existingOffline.intro
                   : offlineDef.intro,
               fillMode: 'sealed',
+              closesAt: existingOffline.closesAt || offlineDef.closesAt,
+              closeMinutes: existingOffline.closeMinutes || offlineDef.closeMinutes,
             }
           : offlineDef,
         ...custom,
@@ -233,9 +267,12 @@ function mergeSettings(partial?: Partial<SiteSettings> | null): SiteSettings {
     copy: (() => {
       const copy = { ...DEFAULT_SETTINGS.copy, ...partial?.copy }
       if (copy.navAuctions === 'Auction') copy.navAuctions = DEFAULT_SETTINGS.copy.navAuctions
+      if (/under \{?n\}? min/i.test(copy.endingSoon)) copy.endingSoon = DEFAULT_SETTINGS.copy.endingSoon
+      if (/48 hours/i.test(copy.siteNotice)) copy.siteNotice = DEFAULT_SETTINGS.copy.siteNotice
       return copy
     })(),
     icons: { ...DEFAULT_SETTINGS.icons, ...partial?.icons },
+    invoice: { ...DEFAULT_SETTINGS.invoice, ...partial?.invoice },
     reopenMinutes: Math.max(
       1,
       Math.round(partial?.reopenMinutes ?? (partial?.reopenHours ?? DEFAULT_SETTINGS.reopenHours) * 60),
@@ -378,6 +415,21 @@ function mergeHistoryBids(bids: Bid[]): Bid[] {
   return extra.length ? [...bids, ...extra] : bids
 }
 
+function staffIssueNotices(accounts: Account[], invoices: Invoice[], at: number): Notice[] {
+  const staff = accounts.filter((a) => a.role === 'admin' || a.role === 'superadmin')
+  return invoices.flatMap((inv) =>
+    staff.map((a) => ({
+      id: `N-ISSUE-${inv.id}-${a.accountId}`,
+      accountId: a.accountId,
+      kind: 'invoice' as const,
+      title: 'Invoice waiting to be issued',
+      body: `${inv.id} · ${inv.qty} pcs. Admin then Super must stamp it before the buyer can pay.`,
+      href: a.role === 'superadmin' ? '/super' : '/admin',
+      at,
+    })),
+  )
+}
+
 function demoFillBids(): Bid[] {
   const at = Date.now()
   const clients = ['DEMO-1001', 'SUPER-0001', 'ADMIN-0001']
@@ -410,7 +462,7 @@ function loadData(): Persisted {
         qty: b.qty || 1,
         accountId: b.accountId || 'UNKNOWN',
       }))
-      return {
+      return clockedPersisted({
         ...parsed,
         lots: (() => {
           const existing = parsed.lots || []
@@ -449,22 +501,28 @@ function loadData(): Persisted {
             status:
               inv.status === 'paid' ||
               inv.status === 'pending_review' ||
-              inv.status === 'declined'
+              inv.status === 'declined' ||
+              inv.status === 'draft'
                 ? inv.status
                 : 'unpaid',
           })),
         ),
         cart: parsed.cart || [],
         offers: Array.isArray(parsed.offers) ? parsed.offers : [],
+        listingDrops: Array.isArray(parsed.listingDrops) ? parsed.listingDrops : [],
+        inventory:
+          Array.isArray(parsed.inventory) && parsed.inventory.length
+            ? parsed.inventory
+            : inventoryFromLots([...(parsed.lots || []), ...SEED_LOTS]),
         notices: parsed.notices || [],
         settings: mergeSettings(parsed.settings),
         accounts: mergeAccounts(parsed.accounts),
-      }
+      })
     }
   } catch {
     /* ignore */
   }
-  return {
+  const fresh = {
     lots: SEED_LOTS,
     bids: demoFillBids(),
     watchlist: [],
@@ -472,9 +530,17 @@ function loadData(): Persisted {
     notices: [],
     cart: [],
     offers: [],
+    listingDrops: [],
+    inventory: inventoryFromLots(SEED_LOTS),
     settings: DEFAULT_SETTINGS,
     accounts: mergeAccounts([]),
   }
+  return clockedPersisted(fresh)
+}
+
+function clockedPersisted(data: Persisted): Persisted {
+  const next = ensureAuctionClocks(data.settings, data.lots)
+  return { ...data, settings: next.settings, lots: next.lots }
 }
 
 export function StoreProvider({ children }: { children: ReactNode }) {
@@ -592,6 +658,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           prev.invoices,
           prev.notices || [],
           Date.now(),
+          prev.accounts.filter((a) => a.role === 'admin' || a.role === 'superadmin'),
+          prev.settings,
         )
         const notices = buyerCareNotices(
           prev.lots,
@@ -734,11 +802,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     (lotId: string, amount: number, qty: number) => {
       const lot = data.lots.find((l) => l.id === lotId)
       if (!data.settings.features.bidding) return data.settings.copy.warnNoBid
+      if (!user) return data.settings.copy.warnLogin
       if (!lot || lot.channel !== 'auction') return data.settings.copy.warnLotMissing
       if (lot.endsAt <= Date.now()) return data.settings.copy.warnClosed
       const qtyErr = checkOrderQty(lot, qty, data.settings.copy)
       if (qtyErr) return qtyErr
-      const accountId = user?.accountId || 'DEMO-1001'
+      const accountId = user.accountId
       const independent = isSealedLot(lot, data.settings)
       const mine = data.bids.filter((b) => b.lotId === lotId && b.accountId === accountId)
       const lastOwn = mine.length
@@ -848,17 +917,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const pcs = qty ?? lot.qty
       const qtyErr = checkOrderQty(lot, pcs, data.settings.copy)
       if (qtyErr) return qtyErr
-      const invoice: Invoice = {
-        id: `INV-${Date.now().toString().slice(-6)}`,
-        lotId,
-        channel: 'marketplace',
-        qty: pcs,
-        unitPrice: lot.buyNowPrice,
-        amount: lot.buyNowPrice * pcs,
-        status: 'unpaid',
-        createdAt: Date.now(),
-        accountId: user?.accountId,
-      }
+      const invoice = buildInvoice(
+        {
+          id: `INV-${Date.now().toString().slice(-6)}`,
+          lotId,
+          channel: 'marketplace',
+          createdAt: Date.now(),
+          accountId: user?.accountId,
+          lines: [{ lotId, qty: pcs, unitPrice: lot.buyNowPrice }],
+        },
+        data.settings,
+      )
       setData((prev) => ({
         ...prev,
         lots: prev.lots
@@ -868,10 +937,27 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           })
           .filter((l) => l.channel !== 'marketplace' || l.qty > 0),
         invoices: [invoice, ...prev.invoices],
+        notices: [
+          ...staffIssueNotices(prev.accounts, [invoice], invoice.createdAt),
+          ...(user?.accountId
+            ? [
+                {
+                  id: `N-DRAFT-${invoice.id}`,
+                  accountId: user.accountId,
+                  kind: 'invoice' as const,
+                  title: 'Purchase recorded',
+                  body: `Invoice ${invoice.id} will appear after Admin and Super issue it.`,
+                  href: '/account',
+                  at: invoice.createdAt,
+                },
+              ]
+            : []),
+          ...(prev.notices || []),
+        ],
       }))
       return null
     },
-    [data.lots, data.settings.copy, user],
+    [data.lots, data.settings, user],
   )
 
   const addToCart = useCallback(
@@ -904,7 +990,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const checkoutCart = useCallback(() => {
     if (!data.cart.length) return data.settings.copy.emptyCart
-    const invoices: Invoice[] = []
+    const stamp = Date.now()
+    const lines = []
     for (const item of data.cart) {
       const lot = data.lots.find((l) => l.id === item.lotId)
       if (!lot || lot.channel !== 'marketplace' || !lot.buyNowPrice) {
@@ -912,18 +999,26 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
       const qtyErr = checkOrderQty(lot, item.qty, data.settings.copy)
       if (qtyErr) return `${lot.model}: ${qtyErr}`
-      invoices.push({
-        id: `INV-${Date.now().toString().slice(-6)}-${item.lotId.slice(-3)}`,
-        lotId: item.lotId,
-        channel: 'marketplace',
-        qty: item.qty,
-        unitPrice: lot.buyNowPrice,
-        amount: lot.buyNowPrice * item.qty,
-        status: 'unpaid',
-        createdAt: Date.now(),
-        accountId: user?.accountId,
-      })
+      lines.push({ lotId: item.lotId, qty: item.qty, unitPrice: lot.buyNowPrice })
     }
+    const d = new Date(stamp)
+    const yy = String(d.getFullYear()).slice(-2)
+    const doy = String(
+      Math.floor((stamp - Date.UTC(d.getFullYear(), 0, 0)) / 86400000),
+    ).padStart(3, '0')
+    const invoices: Invoice[] = [
+      buildInvoice(
+        {
+          id: `MKT-${yy}-${doy}-${stamp.toString().slice(-3)}`,
+          lotId: lines[0].lotId,
+          channel: 'marketplace',
+          createdAt: stamp,
+          accountId: user?.accountId,
+          lines,
+        },
+        data.settings,
+      ),
+    ]
     const byId = new Map(data.cart.map((c) => [c.lotId, c.qty]))
     setData((prev) => ({
       ...prev,
@@ -936,6 +1031,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         })
         .filter((l) => l.channel !== 'marketplace' || l.qty > 0),
       invoices: [...invoices, ...prev.invoices],
+      notices: [
+        ...staffIssueNotices(prev.accounts, invoices, stamp),
+        ...(user?.accountId
+          ? [
+              {
+                id: `N-DRAFT-CART-${stamp}`,
+                accountId: user.accountId,
+                kind: 'invoice' as const,
+                title: 'Checkout recorded',
+                body: `${invoices.length} invoice${invoices.length === 1 ? '' : 's'} will appear after Admin and Super issue ${invoices.length === 1 ? 'it' : 'them'}.`,
+                href: '/account',
+                at: stamp,
+              },
+            ]
+          : []),
+        ...(prev.notices || []),
+      ],
     }))
     return null
   }, [data.cart, data.lots, data.settings, user])
@@ -1037,18 +1149,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
       const qtyErr = checkOrderQty(lot, offer.qty, data.settings.copy)
       if (qtyErr) return qtyErr
-      const invoice: Invoice = {
-        id: `INV-${Date.now().toString().slice(-6)}-${offer.lotId.slice(-3)}`,
-        lotId: offer.lotId,
-        channel: 'marketplace',
-        qty: offer.qty,
-        unitPrice: offer.unitPrice,
-        amount: offer.unitPrice * offer.qty,
-        status: 'unpaid',
-        createdAt: Date.now(),
-        accountId: user.accountId,
-        remarks: `Accepted offer ${offer.id}`,
-      }
+      const invoice = buildInvoice(
+        {
+          id: `INV-${Date.now().toString().slice(-6)}-${offer.lotId.slice(-3)}`,
+          lotId: offer.lotId,
+          channel: 'marketplace',
+          createdAt: Date.now(),
+          accountId: user.accountId,
+          remarks: `Accepted offer ${offer.id}`,
+          lines: [{ lotId: offer.lotId, qty: offer.qty, unitPrice: offer.unitPrice }],
+        },
+        data.settings,
+      )
       setData((prev) => ({
         ...prev,
         offers: (prev.offers || []).map((o) => (o.id === id ? { ...o, status: 'confirmed' as const } : o)),
@@ -1057,14 +1169,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           .map((l) => (l.id === offer.lotId ? { ...l, qty: l.qty - offer.qty } : l))
           .filter((l) => l.channel !== 'marketplace' || l.qty > 0),
         notices: [
+          ...staffIssueNotices(prev.accounts, [invoice], invoice.createdAt),
           {
             id: `N-OFFINV-${id}`,
             accountId: user.accountId,
             kind: 'invoice' as const,
-            title: 'Invoice from offer',
-            body: `Unpaid invoice ${invoice.id} at your offered price.`,
-            href: '/account/invoices',
-            at: Date.now(),
+            title: 'Offer confirmed',
+            body: `Invoice ${invoice.id} will appear after Admin and Super issue it.`,
+            href: '/account',
+            at: invoice.createdAt,
           },
           ...(prev.notices || []),
         ],
@@ -1102,14 +1215,154 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const addLot = useCallback((lot: Lot) => {
-    setData((prev) => ({ ...prev, lots: [lot, ...prev.lots] }))
+    setData((prev) => {
+      const next = ensureAuctionClocks(prev.settings, [lot, ...prev.lots])
+      return { ...prev, settings: next.settings, lots: next.lots }
+    })
   }, [])
 
+  const addLots = useCallback((lots: Lot[]) => {
+    if (!lots.length) return
+    setData((prev) => {
+      const next = ensureAuctionClocks(prev.settings, [...lots, ...prev.lots])
+      return { ...prev, settings: next.settings, lots: next.lots }
+    })
+  }, [])
+
+  const submitListingDrop = useCallback(
+    (items: ListingDropItem[]) => {
+      if (!user || (user.role !== 'admin' && user.role !== 'superadmin')) {
+        return 'Only staff can send listings for confirmation.'
+      }
+      if (!items.length) return 'Add at least one item.'
+      const used = new Set(data.lots.map((l) => l.id.toUpperCase()))
+      for (const drop of data.listingDrops || []) {
+        if (drop.status !== 'pending') continue
+        for (const item of drop.items) used.add(item.id.toUpperCase())
+      }
+      const seen = new Set<string>()
+      for (const item of items) {
+        const id = item.id.trim().toUpperCase()
+        if (!id) return 'Every item needs a lot ID.'
+        if (seen.has(id) || used.has(id)) return `Lot ID ${item.id} is already used.`
+        seen.add(id)
+        if (!item.model.trim()) return 'Every item needs a model.'
+        if (!Number.isInteger(item.qty) || item.qty < 1) return 'Every item needs qty of at least 1.'
+        if (!Number.isFinite(item.currentPrice) || item.currentPrice < 1) return 'Every item needs a valid price.'
+        if (!Number.isFinite(item.durationMins) || item.durationMins < 1) {
+          return 'Listing duration must be at least 1 minute.'
+        }
+      }
+      const drop: ListingDrop = {
+        id: `DROP-${Date.now().toString().slice(-6)}`,
+        submittedAt: Date.now(),
+        submittedBy: user.accountId,
+        status: 'pending',
+        items,
+      }
+      setData((prev) => ({
+        ...prev,
+        listingDrops: [drop, ...(prev.listingDrops || [])],
+        inventory: upsertInventory(prev.inventory || [], items),
+      }))
+      return null
+    },
+    [user, data.lots, data.listingDrops],
+  )
+
+  const withdrawListingDrop = useCallback(
+    (id: string) => {
+      if (!user || (user.role !== 'admin' && user.role !== 'superadmin')) {
+        return 'Only staff can withdraw a catalog.'
+      }
+      const drop = (data.listingDrops || []).find((d) => d.id === id)
+      if (!drop || drop.status !== 'pending') return 'That catalog is no longer waiting.'
+      setData((prev) => ({
+        ...prev,
+        listingDrops: (prev.listingDrops || []).map((d) =>
+          d.id === id ? { ...d, status: 'declined' as const, reviewedAt: Date.now(), reviewedBy: user.accountId } : d,
+        ),
+      }))
+      return null
+    },
+    [user, data.listingDrops],
+  )
+
+  const reviewListingDrop = useCallback(
+    (id: string, decision: 'approved' | 'declined') => {
+      if (!user || user.role !== 'superadmin') return 'Only Super admin can confirm catalogs.'
+      const drop = (data.listingDrops || []).find((d) => d.id === id)
+      if (!drop || drop.status !== 'pending') return 'That catalog is no longer waiting.'
+      if (decision === 'declined') {
+        setData((prev) => ({
+          ...prev,
+          listingDrops: (prev.listingDrops || []).map((d) =>
+            d.id === id ? { ...d, status: 'declined' as const, reviewedAt: Date.now(), reviewedBy: user.accountId } : d,
+          ),
+        }))
+        return null
+      }
+      const now = Date.now()
+      const used = new Set(data.lots.map((l) => l.id.toUpperCase()))
+      const lots: Lot[] = []
+      for (const item of drop.items) {
+        const key = item.id.toUpperCase()
+        if (used.has(key)) return `Lot ID ${item.id} is already live. Decline this drop and send a new sheet.`
+        used.add(key)
+        lots.push(liveLotFromDrop(item, now))
+      }
+      setData((prev) => {
+        const next = applyDropClocks(prev.settings, prev.lots, lots, drop.items, now)
+        return {
+          ...prev,
+          settings: next.settings,
+          lots: next.lots,
+          inventory: upsertInventory(prev.inventory || [], lots),
+          listingDrops: (prev.listingDrops || []).map((d) =>
+            d.id === id ? { ...d, status: 'approved' as const, reviewedAt: now, reviewedBy: user.accountId } : d,
+          ),
+        }
+      })
+      return null
+    },
+    [user, data.lots, data.listingDrops],
+  )
+
+  const saveSku = useCallback(
+    (sku: InventorySku) => {
+      if (!user || (user.role !== 'admin' && user.role !== 'superadmin')) {
+        return 'Only staff can edit inventory.'
+      }
+      if (!sku.model.trim() || !sku.manufacturer.trim()) return 'Maker and model are required.'
+      const id = sku.id.trim() || `SKU-${Date.now().toString(36)}`
+      const next: InventorySku = { ...sku, id, model: sku.model.trim(), manufacturer: sku.manufacturer.trim() }
+      setData((prev) => {
+        const list = prev.inventory || []
+        const exists = list.some((s) => s.id === id)
+        return { ...prev, inventory: exists ? list.map((s) => (s.id === id ? next : s)) : [next, ...list] }
+      })
+      return null
+    },
+    [user],
+  )
+
+  const removeSku = useCallback(
+    (id: string) => {
+      if (!user || (user.role !== 'admin' && user.role !== 'superadmin')) {
+        return 'Only staff can edit inventory.'
+      }
+      setData((prev) => ({ ...prev, inventory: (prev.inventory || []).filter((s) => s.id !== id) }))
+      return null
+    },
+    [user],
+  )
+
   const updateLot = useCallback((lot: Lot) => {
-    setData((prev) => ({
-      ...prev,
-      lots: prev.lots.map((l) => (l.id === lot.id ? { ...l, ...lot } : l)),
-    }))
+    setData((prev) => {
+      const lots = prev.lots.map((l) => (l.id === lot.id ? { ...l, ...lot } : l))
+      const next = ensureAuctionClocks(prev.settings, lots)
+      return { ...prev, settings: next.settings, lots: next.lots }
+    })
   }, [])
 
   const removeLot = useCallback((lotId: string) => {
@@ -1123,7 +1376,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const saveSettings = useCallback((next: SiteSettings) => {
     if (user?.role !== 'superadmin') return
-    setData((prev) => ({ ...prev, settings: mergeSettings(next) }))
+    setData((prev) => {
+      const settings = mergeSettings(next)
+      const clocked = ensureAuctionClocks(settings, prev.lots)
+      return { ...prev, settings: clocked.settings, lots: clocked.lots }
+    })
   }, [user])
 
   const saveAccount = useCallback(
@@ -1143,6 +1400,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         password,
         company: account.company.trim(),
         email: account.email.trim(),
+        address: account.address?.trim() || existing?.address || '',
         role: id === SUPER_USER.accountId ? 'superadmin' : account.role === 'admin' ? 'admin' : 'member',
         status: id === SUPER_USER.accountId ? 'active' : account.status,
       }
@@ -1191,27 +1449,35 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [user],
   )
 
+  const applyTypeClock = (prev: Persisted, slug: string | undefined, minutes: number) => {
+    const closesAt = Date.now() + minutes * 60 * 1000
+    const auctionTypes = prev.settings.auctionTypes.map((t) =>
+      !slug || t.value === slug ? { ...t, closesAt, closeMinutes: minutes } : t,
+    )
+    const next = ensureAuctionClocks({ ...prev.settings, auctionTypes }, prev.lots)
+    return { ...prev, settings: next.settings, lots: next.lots }
+  }
+
   const extendLot = useCallback((lotId: string, minutes?: number) => {
     setData((prev) => {
+      const lot = prev.lots.find((l) => l.id === lotId)
+      if (!lot || lot.channel !== 'auction') return prev
       const mins = Math.max(1, minutes ?? prev.settings.extendMinutes ?? (prev.settings.extendHours || 2) * 60)
-      return {
-        ...prev,
-        lots: prev.lots.map((l) =>
-          l.id === lotId ? { ...l, endsAt: Math.max(l.endsAt, Date.now()) + mins * 60 * 1000 } : l,
-        ),
-      }
+      return applyTypeClock(prev, lotAuctionSlug(lot), mins)
     })
   }, [])
 
-  const reopenAuctions = useCallback(() => {
+  const extendAuctionType = useCallback((slug: string, minutes?: number) => {
+    setData((prev) => {
+      const mins = Math.max(1, minutes ?? prev.settings.extendMinutes ?? (prev.settings.extendHours || 2) * 60)
+      return applyTypeClock(prev, slug, mins)
+    })
+  }, [])
+
+  const reopenAuctions = useCallback((slug?: string) => {
     setData((prev) => {
       const mins = Math.max(1, prev.settings.reopenMinutes ?? (prev.settings.reopenHours || 4) * 60)
-      return {
-        ...prev,
-        lots: prev.lots.map((l) =>
-          l.channel === 'auction' ? { ...l, endsAt: Date.now() + mins * 60 * 1000 } : l,
-        ),
-      }
+      return applyTypeClock(prev, slug, mins)
     })
   }, [])
 
@@ -1221,6 +1487,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const inv = data.invoices.find((i) => i.id === id)
       if (!inv) return copy.warnLotMissing
       if (inv.status === 'paid') return copy.okPaid
+      if (inv.status === 'draft') return 'This invoice is not issued yet. Admin and Super must stamp it first.'
       if (inv.status === 'pending_review' && user?.role === 'member') return copy.payWaiting
       if (user?.role === 'member' && inv.accountId && inv.accountId !== user.accountId) {
         return copy.warnLotMissing
@@ -1259,6 +1526,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
       const inv = data.invoices.find((i) => i.id === id)
       if (!inv) return data.settings.copy.warnLotMissing
+      if (inv.status === 'draft') return 'Issue this invoice first, then review payment.'
       if (!inv.receiptData) return data.settings.copy.warnReceipt
       const review = { decision, by: user.accountId, at: Date.now() }
       setData((prev) => ({
@@ -1278,6 +1546,54 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [data.invoices, data.settings.copy, user],
   )
 
+  const reviewInvoiceIssue = useCallback(
+    (id: string, side: PayReviewSide, decision: PayDecision) => {
+      if (user?.role !== 'admin' && user?.role !== 'superadmin') {
+        return 'Only admin or super admin can issue invoices.'
+      }
+      if (side === 'super' && user.role !== 'superadmin') {
+        return 'Only super admin can give the super-admin issue stamp.'
+      }
+      const inv = data.invoices.find((i) => i.id === id)
+      if (!inv) return data.settings.copy.warnLotMissing
+      if (inv.status !== 'draft' && !(inv.status === 'declined' && !inv.issuedAt)) {
+        return 'That invoice is already issued.'
+      }
+      const review = { decision, by: user.accountId, at: Date.now() }
+      setData((prev) => {
+        let issued: Invoice | undefined
+        const invoices = prev.invoices.map((row) => {
+          if (row.id !== id) return row
+          const next = settleInvoiceIssue({
+            ...row,
+            issueAdmin: side === 'admin' ? review : row.issueAdmin,
+            issueSuper: side === 'super' ? review : row.issueSuper,
+          })
+          if (row.status === 'draft' && next.status === 'unpaid') issued = next
+          return next
+        })
+        const notices =
+          issued && issued.accountId
+            ? [
+                {
+                  id: `N-ISSUED-${issued.id}`,
+                  accountId: issued.accountId,
+                  kind: 'invoice' as const,
+                  title: 'Invoice issued',
+                  body: `${issued.id} is ready. Pay within 7 days of issue and upload the receipt.`,
+                  href: '/account/invoices',
+                  at: Date.now(),
+                },
+                ...(prev.notices || []),
+              ]
+            : prev.notices
+        return { ...prev, invoices, notices }
+      })
+      return null
+    },
+    [data.invoices, data.settings.copy, user],
+  )
+
   const saveInvoice = useCallback(
     (invoice: Invoice, previousId?: string) => {
       if (user?.role !== 'admin' && user?.role !== 'superadmin') {
@@ -1289,6 +1605,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (!Number.isInteger(invoice.qty) || invoice.qty < 1) return 'Qty must be a whole number of 1 or more.'
       if (!Number.isFinite(invoice.unitPrice) || invoice.unitPrice < 1) return 'Enter a valid unit price.'
       const lot = data.lots.find((l) => l.id === invoice.lotId)
+      const existing = data.invoices.find((row) => row.id === (previousId || id).toUpperCase())
+      const lines = invoice.lines?.length
+        ? invoice.lines
+        : [{ lotId: invoice.lotId, qty: invoice.qty, unitPrice: invoice.unitPrice }]
+      const feePct = Number.isFinite(invoice.feePct)
+        ? Math.max(0, invoice.feePct as number)
+        : existing?.feePct || 0
       const next: Invoice = {
         ...invoice,
         id,
@@ -1296,9 +1619,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         channel: lot?.channel || invoice.channel || 'marketplace',
         qty: invoice.qty,
         unitPrice: invoice.unitPrice,
-        amount: invoice.qty * invoice.unitPrice,
+        feePct,
+        lines,
+        amount: invoiceTotals({ ...invoice, feePct, lines }, data.settings).total,
         accountId: invoice.accountId?.trim().toUpperCase() || undefined,
         createdAt: invoice.createdAt || Date.now(),
+        status: existing ? invoice.status : 'draft',
+        issueAdmin: invoice.issueAdmin ?? existing?.issueAdmin,
+        issueSuper: invoice.issueSuper ?? existing?.issueSuper,
+        issuedAt: invoice.issuedAt ?? existing?.issuedAt,
       }
       const replaceId = (previousId || id).toUpperCase()
       setData((prev) => ({
@@ -1307,10 +1636,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           next,
           ...prev.invoices.filter((row) => row.id !== replaceId && row.id !== id),
         ],
+        notices: existing
+          ? prev.notices
+          : [...staffIssueNotices(prev.accounts, [next], Date.now()), ...(prev.notices || [])],
       }))
       return null
     },
-    [data.lots, user],
+    [data.lots, data.invoices, data.settings, user],
   )
 
   const removeInvoice = useCallback(
@@ -1378,6 +1710,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       notices: data.notices || [],
       cart: data.cart,
       offers: data.offers || [],
+      listingDrops: data.listingDrops || [],
+      inventory: data.inventory || [],
       accounts: data.accounts,
       settings: data.settings,
       isSuperAdmin: user?.role === 'superadmin',
@@ -1400,6 +1734,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       toggleWatch,
       submitPayment,
       reviewPayment,
+      reviewInvoiceIssue,
       saveInvoice,
       removeInvoice,
       clearPaymentConfirmation,
@@ -1408,6 +1743,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       myBid,
       myLastBid,
       addLot,
+      addLots,
+      submitListingDrop,
+      withdrawListingDrop,
+      reviewListingDrop,
+      saveSku,
+      removeSku,
       updateLot,
       removeLot,
       saveSettings,
@@ -1415,6 +1756,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       removeAccount,
       setAccountStatus,
       extendLot,
+      extendAuctionType,
       reopenAuctions,
     }),
     [
@@ -1438,6 +1780,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       toggleWatch,
       submitPayment,
       reviewPayment,
+      reviewInvoiceIssue,
       saveInvoice,
       removeInvoice,
       clearPaymentConfirmation,
@@ -1446,6 +1789,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       myBid,
       myLastBid,
       addLot,
+      addLots,
+      submitListingDrop,
+      withdrawListingDrop,
+      reviewListingDrop,
+      saveSku,
+      removeSku,
       updateLot,
       removeLot,
       saveSettings,
@@ -1453,6 +1802,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       removeAccount,
       setAccountStatus,
       extendLot,
+      extendAuctionType,
       reopenAuctions,
     ],
   )

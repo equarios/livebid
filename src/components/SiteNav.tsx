@@ -3,12 +3,13 @@ import { NavLink, useLocation } from 'react-router-dom'
 import { useNow, useStore } from '../store'
 
 export function SiteNav({ onNavigate }: { onNavigate?: () => void }) {
-  const { lots, invoices, cart, settings, isSuperAdmin, isStaff, accounts } = useStore()
+  const { lots, invoices, cart, settings, isSuperAdmin, isStaff, accounts, listingDrops } = useStore()
   const now = useNow()
   const location = useLocation()
   const [helpOpen, setHelpOpen] = useState(false)
   const pendingCount = accounts.filter((a) => a.status === 'pending').length
-  const payCount = invoices.filter((i) => i.status === 'pending_review').length
+  const payCount = invoices.filter((i) => i.status === 'pending_review' || i.status === 'draft').length
+  const catalogWait = (listingDrops || []).filter((d) => d.status === 'pending').reduce((n, d) => n + d.items.length, 0)
   const liveCount = lots.filter((l) => l.channel === 'auction' && l.endsAt > now).length
   const auctionsOpen = location.pathname.startsWith('/auctions')
   const myPage = location.pathname.startsWith('/account')
@@ -75,7 +76,7 @@ export function SiteNav({ onNavigate }: { onNavigate?: () => void }) {
       {isSuperAdmin ? (
         <NavLink to="/super">
           {settings.copy.navSuper}
-          {payCount + pendingCount > 0 ? <em>{payCount + pendingCount}</em> : null}
+          {payCount + pendingCount + catalogWait > 0 ? <em>{payCount + pendingCount + catalogWait}</em> : null}
         </NavLink>
       ) : null}
     </nav>

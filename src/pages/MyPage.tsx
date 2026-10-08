@@ -1,7 +1,7 @@
 import { Link, NavLink, Outlet } from 'react-router-dom'
 import { RecentLots } from '../components/RecentLots'
 import { usd } from '../lib/format'
-import { invoiceDueLabel } from '../lib/invoices'
+import { invoiceDueLabel, invoiceTotals, invoiceVisibleToBuyer } from '../lib/invoices'
 import { useNow, useStore } from '../store'
 
 const TABS = [
@@ -15,12 +15,14 @@ const TABS = [
 
 export function MyPage() {
   const now = useNow()
-  const { lots, invoices, user, isStaff } = useStore()
+  const { lots, invoices, user, isStaff, settings } = useStore()
   const live = lots.filter((l) => l.channel === 'auction' && l.endsAt > now).length
-  const mine = invoices.filter((i) => isStaff || !i.accountId || i.accountId === user?.accountId)
+  const mine = invoices.filter(
+    (i) => invoiceVisibleToBuyer(i) && (isStaff || !i.accountId || i.accountId === user?.accountId),
+  )
   const unpaid = mine.filter((i) => i.status !== 'paid' && !i.shippedAt)
-  const due = unpaid.reduce((n, i) => n + i.amount, 0)
-  const soonest = unpaid.map((i) => invoiceDueLabel(i, now)).find((label) => label)
+  const due = unpaid.reduce((n, i) => n + invoiceTotals(i, settings).total, 0)
+  const soonest = unpaid.map((i) => invoiceDueLabel(i, now, settings)).find((label) => label)
 
   return (
     <div className="mypage">
@@ -34,18 +36,18 @@ export function MyPage() {
         </nav>
       </div>
       <div className="mypage-body">
-        <div className="bid-totals three">
-          <div className="bid-total-card">
+        <div className="auction-desk-kpis">
+          <div className="auction-desk-stat">
             <span className="label">Live auctions</span>
             <strong>{live}</strong>
             <Link to="/auctions">Open auction</Link>
           </div>
-          <div className="bid-total-card">
+          <div className="auction-desk-stat">
             <span className="label">Marketplace</span>
             <strong>{lots.filter((l) => l.channel === 'marketplace').length}</strong>
             <Link to="/marketplace">Open marketplace</Link>
           </div>
-          <div className="bid-total-card">
+          <div className="auction-desk-stat is-lose">
             <span className="label">Unpaid invoices</span>
             <strong>{usd(due)}</strong>
             <Link to="/account/invoices">Invoice</Link>

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ModalShell } from './ModalShell'
 import { usd } from '../lib/format'
+import { invoiceTotals } from '../lib/invoices'
 import { useStore } from '../store'
 import type { Invoice } from '../types'
 
@@ -84,7 +85,7 @@ export function PaymentSubmitDialog({ invoice, onClose, onDone }: Props) {
           </div>
           <div>
             <dt>Amount</dt>
-            <dd>{usd(invoice.amount)}</dd>
+            <dd>{usd(invoiceTotals(invoice, settings).total)}</dd>
           </div>
         </dl>
         <label className="ack">

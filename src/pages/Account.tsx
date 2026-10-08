@@ -1,7 +1,8 @@
 import { useStore } from '../store'
 
 export function Account() {
-  const { user, settings } = useStore()
+  const { user, settings, accounts } = useStore()
+  const address = accounts.find((a) => a.accountId === user?.accountId)?.address
   return (
     <div>
       <div className="page-head">
@@ -23,6 +24,12 @@ export function Account() {
           <div>
             <dt>Email</dt>
             <dd>{user?.email}</dd>
+          </div>
+          <div>
+            <dt>Ship / bill to</dt>
+            <dd style={{ whiteSpace: 'pre-wrap' }}>
+              {address || 'Set by Super admin'}
+            </dd>
           </div>
           <div>
             <dt>Role</dt>

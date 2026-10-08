@@ -1,10 +1,11 @@
-import { Fragment, useMemo } from 'react'
+import { Fragment, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Link } from 'react-router-dom'
 import { FillBar } from './FillBar'
 import { InlineBid } from './InlineBid'
 import { ItemLink } from './ItemLink'
 import { bidStatus, fillStats, type FillStats } from '../lib/allocate'
-import { isSealedLot, typePillClass } from '../lib/auctionLists'
-import { lotTypeLabel, usd } from '../lib/format'
+import { auctionClockRows, isSealedLot, listPath, typePillClass } from '../lib/auctionLists'
+import { lotTypeLabel, timeLeft, usd } from '../lib/format'
 import { moqLabel } from '../lib/moq'
 import { useNow, useStore } from '../store'
 import type { Bid, Lot, SiteSettings } from '../types'
@@ -66,10 +67,49 @@ function orderFocusRows(rows: Row[]) {
   })
 }
 
-export function BidTotals({ lots }: { lots: Lot[] }) {
+const DESK_KEY = 'equarios-auction-desk-hidden'
+
+function closeHeat(pct: number) {
+  if (pct >= 0.75) return 'hot'
+  if (pct >= 0.4) return 'mid'
+  return 'ok'
+}
+
+function closeProgress(endsAt: number, now: number, durationMs: number, windowMin: number, closing: boolean) {
+  const left = Math.max(0, endsAt - now)
+  if (closing) {
+    const windowMs = Math.max(1, windowMin) * 60 * 1000
+    return Math.max(0, Math.min(1, (windowMs - left) / windowMs))
+  }
+  return Math.max(0, Math.min(1, 1 - left / Math.max(1, durationMs)))
+}
+
+export function BidTotals({ lots, children }: { lots: Lot[]; children?: ReactNode }) {
   const now = useNow()
   const { myLastBid, bids, user, settings } = useStore()
   const me = user?.accountId
+  const deskRef = useRef<HTMLDivElement>(null)
+  const [hidden, setHidden] = useState(() => {
+    try {
+      return localStorage.getItem(DESK_KEY) === '1'
+    } catch {
+      return false
+    }
+  })
+  useLayoutEffect(() => {
+    const el = deskRef.current
+    if (!el) return
+    const apply = () => {
+      document.documentElement.style.setProperty('--auction-desk-h', `${Math.round(el.getBoundingClientRect().height)}px`)
+    }
+    const ro = new ResizeObserver(apply)
+    ro.observe(el)
+    apply()
+    return () => {
+      ro.disconnect()
+      document.documentElement.style.removeProperty('--auction-desk-h')
+    }
+  }, [hidden, children])
   const hideWin =
     lots.length > 0 && lots.every((lot) => isSealedLot(lot, settings) && lot.endsAt > now)
   let alreadyBid = 0
@@ -83,22 +123,107 @@ export function BidTotals({ lots }: { lots: Lot[] }) {
       winningAmount += stats.myPcs * last.amount
     }
   }
+  const clockRows = settings.features.endingSoon
+    ? auctionClockRows(lots, settings, now, settings.endingSoonMinutes)
+    : []
+  const closingSoon = clockRows.filter((row) => row.closing)
+  const closeBars = closingSoon.length ? closingSoon : clockRows.slice(0, 1)
+  function toggle() {
+    const next = !hidden
+    setHidden(next)
+    try {
+      localStorage.setItem(DESK_KEY, next ? '1' : '0')
+    } catch {
+      /* ignore */
+    }
+  }
+
   return (
-    <div className="bid-totals">
-      <div className="bid-total-card">
-        <span className="label">Total already bid</span>
-        <strong>{usd(alreadyBid)}</strong>
-        <span className="muted tiny">Your qty × your price on these lots</span>
+    <div ref={deskRef} className={`auction-desk${hidden ? ' is-collapsed' : ''}`}>
+      <div className="auction-desk-head">
+        <div>
+          <strong>Bidding snapshot</strong>
+          {hidden ? (
+            <p className="muted tiny auction-desk-recap">
+              {usd(alreadyBid)} bid
+              {hideWin ? '' : ` · ${usd(winningAmount)} winning`}
+              {closingSoon.length ? ` · ${closingSoon.length} closing soon` : ''}
+            </p>
+          ) : null}
+        </div>
+        <div className="auction-desk-head-actions">
+          {settings.features.endingSoon ? (
+            <span
+              className={`auction-close-count${closingSoon.length ? ' on' : ''}`}
+              title={
+                closingSoon.length
+                  ? closingSoon.map((row) => row.label).join(', ')
+                  : 'No auctions in the warning window'
+              }
+            >
+              Closing <strong>{closingSoon.length}</strong>
+            </span>
+          ) : null}
+          <button type="button" className="auction-close-count" onClick={toggle}>
+            {hidden ? 'Show' : 'Hide'}
+          </button>
+        </div>
       </div>
-      <div className="bid-total-card win-card">
-        <span className="label">Winning amount</span>
-        <strong>{hideWin ? 'Hidden' : usd(winningAmount)}</strong>
-        <span className="muted tiny">
-          {hideWin
-            ? 'Win/lose stays hidden on Offline Auctions until close'
-            : 'Pcs you are currently allocated × your price'}
-        </span>
-      </div>
+      {children ? <div className="auction-desk-filters">{children}</div> : null}
+      {!hidden ? (
+        <>
+          <div className="auction-desk-kpis">
+            <div
+              className="auction-desk-stat"
+              title="Your qty × your price on these lots"
+            >
+              <span className="label">Already bid</span>
+              <strong>{usd(alreadyBid)}</strong>
+            </div>
+            <div
+              className="auction-desk-stat is-win"
+              title={
+                hideWin
+                  ? 'Win/lose stays hidden on Offline Auctions until close'
+                  : 'Pcs you are currently allocated × your price'
+              }
+            >
+              <span className="label">Winning</span>
+              <strong>{hideWin ? 'Hidden' : usd(winningAmount)}</strong>
+            </div>
+            {closeBars.map((row) => {
+              const pct = closeProgress(
+                row.endsAt,
+                now,
+                row.durationMs,
+                settings.endingSoonMinutes,
+                row.closing,
+              )
+              const heat = row.closing ? closeHeat(pct) : 'ok'
+              return (
+                <Link
+                  key={row.value}
+                  to={listPath(row.value)}
+                  className={`auction-close-bar is-${heat}`}
+                  title={`${row.label} · ${row.count} lots · ${timeLeft(row.endsAt, now)} left`}
+                >
+                  <span className="auction-close-bar-top">
+                    <strong>{row.label}</strong>
+                    <TimeLeft endsAt={row.endsAt} />
+                  </span>
+                  <span className="muted tiny">
+                    {row.count === 1 ? '1 lot' : `${row.count} lots`} ·{' '}
+                    {row.closing ? 'closing now' : 'next close'}
+                  </span>
+                  <span className="auction-close-track" aria-hidden>
+                    <span className="auction-close-fill" style={{ width: `${Math.round(pct * 100)}%` }} />
+                  </span>
+                </Link>
+              )
+            })}
+          </div>
+        </>
+      ) : null}
     </div>
   )
 }
@@ -191,7 +316,7 @@ function LotCells({
         <YouWin row={row} />
       </td>
       <td>
-        <TimeLeft endsAt={lot.endsAt} warn />
+        <TimeLeft endsAt={lot.endsAt} />
       </td>
       <td>
         <InlineBid lot={lot} withWatch />
@@ -227,7 +352,7 @@ function LotCardBlock({
       <div className="auction-card-meta">
         <span className={`grade-inline grade-${lot.grade}`}>{lot.grade}</span>
         <span>{lot.qty.toLocaleString()} pcs</span>
-        <TimeLeft endsAt={lot.endsAt} warn />
+        <TimeLeft endsAt={lot.endsAt} />
       </div>
       <YouWin row={row} />
       <div className="auction-card-prices">

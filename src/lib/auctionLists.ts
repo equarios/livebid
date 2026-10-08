@@ -1,3 +1,4 @@
+import { isEndingSoon } from './format'
 import type { AuctionFillMode, AuctionTypeDef, Lot, SiteSettings } from '../types'
 
 export type AuctionListKind = string
@@ -45,7 +46,16 @@ export function migrateLotAuctionType(value?: string) {
   return value || 'live'
 }
 
-export function normalizeAuctionTypes(rows?: AuctionTypeDef[] | { value: string; label: string; fillMode?: string; intro?: string }[]) {
+export function normalizeAuctionTypes(
+  rows?: AuctionTypeDef[] | Array<{
+    value: string
+    label: string
+    fillMode?: string
+    intro?: string
+    closesAt?: number
+    closeMinutes?: number
+  }>,
+) {
   const seen = new Set<string>()
   const out: AuctionTypeDef[] = []
   for (const t of rows || []) {
@@ -57,6 +67,9 @@ export function normalizeAuctionTypes(rows?: AuctionTypeDef[] | { value: string;
       label: (t.label || value).trim(),
       fillMode: normalizeFillMode(t.fillMode, value),
       intro: t.intro?.trim() || undefined,
+      closesAt: typeof t.closesAt === 'number' && t.closesAt > 0 ? t.closesAt : undefined,
+      closeMinutes:
+        typeof t.closeMinutes === 'number' && t.closeMinutes > 0 ? Math.floor(t.closeMinutes) : undefined,
     })
   }
   return out
@@ -115,6 +128,107 @@ export function lotFillMode(lot: Pick<Lot, 'auctionType' | 'channel'>, settings?
 
 export function isSealedLot(lot: Pick<Lot, 'auctionType' | 'channel'>, settings?: SiteSettings) {
   return lotFillMode(lot, settings) === 'sealed'
+}
+
+export function lotAuctionSlug(lot: Pick<Lot, 'auctionType'>) {
+  return migrateLotAuctionType(lot.auctionType)
+}
+
+export function ensureAuctionClocks(
+  settings: SiteSettings,
+  lots: Lot[],
+  now = Date.now(),
+): { settings: SiteSettings; lots: Lot[] } {
+  const auctionTypes = settings.auctionTypes.map((t) => {
+    if (t.closesAt && t.closesAt > 0) return t
+    const mins = Math.max(1, t.closeMinutes || (t.value === 'live' ? 240 : 18 * 60))
+    return { ...t, closeMinutes: mins, closesAt: now + mins * 60 * 1000 }
+  })
+  const byType = new Map(auctionTypes.map((t) => [t.value, t.closesAt || 0]))
+  const nextLots = lots.map((lot) => {
+    if (lot.channel !== 'auction') return lot
+    const slug = lotAuctionSlug(lot)
+    const closesAt = byType.get(slug)
+    if (!closesAt) return { ...lot, auctionType: slug }
+    return { ...lot, auctionType: slug, endsAt: closesAt }
+  })
+  return { settings: { ...settings, auctionTypes }, lots: nextLots }
+}
+
+/** When Super publishes a drop: join an open list clock, or start a new one from the drop duration. */
+export function applyDropClocks(
+  settings: SiteSettings,
+  existingLots: Lot[],
+  incoming: Lot[],
+  dropItems: Array<{ channel: Lot['channel']; auctionType?: string; durationMins: number }>,
+  now = Date.now(),
+): { settings: SiteSettings; lots: Lot[] } {
+  const durationByType = new Map<string, number>()
+  for (const item of dropItems) {
+    if (item.channel !== 'auction') continue
+    const slug = item.auctionType || 'live'
+    const mins = Math.max(1, item.durationMins || 1)
+    durationByType.set(slug, Math.max(durationByType.get(slug) || 0, mins))
+  }
+  const auctionTypes = settings.auctionTypes.map((t) => {
+    const mins = durationByType.get(t.value)
+    if (mins == null) return t
+    if (t.closesAt && t.closesAt > now) return t
+    return { ...t, closeMinutes: mins, closesAt: now + mins * 60 * 1000 }
+  })
+  return ensureAuctionClocks({ ...settings, auctionTypes }, [...incoming, ...existingLots], now)
+}
+
+export function typeClockOpen(settings: SiteSettings, slug: string, now = Date.now()) {
+  const t = settings.auctionTypes.find((row) => row.value === slug)
+  return Boolean(t?.closesAt && t.closesAt > now)
+}
+
+export type AuctionClockRow = {
+  value: string
+  label: string
+  endsAt: number
+  count: number
+  closing: boolean
+  durationMs: number
+}
+
+export function auctionClockRows(
+  lots: Lot[],
+  settings: SiteSettings,
+  now: number,
+  minutes: number,
+): AuctionClockRow[] {
+  const rows: AuctionClockRow[] = []
+  for (const t of settings.auctionTypes) {
+    const group = lots.filter((l) => l.channel === 'auction' && lotAuctionSlug(l) === t.value)
+    if (!group.length) continue
+    const endsAt = t.closesAt || Math.max(...group.map((l) => l.endsAt))
+    if (endsAt <= now) continue
+    const durationMs = Math.max(
+      1,
+      (t.closeMinutes || minutes) * 60 * 1000,
+      endsAt - now,
+    )
+    rows.push({
+      value: t.value,
+      label: t.label,
+      endsAt,
+      count: group.length,
+      closing: isEndingSoon(endsAt, now, minutes),
+      durationMs,
+    })
+  }
+  return rows.sort((a, b) => a.endsAt - b.endsAt)
+}
+
+export function closingSoonAuctions(
+  lots: Lot[],
+  settings: SiteSettings,
+  now: number,
+  minutes: number,
+) {
+  return auctionClockRows(lots, settings, now, minutes).filter((row) => row.closing)
 }
 
 export function typePillClass(lot: Pick<Lot, 'auctionType' | 'channel'>, settings?: SiteSettings) {

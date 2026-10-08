@@ -57,6 +57,16 @@ export function moneyPlain(n: number) {
   return n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
 }
 
+export function moneyUsd(n: number) {
+  return `${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`
+}
+
+export function invoiceSlashDate(ts: number) {
+  const d = new Date(ts)
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())}`
+}
+
 export function isoDate(ts: number) {
   const d = new Date(ts)
   const p = (n: number) => String(n).padStart(2, '0')

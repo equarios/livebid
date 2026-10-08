@@ -8,6 +8,10 @@ export type AuctionTypeDef = {
   label: string
   fillMode: AuctionFillMode
   intro?: string
+  /** Shared close clock for every lot on this list. */
+  closesAt?: number
+  /** Used when closesAt is not set yet. */
+  closeMinutes?: number
 }
 
 export type Channel = 'auction' | 'marketplace'
@@ -155,6 +159,21 @@ export type IconSettings = {
   favourite: string
 }
 
+export type InvoiceProfile = {
+  legalName: string
+  address: string
+  tel: string
+  terms: string
+  payDays: number
+  feePct: number
+  swift: string
+  bankName: string
+  branchName: string
+  branchAddress: string
+  accountNumber: string
+  beneficiary: string
+}
+
 export type SiteSettings = {
   brandName: string
   brandMark: string
@@ -185,6 +204,7 @@ export type SiteSettings = {
   features: FeatureFlags
   copy: CopySettings
   icons: IconSettings
+  invoice: InvoiceProfile
 }
 
 export type Lot = {
@@ -216,6 +236,40 @@ export type Lot = {
   origin?: string
 }
 
+/** Master device record. Auction lots copy specs from here; listing only needs qty and price. */
+export type InventorySku = {
+  id: string
+  manufacturer: string
+  model: string
+  modelNumber: string
+  capacity: string
+  color: string
+  grade: Grade
+  battery: number
+  origin: string
+  operator?: string
+  simLocked?: boolean
+  activationLocked?: boolean
+  description: string
+  defaultMoq?: number
+  lastPrice?: number
+}
+
+export type ListingDropStatus = 'pending' | 'approved' | 'declined'
+
+/** Admin-built lots waiting Super confirmation. Clock starts on approve. */
+export type ListingDropItem = Lot & { durationMins: number }
+
+export type ListingDrop = {
+  id: string
+  submittedAt: number
+  submittedBy: string
+  status: ListingDropStatus
+  reviewedAt?: number
+  reviewedBy?: string
+  items: ListingDropItem[]
+}
+
 export type Bid = {
   lotId: string
   accountId: string
@@ -224,7 +278,7 @@ export type Bid = {
   at: number
 }
 
-export type InvoiceStatus = 'unpaid' | 'pending_review' | 'paid' | 'declined'
+export type InvoiceStatus = 'draft' | 'unpaid' | 'pending_review' | 'paid' | 'declined'
 export type PayDecision = 'accepted' | 'declined'
 export type PayReviewSide = 'admin' | 'super'
 
@@ -234,6 +288,13 @@ export type PayReview = {
   at: number
 }
 
+export type InvoiceLine = {
+  lotId: string
+  qty: number
+  unitPrice: number
+  boxNo?: string
+}
+
 export type Invoice = {
   id: string
   lotId: string
@@ -241,6 +302,9 @@ export type Invoice = {
   amount: number
   qty: number
   unitPrice: number
+  lines?: InvoiceLine[]
+  /** 0 or omitted = no auction / system fee. Admin sets this per invoice. */
+  feePct?: number
   status: InvoiceStatus
   createdAt: number
   accountId?: string
@@ -249,6 +313,9 @@ export type Invoice = {
   paidDeclaredAt?: number
   adminReview?: PayReview
   superReview?: PayReview
+  issueAdmin?: PayReview
+  issueSuper?: PayReview
+  issuedAt?: number
   trackingNo?: string
   shippedAt?: number
   remarks?: string
@@ -298,6 +365,7 @@ export type Account = {
   password: string
   company: string
   email: string
+  address?: string
   role: AccountRole
   status: AccountStatus
 }

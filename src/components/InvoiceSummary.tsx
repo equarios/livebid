@@ -14,18 +14,18 @@ export function InvoiceSummary({
   unpaidCount: number
 }) {
   return (
-    <div className="bid-totals three">
-      <div className="bid-total-card">
+    <div className="auction-desk-kpis">
+      <div className="auction-desk-stat">
         <span className="label">Total amount</span>
         <strong>{usd(total)}</strong>
         <span className="muted tiny">Paid + unpaid invoices on this page</span>
       </div>
-      <div className="bid-total-card win-card">
+      <div className="auction-desk-stat is-win">
         <span className="label">Paid</span>
         <strong>{usd(paid)}</strong>
         <span className="muted tiny">{paidCount} invoice{paidCount === 1 ? '' : 's'}</span>
       </div>
-      <div className="bid-total-card unpaid-card">
+      <div className="auction-desk-stat is-lose">
         <span className="label">Unpaid</span>
         <strong>{usd(unpaid)}</strong>
         <span className="muted tiny">{unpaidCount} invoice{unpaidCount === 1 ? '' : 's'}</span>

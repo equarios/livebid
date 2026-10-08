@@ -1,14 +1,80 @@
-import type { Channel, Invoice, InvoiceStatus, Lot } from '../types'
+import type { Channel, Invoice, InvoiceLine, InvoiceStatus, Lot, SiteSettings } from '../types'
 
 export function invoiceChannel(inv: Invoice, lots: Lot[]): Channel {
   if (inv.channel) return inv.channel
   return lots.find((l) => l.id === inv.lotId)?.channel ?? 'marketplace'
 }
 
-export function moneyForChannel(invoices: Invoice[], lots: Lot[], channel: Channel) {
-  const rows = invoices.filter((inv) => invoiceChannel(inv, lots) === channel)
-  const paid = rows.filter((inv) => inv.status === 'paid').reduce((s, inv) => s + inv.amount, 0)
-  const unpaid = rows.filter((inv) => inv.status !== 'paid').reduce((s, inv) => s + inv.amount, 0)
+export function invoiceVisibleToBuyer(inv: Invoice) {
+  if (inv.status === 'draft') return false
+  if (inv.status === 'declined' && !inv.issuedAt && !inv.receiptData) return false
+  return true
+}
+
+export function roundMoney(n: number) {
+  return Math.round(n * 100) / 100
+}
+
+export function invoiceRatePct(settings?: SiteSettings | null) {
+  const n = settings?.invoice?.feePct
+  return Number.isFinite(n) && (n as number) >= 0 ? (n as number) : 2
+}
+
+export function appliedFeePct(inv: Invoice) {
+  const n = inv.feePct
+  return Number.isFinite(n) && (n as number) > 0 ? (n as number) : 0
+}
+
+export function invoicePayDays(settings?: SiteSettings | null) {
+  const n = settings?.invoice?.payDays
+  return Number.isFinite(n) && (n as number) >= 1 ? Math.round(n as number) : 7
+}
+
+export function invoiceLines(inv: Invoice): InvoiceLine[] {
+  if (inv.lines?.length) return inv.lines
+  return [{ lotId: inv.lotId, qty: inv.qty, unitPrice: inv.unitPrice }]
+}
+
+export function invoiceCoversLot(inv: Invoice, lotId: string, accountId: string) {
+  if (inv.accountId !== accountId) return false
+  if (inv.lotId === lotId) return true
+  return invoiceLines(inv).some((line) => line.lotId === lotId)
+}
+
+export function invoiceTotals(inv: Invoice, _settings?: SiteSettings | null) {
+  const lines = invoiceLines(inv)
+  const goods = roundMoney(lines.reduce((s, line) => s + line.unitPrice * line.qty, 0))
+  const qty = lines.reduce((s, line) => s + line.qty, 0)
+  const feePct = appliedFeePct(inv)
+  const fee = feePct > 0 ? roundMoney(goods * (feePct / 100)) : 0
+  return { goods, fee, feePct, qty, total: roundMoney(goods + fee) }
+}
+
+export function buildInvoice(
+  partial: Omit<Invoice, 'amount' | 'qty' | 'unitPrice' | 'status'> & {
+    lines: InvoiceLine[]
+    status?: Invoice['status']
+  },
+  settings?: SiteSettings | null,
+): Invoice {
+  const lines = partial.lines
+  const qty = lines.reduce((s, line) => s + line.qty, 0)
+  const unitPrice = lines[0]?.unitPrice || 0
+  const draft: Invoice = {
+    ...partial,
+    qty,
+    unitPrice,
+    amount: 0,
+    status: partial.status || 'draft',
+    lines,
+  }
+  return { ...draft, amount: invoiceTotals(draft, settings).total }
+}
+
+export function moneyForChannel(invoices: Invoice[], lots: Lot[], channel: Channel, settings?: SiteSettings | null) {
+  const rows = invoices.filter((inv) => invoiceChannel(inv, lots) === channel && invoiceVisibleToBuyer(inv))
+  const paid = rows.filter((inv) => inv.status === 'paid').reduce((s, inv) => s + invoiceTotals(inv, settings).total, 0)
+  const unpaid = rows.filter((inv) => inv.status !== 'paid').reduce((s, inv) => s + invoiceTotals(inv, settings).total, 0)
   return {
     paid,
     unpaid,
@@ -18,14 +84,19 @@ export function moneyForChannel(invoices: Invoice[], lots: Lot[], channel: Chann
   }
 }
 
-export function moneyForLot(invoices: Invoice[], lotId: string) {
-  const rows = invoices.filter((inv) => inv.lotId === lotId)
-  const paid = rows.filter((inv) => inv.status === 'paid').reduce((s, inv) => s + inv.amount, 0)
-  const unpaid = rows.filter((inv) => inv.status !== 'paid').reduce((s, inv) => s + inv.amount, 0)
+export function moneyForLot(invoices: Invoice[], lotId: string, settings?: SiteSettings | null) {
+  const rows = invoices.filter(
+    (inv) => invoiceVisibleToBuyer(inv) && invoiceLines(inv).some((line) => line.lotId === lotId),
+  )
+  const paid = rows.filter((inv) => inv.status === 'paid').reduce((s, inv) => s + invoiceTotals(inv, settings).total, 0)
+  const unpaid = rows
+    .filter((inv) => inv.status !== 'paid')
+    .reduce((s, inv) => s + invoiceTotals(inv, settings).total, 0)
   return { paid, unpaid, total: paid + unpaid }
 }
 
 export function invoiceStatusLabel(status: InvoiceStatus) {
+  if (status === 'draft') return 'Awaiting issue'
   if (status === 'pending_review') return 'Pending approval'
   if (status === 'declined') return 'Declined'
   return status[0].toUpperCase() + status.slice(1)
@@ -49,8 +120,9 @@ export function invoiceSteps(inv: Invoice): InvoiceStep[] {
   const paid = inv.status === 'paid'
   const shipped = Boolean(inv.shippedAt)
   const decided = paid || declined
+  const issued = inv.status !== 'draft'
   const keys = [
-    { key: 'issued', label: 'Issued', done: true },
+    { key: 'issued', label: issued ? 'Issued' : 'Staff issue', done: issued },
     { key: 'paid', label: submitted || decided ? 'Payment sent' : 'Awaiting payment', done: submitted || decided },
     {
       key: 'review',
@@ -72,22 +144,37 @@ export function auctionNumber(inv: Invoice, lot?: Lot) {
   return `JPN SIM Unlocked ${lot.model} (${inv.id})`
 }
 
+export function buyerNumber(accountId: string) {
+  const digits = accountId.replace(/\D/g, '') || '0'
+  return `9${digits.padStart(10, '0')}`.slice(0, 11)
+}
+
+export function boxNoForLot(lotId: string, explicit?: string) {
+  if (explicit) return explicit
+  const n = lotId.replace(/\D/g, '').padStart(10, '0').slice(-10)
+  return `BOX-${n}`
+}
+
+export function itemDescription(lot: Lot | undefined, lotId: string) {
+  if (!lot) return lotId
+  const sku = lot.modelNumber || lot.manufacturer
+  return `${sku}_${lot.model} ${lot.capacity}`.replace(/\s+/g, ' ').trim()
+}
+
 export function invoicePill(status: InvoiceStatus) {
   if (status === 'paid') return 'pill-live'
-  if (status === 'pending_review') return 'pill-hybrid'
+  if (status === 'draft' || status === 'pending_review') return 'pill-hybrid'
   if (status === 'declined') return 'pill-sealed'
   return 'pill-sealed'
 }
 
-const PAY_WINDOW_MS = 48 * 60 * 60 * 1000
-
-export function invoiceDueAt(inv: Invoice) {
-  return inv.createdAt + PAY_WINDOW_MS
+export function invoiceDueAt(inv: Invoice, settings?: SiteSettings | null) {
+  return (inv.issuedAt || inv.createdAt) + invoicePayDays(settings) * 24 * 60 * 60 * 1000
 }
 
-export function invoiceDueLabel(inv: Invoice, now = Date.now()) {
-  if (inv.status === 'paid' || inv.shippedAt) return null
-  const left = invoiceDueAt(inv) - now
+export function invoiceDueLabel(inv: Invoice, now = Date.now(), settings?: SiteSettings | null) {
+  if (inv.status === 'draft' || inv.status === 'paid' || inv.shippedAt) return null
+  const left = invoiceDueAt(inv, settings) - now
   if (left <= 0) return 'Past due'
   const h = Math.floor(left / 3600000)
   const m = Math.floor((left % 3600000) / 60000)
@@ -96,34 +183,14 @@ export function invoiceDueLabel(inv: Invoice, now = Date.now()) {
   return `${m}m to pay`
 }
 
-export function printInvoice(inv: Invoice, lot: Lot | undefined, company: string) {
-  const win = window.open('', '_blank', 'noopener,noreferrer,width=800,height=900')
-  if (!win) return
-  const model = lot ? `${lot.manufacturer} ${lot.model} ${lot.capacity}` : inv.lotId
-  win.document.write(`<!doctype html><html><head><title>${inv.id}</title>
-<style>
-  body{font-family:Segoe UI,system-ui,sans-serif;padding:32px;color:#1a1a1a}
-  h1{font-size:22px;margin:0 0 8px}
-  table{border-collapse:collapse;width:100%;margin-top:20px}
-  th,td{border:1px solid #ddd;padding:8px 10px;text-align:left}
-  .muted{color:#5b6570}
-  .total{font-size:18px;font-weight:800}
-</style></head><body>
-  <h1>Equarios invoice ${inv.id}</h1>
-  <p class="muted">${company}</p>
-  <p>${auctionNumber(inv, lot)}</p>
-  <table>
-    <tr><th>Model</th><td>${model}</td></tr>
-    <tr><th>Qty</th><td>${inv.qty}</td></tr>
-    <tr><th>Price / pc</th><td>${inv.unitPrice.toFixed(2)} USD</td></tr>
-    <tr><th>Total</th><td class="total">${inv.amount.toFixed(2)} USD</td></tr>
-    <tr><th>Status</th><td>${clientInvoiceLabel(inv)}</td></tr>
-  </table>
-  <p class="muted">Pay within 48 hours of invoice date. Upload a receipt in My Page → Invoice.</p>
-</body></html>`)
-  win.document.close()
-  win.focus()
-  win.print()
+export function settleInvoiceIssue(inv: Invoice): Invoice {
+  if (inv.issueAdmin?.decision === 'declined' || inv.issueSuper?.decision === 'declined') {
+    return { ...inv, status: 'declined' }
+  }
+  if (inv.issueAdmin?.decision === 'accepted' && inv.issueSuper?.decision === 'accepted') {
+    return { ...inv, status: 'unpaid', issuedAt: inv.issuedAt || Date.now() }
+  }
+  return { ...inv, status: 'draft', issuedAt: undefined }
 }
 
 export function settleInvoice(inv: Invoice): Invoice {

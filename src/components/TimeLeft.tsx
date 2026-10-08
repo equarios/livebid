@@ -21,7 +21,12 @@ export function TimeLeft({
       !closed &&
       settings.features.endingSoon &&
       isEndingSoon(endsAt, now, settings.endingSoonMinutes) ? (
-        <div className="warn-tiny">{fillCopy(settings.copy.endingSoon, { n: settings.endingSoonMinutes })}</div>
+        <div
+          className="warn-tiny"
+          title={`Under ${settings.endingSoonMinutes} min left`}
+        >
+          {fillCopy(settings.copy.endingSoon, { n: settings.endingSoonMinutes })}
+        </div>
       ) : null}
     </span>
   )

@@ -4,11 +4,11 @@ import { PublicShell } from '../components/PublicShell'
 import { groupLotsByType, isSealedLot, listPath } from '../lib/auctionLists'
 import { usd } from '../lib/format'
 import { lotThumb, photoFallback } from '../lib/photos'
-import { useStore } from '../store'
+import { useNow, useStore } from '../store'
 import type { Lot } from '../types'
 
-function closesLabel(endsAt: number) {
-  const ms = endsAt - Date.now()
+function closesLabel(endsAt: number, now: number) {
+  const ms = endsAt - now
   if (ms <= 0) return 'Closed'
   const m = Math.floor(ms / 60000)
   if (m < 60) return `Closes in ${m}m`
@@ -55,6 +55,7 @@ function DealCard({
   showPrice: boolean
   hideHigh?: boolean
 }) {
+  const now = useNow()
   return (
     <button type="button" className="deal-card" onClick={onOpen}>
       <div className="deal-card-img">
@@ -72,7 +73,7 @@ function DealCard({
         <strong>
           {lot.qty} {lot.qty === 1 ? 'Unit' : 'Units'} of {lot.manufacturer} {lot.model} {lot.capacity} · Grade {lot.grade}
         </strong>
-        <span>{closesLabel(lot.endsAt)}</span>
+        <span>{closesLabel(lot.endsAt, now)}</span>
         {showPrice ? (
           <span className="deal-price">
             {hideHigh ? `${usd(lot.startPrice)} start` : `${usd(lot.currentPrice)} / pc`}
@@ -87,6 +88,7 @@ function DealCard({
 
 export function Home() {
   const { lots, user, settings } = useStore()
+  const now = useNow()
   const navigate = useNavigate()
   const [params] = useSearchParams()
   const q = (params.get('q') || '').trim().toLowerCase()
@@ -94,7 +96,7 @@ export function Home() {
   const hero = HEROES[slide]
   const dealGroups = useMemo(() => {
     const rows = lots
-      .filter((l) => l.channel === 'auction' && l.endsAt > Date.now())
+      .filter((l) => l.channel === 'auction' && l.endsAt > now)
       .filter((l) => {
         if (!q) return true
         const hay = `${l.manufacturer} ${l.model} ${l.modelNumber} ${l.capacity} ${l.color}`.toLowerCase()
@@ -104,7 +106,7 @@ export function Home() {
       ...g,
       lots: g.lots.slice(0, 4),
     }))
-  }, [lots, q, settings])
+  }, [lots, q, settings, now])
   const market = useMemo(
     () =>
       lots
@@ -177,7 +179,7 @@ export function Home() {
           <strong>Dual approval pay.</strong> Admin and Super Admin both accept before an invoice is paid.
         </p>
         <p>
-          <strong>48-hour invoice window.</strong> Unpaid lots can be reopened to other buyers.
+          <strong>7-day invoice window.</strong> Pay in advance from the issue date. Unpaid lots can be reopened to other buyers.
         </p>
       </section>
 

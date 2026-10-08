@@ -288,10 +288,6 @@ export function BidCsv({ lots, listKind = 'all' }: { lots: Lot[]; listKind?: Auc
           onChange={onFile}
         />
       </div>
-      <p className="muted tiny bid-csv-hint">
-        One auction type per file. Fill <code>desiredQty</code> and <code>price</code> (per pc); leave the
-        other columns as downloaded. Low prices can be edited in the popup before confirm.
-      </p>
       {pick ? (
         <ModalShell onClose={() => setPick(null)}>
           <div

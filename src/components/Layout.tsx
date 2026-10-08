@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { BrandLogo } from './BrandLogo'
 import { LotPreviewProvider } from './LotPreview'
 import { SiteNav } from './SiteNav'
+import { SiteWarnPopup } from './SiteWarnPopup'
 import { useStore } from '../store'
 
 export function Layout() {
@@ -12,6 +13,21 @@ export function Layout() {
   const [menuOpen, setMenuOpen] = useState(false)
   const [notesOpen, setNotesOpen] = useState(false)
   const [navOpen, setNavOpen] = useState(false)
+  const headerRef = useRef<HTMLElement>(null)
+  useEffect(() => {
+    const el = headerRef.current
+    if (!el) return
+    const apply = () => {
+      document.documentElement.style.setProperty('--app-header-h', `${Math.round(el.getBoundingClientRect().height)}px`)
+    }
+    const ro = new ResizeObserver(apply)
+    ro.observe(el)
+    apply()
+    return () => {
+      ro.disconnect()
+      document.documentElement.style.removeProperty('--app-header-h')
+    }
+  }, [navOpen])
   const myNotices = notices.filter((n) => n.accountId === user?.accountId).slice(0, 12)
   const unread = myNotices.filter((n) => !n.read).length
   const home = '/'
@@ -23,7 +39,7 @@ export function Layout() {
   return (
     <LotPreviewProvider>
       <div className="app-shell">
-        <header className="app-header">
+        <header className="app-header" ref={headerRef}>
           <div className="topbar">
             <button className="brand" type="button" onClick={() => navigate(home)}>
               <BrandLogo />
@@ -121,12 +137,8 @@ export function Layout() {
             </div>
           </div>
         </header>
+        <SiteWarnPopup />
         <main className={`page ${myPage ? 'page-mypage' : ''}`}>
-          {settings.features.siteNotice && settings.copy.siteNotice.trim() && !myPage ? (
-            <div className="site-notice" role="status">
-              {settings.copy.siteNotice}
-            </div>
-          ) : null}
           <Outlet />
         </main>
       </div>

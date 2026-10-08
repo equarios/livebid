@@ -1,7 +1,16 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { InvoicePreview } from '../components/InvoicePreview'
 import { PaymentSubmitDialog } from '../components/PaymentSubmitDialog'
-import { auctionNumber, clientInvoiceLabel, invoiceDueLabel, invoiceSteps, printInvoice } from '../lib/invoices'
+import {
+  auctionNumber,
+  clientInvoiceLabel,
+  invoiceDueLabel,
+  invoiceLines,
+  invoiceSteps,
+  invoiceTotals,
+  invoiceVisibleToBuyer,
+} from '../lib/invoices'
 import { gbsDate, moneyPlain } from '../lib/format'
 import { useNow, useStore } from '../store'
 
@@ -20,6 +29,7 @@ export function Invoices() {
   const now = useNow()
   const { invoices, lots, settings, user, accounts, markInvoiceOpened } = useStore()
   const [payId, setPayId] = useState<string | null>(null)
+  const [previewId, setPreviewId] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [unopened, setUnopened] = useState(false)
   const [poOnly, setPoOnly] = useState(false)
@@ -27,6 +37,7 @@ export function Invoices() {
 
   const rows = useMemo(() => {
     return invoices
+      .filter((inv) => invoiceVisibleToBuyer(inv))
       .filter((inv) => !inv.accountId || inv.accountId === user?.accountId)
       .filter((inv) => (unopened ? !inv.opened : true))
       .filter((inv) => (poOnly ? Boolean(inv.poNumber) : true))
@@ -34,6 +45,7 @@ export function Invoices() {
   }, [invoices, user, unopened, poOnly])
 
   const paying = rows.find((inv) => inv.id === payId) || invoices.find((inv) => inv.id === payId) || null
+  const preview = rows.find((inv) => inv.id === previewId) || invoices.find((inv) => inv.id === previewId) || null
   const company = (
     accounts.find((a) => a.accountId === user?.accountId)?.company ||
     user?.company ||
@@ -107,7 +119,7 @@ export function Invoices() {
                     </ol>
                   </td>
                   <td>{gbsDate(inv.createdAt)}</td>
-                  <td className="inv-due">{invoiceDueLabel(inv, now) || '—'}</td>
+                  <td className="inv-due">{invoiceDueLabel(inv, now, settings) || '—'}</td>
                   <td className="inv-auction">
                     {auctionNumber(inv, lot)}
                     {poOnly && inv.poNumber ? <div className="muted tiny">PO {inv.poNumber}</div> : null}
@@ -123,13 +135,16 @@ export function Invoices() {
                           {lot.capacity}
                           {lot.color ? ` · ${lot.color}` : ''}
                           {lot.grade ? ` · Grade ${lot.grade}` : ''}
+                          {invoiceLines(inv).length > 1
+                            ? ` · ${invoiceLines(inv).length} line items`
+                            : ''}
                         </div>
                       </>
                     ) : (
                       inv.lotId
                     )}
                   </td>
-                  <td className="inv-qty">{inv.qty.toLocaleString()}</td>
+                  <td className="inv-qty">{invoiceTotals(inv, settings).qty.toLocaleString()}</td>
                   <td className="inv-total">{moneyPlain(inv.unitPrice)}</td>
                   <td>
                     {inv.trackingNo ? (
@@ -142,16 +157,16 @@ export function Invoices() {
                   </td>
                   <td>{inv.id.replace(/-\d{4}$/, '')}</td>
                   <td>{inv.shippedAt ? gbsDate(inv.shippedAt) : ''}</td>
-                  <td className="inv-total">{moneyPlain(inv.amount)}</td>
+                  <td className="inv-total">{moneyPlain(invoiceTotals(inv, settings).total)}</td>
                   <td>{inv.remarks || ''}</td>
                   <td>
                     <button
                       type="button"
                       className="inv-doc"
-                      title="Documents"
+                      title="View invoice"
                       onClick={() => {
                         markInvoiceOpened(inv.id)
-                        if (awaiting) setPayId(inv.id)
+                        setPreviewId(inv.id)
                       }}
                     >
                       <EnvelopeIcon />
@@ -159,9 +174,12 @@ export function Invoices() {
                     <button
                       type="button"
                       className="linkish"
-                      onClick={() => printInvoice(inv, lot, company)}
+                      onClick={() => {
+                        markInvoiceOpened(inv.id)
+                        setPreviewId(inv.id)
+                      }}
                     >
-                      Print
+                      View
                     </button>
                   </td>
                 </tr>
@@ -203,22 +221,30 @@ export function Invoices() {
                 <div className="muted tiny">{auctionNumber(inv, lot)}</div>
               </div>
               <div className="inv-card-meta">
-                <span>{inv.qty.toLocaleString()} pcs</span>
-                <span>{moneyPlain(inv.unitPrice)} / pc</span>
-                <span>{moneyPlain(inv.amount)} total</span>
+                <span>{invoiceTotals(inv, settings).qty.toLocaleString()} pcs</span>
+                <span>{invoiceLines(inv).length > 1 ? `${invoiceLines(inv).length} lines` : `${moneyPlain(inv.unitPrice)} / pc`}</span>
+                <span>{moneyPlain(invoiceTotals(inv, settings).total)} total</span>
               </div>
               <div className="muted tiny">
                 {gbsDate(inv.createdAt)}
-                {invoiceDueLabel(inv, now) ? ` · ${invoiceDueLabel(inv, now)}` : ''}
+                {invoiceDueLabel(inv, now, settings) ? ` · ${invoiceDueLabel(inv, now, settings)}` : ''}
               </div>
-              <button type="button" className="linkish" onClick={() => printInvoice(inv, lot, company)}>
-                Print invoice
+              <button
+                type="button"
+                className="linkish"
+                onClick={() => {
+                  markInvoiceOpened(inv.id)
+                  setPreviewId(inv.id)
+                }}
+              >
+                View invoice
               </button>
             </article>
           )
         })}
       </div>
       {notice ? <p className="ok">{notice}</p> : null}
+      {preview ? <InvoicePreview invoice={preview} onClose={() => setPreviewId(null)} /> : null}
       {paying ? (
         <PaymentSubmitDialog
           invoice={paying}

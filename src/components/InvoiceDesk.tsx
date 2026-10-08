@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
-import { invoicePill, invoiceStatusLabel } from '../lib/invoices'
+import { InvoicePreview } from './InvoicePreview'
+import { appliedFeePct, invoicePill, invoiceRatePct, invoiceStatusLabel, invoiceTotals } from '../lib/invoices'
 import { isoDate, usd } from '../lib/format'
 import { useStore } from '../store'
 import type { Invoice, InvoiceStatus } from '../types'
@@ -26,9 +27,11 @@ function readFile(file: File): Promise<{ name: string; data: string }> {
 export function InvoiceDesk({
   canAdmin,
   canSuper,
+  allowCreate = true,
 }: {
   canAdmin?: boolean
   canSuper?: boolean
+  allowCreate?: boolean
 }) {
   const {
     invoices,
@@ -39,6 +42,7 @@ export function InvoiceDesk({
     removeInvoice,
     clearPaymentConfirmation,
     reviewPayment,
+    reviewInvoiceIssue,
   } = useStore()
   const copy = settings.copy
   const clients = accounts.filter((a) => a.role === 'member')
@@ -48,22 +52,69 @@ export function InvoiceDesk({
   const [lotId, setLotId] = useState(lots[0]?.id || '')
   const [qty, setQty] = useState('1')
   const [unitPrice, setUnitPrice] = useState(String(lots[0]?.buyNowPrice || lots[0]?.currentPrice || 100))
-  const [status, setStatus] = useState<InvoiceStatus>('unpaid')
+  const [status, setStatus] = useState<InvoiceStatus>('draft')
+  const [previewId, setPreviewId] = useState<string | null>(null)
   const [file, setFile] = useState<{ name: string; data: string } | null>(null)
   const [keepReceipt, setKeepReceipt] = useState(true)
   const [trackingNo, setTrackingNo] = useState('')
   const [shippedDate, setShippedDate] = useState('')
   const [remarks, setRemarks] = useState('')
   const [poNumber, setPoNumber] = useState('')
+  const [applyFee, setApplyFee] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  const feeRate = invoiceRatePct(settings)
 
   const selected = invoices.find((i) => i.id === editingId)
 
   function invoiceActions(inv: Invoice) {
+    const issueOpen = inv.status === 'draft' || (inv.status === 'declined' && !inv.issuedAt)
     return (
       <div className="row-actions">
-        {inv.receiptData && inv.status !== 'paid' ? (
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPreviewId(inv.id)}>
+          Preview
+        </button>
+        {issueOpen ? (
+          <>
+            {canAdmin ? (
+              <>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={() => reviewInvoiceIssue(inv.id, 'admin', 'accepted')}
+                >
+                  Issue (admin)
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => reviewInvoiceIssue(inv.id, 'admin', 'declined')}
+                >
+                  Decline issue (admin)
+                </button>
+              </>
+            ) : null}
+            {canSuper ? (
+              <>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={() => reviewInvoiceIssue(inv.id, 'super', 'accepted')}
+                >
+                  Issue (super)
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => reviewInvoiceIssue(inv.id, 'super', 'declined')}
+                >
+                  Decline issue (super)
+                </button>
+              </>
+            ) : null}
+          </>
+        ) : null}
+        {inv.receiptData && inv.status !== 'paid' && inv.status !== 'draft' ? (
           <>
             {canAdmin ? (
               <>
@@ -102,6 +153,20 @@ export function InvoiceDesk({
               </>
             ) : null}
           </>
+        ) : null}
+        {(canAdmin || canSuper) && feeRate > 0 ? (
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => {
+              const on = appliedFeePct(inv) > 0
+              const saveErr = saveInvoice({ ...inv, feePct: on ? 0 : feeRate }, inv.id)
+              setErr(saveErr)
+              setMsg(saveErr ? null : on ? `Removed fee on ${inv.id}` : `Applied ${feeRate}% fee on ${inv.id}`)
+            }}
+          >
+            {appliedFeePct(inv) > 0 ? 'Remove fee' : `Apply ${feeRate}% fee`}
+          </button>
         ) : null}
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => load(inv)}>
           Edit
@@ -144,13 +209,14 @@ export function InvoiceDesk({
     setLotId(lot?.id || '')
     setQty('1')
     setUnitPrice(String(lot?.buyNowPrice || lot?.currentPrice || 100))
-    setStatus('unpaid')
+    setStatus('draft')
     setFile(null)
     setKeepReceipt(true)
     setTrackingNo('')
     setShippedDate('')
     setRemarks('')
     setPoNumber('')
+    setApplyFee(false)
   }
 
   function load(inv: Invoice) {
@@ -167,6 +233,7 @@ export function InvoiceDesk({
     setShippedDate(inv.shippedAt ? isoDate(inv.shippedAt) : '')
     setRemarks(inv.remarks || '')
     setPoNumber(inv.poNumber || '')
+    setApplyFee(appliedFeePct(inv) > 0)
     setMsg(`Editing ${inv.id}`)
     setErr(null)
   }
@@ -210,8 +277,13 @@ export function InvoiceDesk({
       shippedAt: shippedDate ? Date.parse(`${shippedDate}T12:00:00`) : undefined,
       remarks: remarks.trim() || undefined,
       poNumber: poNumber.trim() || undefined,
+      feePct: applyFee ? feeRate : 0,
       auctionLabel: existing?.auctionLabel,
       opened: existing?.opened,
+      issueAdmin: existing?.issueAdmin,
+      issueSuper: existing?.issueSuper,
+      issuedAt: existing?.issuedAt,
+      lines: [{ lotId, qty: q, unitPrice: p }],
     }
     const saveErr = saveInvoice(invoice, editingId || undefined)
     if (saveErr) {
@@ -253,7 +325,7 @@ export function InvoiceDesk({
         paidDeclaredAt: Date.now(),
         adminReview: undefined,
         superReview: undefined,
-        status: 'pending_review',
+        status: inv.status === 'draft' ? 'draft' : 'pending_review',
       })
       setErr(saveErr)
       setMsg(saveErr ? null : `Receipt saved on ${inv.id}`)
@@ -264,12 +336,13 @@ export function InvoiceDesk({
 
   const rows = [...invoices].sort((a, b) => {
     const rank = (s: Invoice['status']) =>
-      s === 'pending_review' ? 0 : s === 'declined' ? 1 : s === 'unpaid' ? 2 : 3
+      s === 'draft' ? 0 : s === 'pending_review' ? 1 : s === 'declined' ? 2 : s === 'unpaid' ? 3 : 4
     return rank(a.status) - rank(b.status) || b.createdAt - a.createdAt
   })
 
   return (
     <div>
+      {allowCreate || editingId ? (
       <form className="admin-form" onSubmit={onSave}>
         <label>
           Invoice ID
@@ -307,6 +380,7 @@ export function InvoiceDesk({
         <label>
           Status
           <select value={status} onChange={(e) => setStatus(e.target.value as InvoiceStatus)}>
+            <option value="draft">Awaiting issue</option>
             <option value="unpaid">Unpaid</option>
             <option value="pending_review">Pending approval</option>
             <option value="paid">Paid / shipped</option>
@@ -324,6 +398,10 @@ export function InvoiceDesk({
         <label>
           PO number
           <input value={poNumber} onChange={(e) => setPoNumber(e.target.value)} />
+        </label>
+        <label className="admin-toggles">
+          <input type="checkbox" checked={applyFee} onChange={(e) => setApplyFee(e.target.checked)} />
+          Apply {feeRate}% system usage fee (optional)
         </label>
         <label className="admin-span">
           Remarks
@@ -349,13 +427,15 @@ export function InvoiceDesk({
           </button>
         ) : null}
       </form>
+      ) : null}
       {err ? <p className="error">{err}</p> : null}
       {msg ? <p className="ok">{msg}</p> : null}
 
       <h3 className="pay-queue-title">All invoices ({rows.length})</h3>
       <p className="muted">
-        Add, edit, or delete invoices. Replace or remove a receipt. Accept or decline only if payment has arrived.
-        Both admin and super admin must accept for a client receipt to become paid.
+        {canSuper && !canAdmin
+          ? 'Issue stamp, then payment. Admin issues first; you confirm. After both issue stamps the buyer can pay. Payment still needs both accept stamps.'
+          : 'Wins and marketplace buys generate a draft with no fee. Admin can apply the optional system usage fee per invoice, then issue. Super confirms, then the buyer can pay. Payment still needs both accept stamps.'}
       </p>
       <div className="table-wrap pay-queue">
         <table className="auction-table">
@@ -365,10 +445,13 @@ export function InvoiceDesk({
               <th>Client</th>
               <th>Lot</th>
               <th>Pcs</th>
+              <th>Fee</th>
               <th>Total</th>
               <th>Receipt</th>
-              <th>Admin</th>
-              <th>Super</th>
+              <th>Issue admin</th>
+              <th>Issue super</th>
+              <th>Pay admin</th>
+              <th>Pay super</th>
               <th>Status</th>
               <th />
             </tr>
@@ -377,12 +460,18 @@ export function InvoiceDesk({
             {rows.map((inv) => {
               const lot = lots.find((l) => l.id === inv.lotId)
               return (
-                <tr key={inv.id} className={inv.status === 'pending_review' ? 'pay-request-row' : undefined}>
+                <tr
+                  key={inv.id}
+                  className={
+                    inv.status === 'draft' || inv.status === 'pending_review' ? 'pay-request-row' : undefined
+                  }
+                >
                   <td className="mono">{inv.id}</td>
                   <td className="mono">{inv.accountId || '—'}</td>
                   <td>{lot ? `${lot.model} ${lot.modelNumber || ''}`.trim() : inv.lotId}</td>
                   <td>{inv.qty}</td>
-                  <td className="price-cell">{usd(inv.amount)}</td>
+                  <td>{appliedFeePct(inv) > 0 ? `${appliedFeePct(inv)}%` : '—'}</td>
+                  <td className="price-cell">{usd(invoiceTotals(inv, settings).total)}</td>
                   <td>
                     {inv.receiptData ? (
                       inv.receiptData.startsWith('data:image') ? (
@@ -406,6 +495,8 @@ export function InvoiceDesk({
                       />
                     </label>
                   </td>
+                  <td className="tiny">{inv.issueAdmin ? `${inv.issueAdmin.decision} · ${inv.issueAdmin.by}` : '—'}</td>
+                  <td className="tiny">{inv.issueSuper ? `${inv.issueSuper.decision} · ${inv.issueSuper.by}` : '—'}</td>
                   <td className="tiny">{inv.adminReview ? `${inv.adminReview.decision} · ${inv.adminReview.by}` : '—'}</td>
                   <td className="tiny">{inv.superReview ? `${inv.superReview.decision} · ${inv.superReview.by}` : '—'}</td>
                   <td>
@@ -430,7 +521,7 @@ export function InvoiceDesk({
                 {lot ? `${lot.model} ${lot.modelNumber || ''}`.trim() : inv.lotId} · {inv.qty} pcs
               </div>
               <div className="inv-card-meta">
-                <span>{usd(inv.amount)}</span>
+                <span>{usd(invoiceTotals(inv, settings).total)}</span>
                 <span className={`pill ${invoicePill(inv.status)}`}>{invoiceStatusLabel(inv.status)}</span>
               </div>
               {invoiceActions(inv)}
@@ -438,6 +529,9 @@ export function InvoiceDesk({
           )
         })}
       </div>
+      {previewId && invoices.some((i) => i.id === previewId) ? (
+        <InvoicePreview invoice={invoices.find((i) => i.id === previewId)!} onClose={() => setPreviewId(null)} />
+      ) : null}
     </div>
   )
 }
