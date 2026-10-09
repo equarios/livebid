@@ -95,7 +95,7 @@ export function InventoryDesk() {
     const q = Number(qty)
     const p = Number(price)
     if (!Number.isInteger(q) || q < 1 || !Number.isFinite(p) || p < 1) {
-      setMsg('Qty and price must be valid before adding to the auction.')
+      setMsg('Quantity and current price must be valid before adding to the auction.')
       return
     }
     setQueue((rows) => [
@@ -294,7 +294,7 @@ export function InventoryDesk() {
                 <p className="muted tiny item-specs">{skuSpecLine(sku)}</p>
               </div>
               <label>
-                Qty
+                Quantity
                 <input
                   type="number"
                   min={1}
@@ -305,7 +305,7 @@ export function InventoryDesk() {
                 />
               </label>
               <label>
-                Price
+                Current Price
                 <input
                   type="number"
                   min={1}
@@ -449,7 +449,7 @@ export function InventoryDesk() {
                 {sku.lastPrice ? <p className="muted tiny">Last {usd(sku.lastPrice)}</p> : null}
               </div>
               <label>
-                Qty
+                Quantity
                 <input
                   type="number"
                   min={1}
@@ -458,7 +458,7 @@ export function InventoryDesk() {
                 />
               </label>
               <label>
-                Price
+                Current Price
                 <input
                   type="number"
                   min={1}

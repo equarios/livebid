@@ -1,13 +1,23 @@
-import { useState, type FormEvent } from 'react'
+import { useMemo, useState, type FormEvent } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import { CartDesk } from '../components/CartDesk'
 import { InventoryDesk } from '../components/InventoryDesk'
+import { InvoiceDesk } from '../components/InvoiceDesk'
 import { ItemLink } from '../components/ItemLink'
 import { OfferDesk } from '../components/OfferDesk'
+import { OpsShell, type OpsSection } from '../components/OpsShell'
+import { OpsToday } from '../components/OpsToday'
 import { TimeLeft } from '../components/TimeLeft'
 import { ORIGINS, typePillClass } from '../lib/auctionLists'
 import { listingLabel, listingMinutes } from '../lib/duration'
 import { lotTypeLabel, usd } from '../lib/format'
+import { opsQueueCounts } from '../lib/opsQueues'
 import { useNow, useStore } from '../store'
 import type { AuctionType, Channel, Grade, Lot } from '../types'
+
+const ADMIN_SECTIONS = new Set(['today', 'catalog', 'commerce', 'money'])
+const CATALOG_DESKS = new Set(['inventory', 'lots'])
+const COMMERCE_DESKS = new Set(['carts', 'offers', 'bids'])
 
 type ListingDraft = {
   key: string
@@ -82,11 +92,14 @@ function blankDraft(
   }
 }
 
+
 export function Admin() {
   const {
     lots,
     bids,
     offers,
+    cartOrders,
+    invoices,
     settings,
     listingDrops,
     inventory,
@@ -97,14 +110,40 @@ export function Admin() {
     reopenAuctions,
   } = useStore()
   const now = useNow()
+  const [params, setParams] = useSearchParams()
   const live = lots.filter((l) => l.channel === 'auction' && l.endsAt > now)
-  const pendingOffers = (offers || []).filter((o) => o.status === 'pending')
+  const queues = opsQueueCounts({ cartOrders, offers, listingDrops, invoices })
   const waitingSuper = (listingDrops || []).filter((d) => d.status === 'pending')
 
   const [editingId, setEditingId] = useState<string | null>(null)
   const [drafts, setDrafts] = useState<ListingDraft[]>(() => [blankDraft(settings)])
   const [msg, setMsg] = useState<string | null>(null)
-  const [tab, setTab] = useState<'work' | 'lots' | 'inventory' | 'bids'>('inventory')
+
+  const sectionParam = params.get('section') || ''
+  const deskParam = params.get('desk') || ''
+  const defaultSection = queues.commerce || queues.money ? 'today' : 'catalog'
+  const section = ADMIN_SECTIONS.has(sectionParam) ? sectionParam : defaultSection
+  const desk =
+    section === 'catalog'
+      ? CATALOG_DESKS.has(deskParam)
+        ? deskParam
+        : 'inventory'
+      : section === 'commerce'
+        ? COMMERCE_DESKS.has(deskParam)
+          ? deskParam
+          : queues.pendingCarts
+            ? 'carts'
+            : queues.pendingOffers
+              ? 'offers'
+              : 'bids'
+        : deskParam
+
+  function go(nextSection: string, nextDesk?: string) {
+    const next = new URLSearchParams()
+    next.set('section', nextSection)
+    if (nextDesk) next.set('desk', nextDesk)
+    setParams(next, { replace: true })
+  }
 
   function patchDraft(key: string, patch: Partial<ListingDraft>) {
     setDrafts((rows) => rows.map((row) => (row.key === key ? { ...row, ...patch } : row)))
@@ -141,7 +180,7 @@ export function Admin() {
       }),
     ])
     setMsg(`Editing ${lot.id}`)
-    setTab('lots')
+    go('catalog', 'lots')
   }
 
   function buildLot(draft: ListingDraft, existing?: Lot): Lot | string {
@@ -206,74 +245,144 @@ export function Admin() {
       setDrafts([blankDraft(settings)])
       return
     }
-    setMsg('New listings go out from Inventory. This tab only edits lots that are already live.')
+    setMsg('New listings go out from Inventory. This desk only edits lots that are already live.')
   }
 
-  return (
-    <div className="staff-page">
-      <div className="auction-desk">
-        <div className="auction-desk-head">
-          <div>
-            <strong>Admin</strong>
-            <p className="muted tiny auction-desk-recap">
-              Operations desk: inventory, live lots, offers, and admin payment stamp. Super confirms catalogs,
-              payments, accounts, and site settings.
-            </p>
-          </div>
-          {tab === 'lots' ? (
-            <div className="auction-desk-head-actions">
-              {settings.auctionTypes.map((t) => (
-                <button
-                  key={t.value}
-                  type="button"
-                  className="btn btn-ghost"
-                  title={`Reopen only ${t.label}`}
-                  onClick={() => reopenAuctions(t.value)}
-                >
-                  Reopen {t.label.replace(/ Auctions$/i, '')} ({listingLabel(listingMinutes(settings, 'reopen'))})
-                </button>
-              ))}
-              <button type="button" className="btn btn-primary btn-sm" onClick={() => reopenAuctions()}>
-                Reopen all
-              </button>
-            </div>
-          ) : null}
-        </div>
-        <div className="super-tabs staff-tabs">
-          {(
-            [
-              ['inventory', `Inventory (${inventory.length}${waitingSuper.length ? ` · ${waitingSuper.reduce((n, d) => n + d.items.length, 0)} wait` : ''})`],
-              ['lots', `Lots (${live.length} live)`],
-              ['work', `Work${pendingOffers.length ? ` (${pendingOffers.length})` : ''}`],
-              ['bids', `Bids (${bids.length})`],
-            ] as const
-          ).map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              className={`btn btn-ghost ${tab === id ? 'on' : ''}`}
-              onClick={() => setTab(id)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      </div>
+  const sections: OpsSection[] = useMemo(
+    () => [
+      { id: 'today', label: 'Today', count: queues.total || undefined },
+      {
+        id: 'catalog',
+        label: 'Catalog',
+        count: queues.catalogWaitItems || undefined,
+        desks: [
+          {
+            id: 'inventory',
+            label: 'Inventory',
+            count: waitingSuper.length
+              ? waitingSuper.reduce((n, d) => n + d.items.length, 0)
+              : undefined,
+          },
+          { id: 'lots', label: 'Live lots', count: live.length || undefined },
+        ],
+      },
+      {
+        id: 'commerce',
+        label: 'Commerce',
+        count: queues.commerce || undefined,
+        desks: [
+          { id: 'carts', label: 'Carts', count: queues.pendingCarts || undefined },
+          { id: 'offers', label: 'Offers', count: queues.pendingOffers || undefined },
+          { id: 'bids', label: 'Bids' },
+        ],
+      },
+      { id: 'money', label: 'Money', count: queues.money || undefined },
+    ],
+    [queues, waitingSuper, live.length],
+  )
 
-      {tab === 'work' ? (
-      <section className="card admin-section">
-        <h2>Marketplace offers</h2>
-        <p className="muted tiny">
-          Accept a buyer’s price. They confirm, then an invoice is created at the offered rate. Invoice
-          create / edit / issue lives on Super → Invoices.
-        </p>
-        <OfferDesk staff />
-      </section>
+  const lotsActions =
+    section === 'catalog' && desk === 'lots' ? (
+      <>
+        {settings.auctionTypes.map((t) => (
+          <button
+            key={t.value}
+            type="button"
+            className="btn btn-ghost btn-sm"
+            title={`Reopen only ${t.label}`}
+            onClick={() => reopenAuctions(t.value)}
+          >
+            Reopen {t.label.replace(/ Auctions$/i, '')}
+          </button>
+        ))}
+        <button type="button" className="btn btn-primary btn-sm" onClick={() => reopenAuctions()}>
+          Reopen all ({listingLabel(listingMinutes(settings, 'reopen'))})
+        </button>
+      </>
+    ) : null
+
+  return (
+    <OpsShell
+      title="Admin"
+      blurb="Do the work: catalog, commerce reviews, and first payment stamp. Super handles final confirms and site settings."
+      sections={sections}
+      section={section}
+      desk={desk}
+      onSection={(id) => go(id)}
+      onDesk={(id) => go(section, id)}
+      actions={lotsActions}
+    >
+      {section === 'today' ? (
+        <OpsToday
+          role="admin"
+          queues={queues}
+          liveLots={live.length}
+          inventoryCount={inventory.length}
+          onGo={go}
+        />
       ) : null}
 
-      {tab === 'inventory' ? <InventoryDesk /> : null}
+      {section === 'commerce' && desk === 'carts' ? (
+        <section className="card admin-section">
+          <h2>Cart checkouts</h2>
+          <p className="muted tiny">
+            Accept or decline listed-price carts. Buyer confirms after accept, then an invoice is drafted.
+          </p>
+          <CartDesk staff />
+        </section>
+      ) : null}
 
-      {tab === 'lots' ? (
+      {section === 'commerce' && desk === 'offers' ? (
+        <section className="card admin-section">
+          <h2>Marketplace offers</h2>
+          <p className="muted tiny">
+            Accept a buyer's price. They confirm, then an invoice is created at the offered rate.
+          </p>
+          <OfferDesk staff />
+        </section>
+      ) : null}
+
+      {section === 'commerce' && desk === 'bids' ? (
+        <section className="table-wrap card admin-section">
+          <h2>Recent bids</h2>
+          <table className="auction-table">
+            <thead>
+              <tr>
+                <th>When</th>
+                <th>Lot</th>
+                <th>Quantity</th>
+                <th>Current Price</th>
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[...bids].reverse().slice(0, 40).map((b, i) => (
+                <tr key={`${b.lotId}-${b.at}-${i}`}>
+                  <td>{new Date(b.at).toLocaleString()}</td>
+                  <td className="mono">{b.lotId}</td>
+                  <td>{b.qty}</td>
+                  <td>{usd(b.amount)}</td>
+                  <td className="price-cell">{usd(b.qty * b.amount)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {!bids.length ? <p className="empty">No bids yet.</p> : null}
+        </section>
+      ) : null}
+
+      {section === 'money' ? (
+        <section className="card admin-section pay-queue-card invoice-super-panel">
+          <p className="muted tiny" style={{ marginTop: 0 }}>
+            Admin stamp for receipts. Super issues drafts and gives the final payment confirm.
+          </p>
+          <InvoiceDesk canAdmin allowCreate={false} />
+        </section>
+      ) : null}
+
+      {section === 'catalog' && desk === 'inventory' ? <InventoryDesk /> : null}
+
+      {section === 'catalog' && desk === 'lots' ? (
         <>
       {editingId ? (
       <section className="card admin-section">
@@ -634,35 +743,6 @@ export function Admin() {
       </section>
         </>
       ) : null}
-
-      {tab === 'bids' ? (
-      <section className="table-wrap card admin-section">
-        <h2>Recent bids</h2>
-        <table className="auction-table">
-          <thead>
-            <tr>
-              <th>When</th>
-              <th>Lot</th>
-              <th>Pcs</th>
-              <th>Price / pc</th>
-              <th>Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {[...bids].reverse().slice(0, 20).map((b, i) => (
-              <tr key={`${b.lotId}-${b.at}-${i}`}>
-                <td>{new Date(b.at).toLocaleString()}</td>
-                <td className="mono">{b.lotId}</td>
-                <td>{b.qty}</td>
-                <td>{usd(b.amount)}</td>
-                <td className="price-cell">{usd(b.qty * b.amount)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {!bids.length ? <p className="empty">No bids yet.</p> : null}
-      </section>
-      ) : null}
-    </div>
+    </OpsShell>
   )
 }

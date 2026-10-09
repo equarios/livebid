@@ -1,4 +1,6 @@
-import { useMemo, useState } from 'react'
+import { startTransition, useEffect, useMemo, useRef, useState } from 'react'
+import { CheckMenu, toggleValue } from '../components/CheckMenu'
+import { isFilterUiTarget } from '../components/FilterPanel'
 import { InvoicePreview } from '../components/InvoicePreview'
 import { bidOutcome, fillStats } from '../lib/allocate'
 import { downloadCsv as exportCsvFile } from '../lib/csv'
@@ -7,7 +9,16 @@ import { formatDateTime, isoDate, lotTypeLabel, usdAmt } from '../lib/format'
 import { invoiceCoversLot, invoiceVisibleToBuyer } from '../lib/invoices'
 import { useNow, useStore } from '../store'
 import type { BidOutcome } from '../lib/allocate'
-import type { Invoice, Lot } from '../types'
+import type { Grade, Invoice, Lot } from '../types'
+
+const STATUS_OPTIONS: BidOutcome[] = ['won', 'partial', 'lost']
+const STATUS_LABELS: Record<BidOutcome, string> = {
+  won: 'Won',
+  partial: 'Partially Won',
+  lost: 'Lost',
+}
+
+type FilterMenu = 'status' | 'maker' | 'product' | 'capacity' | 'grade' | null
 
 function LockIcon({ open }: { open?: boolean }) {
   if (open) {
@@ -33,8 +44,6 @@ function LockIcon({ open }: { open?: boolean }) {
     </span>
   )
 }
-
-type StatusFilter = 'all' | BidOutcome
 
 type Row = {
   lot: Lot
@@ -69,13 +78,23 @@ export function BidHistory() {
 
   const [from, setFrom] = useState(isoDate(now - 30 * 86400000))
   const [to, setTo] = useState(isoDate(now + 14 * 86400000))
-  const [status, setStatus] = useState<StatusFilter>('all')
-  const [maker, setMaker] = useState('')
-  const [product, setProduct] = useState('')
-  const [capacity, setCapacity] = useState('')
-  const [grade, setGrade] = useState('')
+  const [statuses, setStatuses] = useState<BidOutcome[]>([])
+  const [makers, setMakers] = useState<string[]>([])
+  const [products, setProducts] = useState<string[]>([])
+  const [capacities, setCapacities] = useState<string[]>([])
+  const [grades, setGrades] = useState<Grade[]>([])
+  const [open, setOpen] = useState<FilterMenu>(null)
   const [page, setPage] = useState(0)
   const [perPage, setPerPage] = useState(25)
+  const filtersRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function onDoc(e: MouseEvent) {
+      if (!isFilterUiTarget(e.target, filtersRef.current)) setOpen(null)
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [])
 
   const allRows = useMemo(() => {
     if (!me) return []
@@ -103,20 +122,32 @@ export function BidHistory() {
     return rows.sort((a, b) => b.at - a.at)
   }, [lots, bids, me, now, settings])
 
-  const makers = [...new Set(allRows.map((r) => r.lot.manufacturer))].sort()
-  const products = [...new Set(allRows.map((r) => r.lot.model))].sort()
-  const capacities = [...new Set(allRows.map((r) => r.lot.capacity))].sort()
-  const grades = [...new Set(allRows.map((r) => r.lot.grade))].sort()
+  const makerOptions = useMemo(
+    () => [...new Set(allRows.map((r) => r.lot.manufacturer))].sort(),
+    [allRows],
+  )
+  const productOptions = useMemo(
+    () => [...new Set(allRows.map((r) => r.lot.model))].sort(),
+    [allRows],
+  )
+  const capacityOptions = useMemo(
+    () => [...new Set(allRows.map((r) => r.lot.capacity))].sort(),
+    [allRows],
+  )
+  const gradeOptions = useMemo(
+    () => [...new Set(allRows.map((r) => r.lot.grade))].sort() as Grade[],
+    [allRows],
+  )
 
   const filtered = allRows.filter((row) => {
     const day = isoDate(Math.min(row.at, now))
     if (from && day < from) return false
     if (to && day > to) return false
-    if (status !== 'all' && row.outcome !== status) return false
-    if (maker && row.lot.manufacturer !== maker) return false
-    if (product && row.lot.model !== product) return false
-    if (capacity && row.lot.capacity !== capacity) return false
-    if (grade && row.lot.grade !== grade) return false
+    if (statuses.length && !statuses.includes(row.outcome)) return false
+    if (makers.length && !makers.includes(row.lot.manufacturer)) return false
+    if (products.length && !products.includes(row.lot.model)) return false
+    if (capacities.length && !capacities.includes(row.lot.capacity)) return false
+    if (grades.length && !grades.includes(row.lot.grade)) return false
     return true
   })
 
@@ -129,11 +160,12 @@ export function BidHistory() {
   function reset() {
     setFrom(isoDate(now - 30 * 86400000))
     setTo(isoDate(now + 14 * 86400000))
-    setStatus('all')
-    setMaker('')
-    setProduct('')
-    setCapacity('')
-    setGrade('')
+    setStatuses([])
+    setMakers([])
+    setProducts([])
+    setCapacities([])
+    setGrades([])
+    setOpen(null)
     setPage(0)
   }
 
@@ -172,96 +204,118 @@ export function BidHistory() {
     )
   }
 
+  const wonCount = filtered.filter((r) => r.outcome === 'won' || r.outcome === 'partial').length
+
   return (
-    <div>
-      <div className="gbs-filters">
-        <label className="gbs-date">
-          Start Day of Period
-          <input type="date" value={from} onChange={(e) => { setFrom(e.target.value); setPage(0) }} />
-        </label>
-        <span className="gbs-tilde">~</span>
-        <label className="gbs-date">
-          End Day of Period
-          <input type="date" value={to} onChange={(e) => { setTo(e.target.value); setPage(0) }} />
-        </label>
-        <fieldset className="gbs-status">
-          <legend>Status</legend>
-          {(
-            [
-              ['all', 'All'],
-              ['won', 'Won'],
-              ['partial', 'Partially Won'],
-              ['lost', 'Lost'],
-            ] as const
-          ).map(([value, label]) => (
-            <label key={value}>
+    <div className="bid-history-page">
+      <div className="mypage-filters auction-desk-filters" ref={filtersRef}>
+        <div className="filters filters-no-search">
+          <div className="filter-groups">
+            <label className="mypage-date">
+              <span className="filter-trigger-title">From</span>
               <input
-                type="radio"
-                name="bid-status"
-                checked={status === value}
-                onChange={() => {
-                  setStatus(value)
+                type="date"
+                value={from}
+                onChange={(e) => {
+                  setFrom(e.target.value)
                   setPage(0)
                 }}
               />
-              {label}
             </label>
-          ))}
-        </fieldset>
-      </div>
-      <div className="gbs-filters gbs-filters-2">
-        <label className="gbs-select-wrap">
-          Manufacturer
-          <select value={maker} onChange={(e) => { setMaker(e.target.value); setPage(0) }}>
-            <option value="">All</option>
-            {makers.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="gbs-select-wrap">
-          Product
-          <select value={product} onChange={(e) => { setProduct(e.target.value); setPage(0) }}>
-            <option value="">All</option>
-            {products.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="gbs-select-wrap">
-          Capacity
-          <select value={capacity} onChange={(e) => { setCapacity(e.target.value); setPage(0) }}>
-            <option value="">All</option>
-            {capacities.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="gbs-select-wrap">
-          Grade
-          <select value={grade} onChange={(e) => { setGrade(e.target.value); setPage(0) }}>
-            <option value="">All</option>
-            {grades.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="gbs-filter-actions">
-          <button type="button" className="btn gbs-reset" onClick={reset}>
-            RESET
-          </button>
-          <button type="button" className="btn gbs-csv" onClick={downloadCsv}>
-            Export CSV
-          </button>
+            <span className="mypage-date-tilde" aria-hidden>
+              ~
+            </span>
+            <label className="mypage-date">
+              <span className="filter-trigger-title">To</span>
+              <input
+                type="date"
+                value={to}
+                onChange={(e) => {
+                  setTo(e.target.value)
+                  setPage(0)
+                }}
+              />
+            </label>
+            <CheckMenu
+              title="Status"
+              open={open === 'status'}
+              onOpen={() => setOpen((v) => (v === 'status' ? null : 'status'))}
+              options={STATUS_OPTIONS}
+              selected={statuses}
+              onToggle={(value) => {
+                startTransition(() => {
+                  setStatuses((prev) => toggleValue(prev, value))
+                  setPage(0)
+                })
+              }}
+              labelFor={(value) => STATUS_LABELS[value]}
+            />
+            <CheckMenu
+              title="Maker"
+              open={open === 'maker'}
+              onOpen={() => setOpen((v) => (v === 'maker' ? null : 'maker'))}
+              options={makerOptions}
+              selected={makers}
+              onToggle={(value) => {
+                startTransition(() => {
+                  setMakers((prev) => toggleValue(prev, value))
+                  setPage(0)
+                })
+              }}
+            />
+            <CheckMenu
+              title="Product"
+              open={open === 'product'}
+              onOpen={() => setOpen((v) => (v === 'product' ? null : 'product'))}
+              options={productOptions}
+              selected={products}
+              onToggle={(value) => {
+                startTransition(() => {
+                  setProducts((prev) => toggleValue(prev, value))
+                  setPage(0)
+                })
+              }}
+            />
+            <CheckMenu
+              title="Capacity"
+              open={open === 'capacity'}
+              onOpen={() => setOpen((v) => (v === 'capacity' ? null : 'capacity'))}
+              options={capacityOptions}
+              selected={capacities}
+              onToggle={(value) => {
+                startTransition(() => {
+                  setCapacities((prev) => toggleValue(prev, value))
+                  setPage(0)
+                })
+              }}
+            />
+            <CheckMenu
+              title="Grade"
+              open={open === 'grade'}
+              onOpen={() => setOpen((v) => (v === 'grade' ? null : 'grade'))}
+              options={gradeOptions}
+              selected={grades}
+              onToggle={(value) => {
+                startTransition(() => {
+                  setGrades((prev) => toggleValue(prev, value))
+                  setPage(0)
+                })
+              }}
+            />
+            <div className="mypage-filter-actions">
+              <button type="button" className="btn btn-ghost btn-sm" onClick={reset}>
+                Reset
+              </button>
+              <button type="button" className="btn btn-sm" onClick={downloadCsv}>
+                Export CSV
+              </button>
+            </div>
+          </div>
         </div>
+      </div>
+      <div className="mypage-meta">
+        <em>{filtered.length} rows</em>
+        {wonCount ? <em className="is-yours">Won {wonCount}</em> : null}
       </div>
       <div className="table-wrap gbs-table-wrap">
         <table className="gbs-table">
@@ -276,7 +330,7 @@ export function BidHistory() {
               <th>Grade</th>
               <th>SIM</th>
               <th>Activation</th>
-              <th>Qty</th>
+              <th>Quantity</th>
               <th>Winning Price</th>
               <th>Bid Value</th>
               <th>Gap Price</th>

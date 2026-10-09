@@ -12,33 +12,36 @@ export function InvoicePreview({ invoice, onClose }: { invoice: Invoice; onClose
   return (
     <ModalShell onClose={onClose}>
       <div className="modal invoice-preview-modal" onClick={(e) => e.stopPropagation()}>
-        <h2>Invoice {invoice.id}</h2>
-        <p className="muted tiny">
-          Wholesale commercial invoice (Equarios letterhead): bank remittance, line items, auction fee,
-          ship/bill to. Print / PDF for the buyer file.
-        </p>
-        <div className="invoice-preview-frame">
-          <style>{parts.style}</style>
-          <div dangerouslySetInnerHTML={{ __html: parts.body }} />
-        </div>
-        <div className="row-actions" style={{ marginTop: 12 }}>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => openInvoiceDocument(invoice, lots, buyer, settings, true)}
-          >
-            Print / PDF
-          </button>
-          <button
-            type="button"
-            className="btn btn-ghost"
-            onClick={() => openInvoiceDocument(invoice, lots, buyer, settings)}
-          >
-            Open document
-          </button>
-          <button type="button" className="btn btn-ghost" onClick={onClose}>
-            Close
-          </button>
+        <header className="invoice-preview-bar">
+          <div className="invoice-preview-bar-id">
+            <span className="muted tiny">Invoice</span>
+            <strong className="mono">{invoice.id}</strong>
+          </div>
+          <div className="invoice-preview-bar-actions">
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={() => openInvoiceDocument(invoice, lots, buyer, settings, true)}
+            >
+              Print / PDF
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => openInvoiceDocument(invoice, lots, buyer, settings)}
+            >
+              Open
+            </button>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
+              Close
+            </button>
+          </div>
+        </header>
+        <div className="invoice-preview-stage">
+          <div className="invoice-preview-page">
+            <style>{parts.style}</style>
+            <div dangerouslySetInnerHTML={{ __html: parts.body }} />
+          </div>
         </div>
       </div>
     </ModalShell>

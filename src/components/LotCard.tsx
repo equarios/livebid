@@ -57,7 +57,7 @@ export function LotCard({ lot }: { lot: Lot }) {
           </button>
         </h3>
         <p className="muted item-specs">
-          {lot.color} · <BatteryMark value={lot.battery} /> · Total pcs {lot.qty.toLocaleString()}
+          {lot.color} · <BatteryMark value={lot.battery} /> · Quantity {lot.qty.toLocaleString()}
           {lot.channel === 'marketplace' ? ` · ${left.toLocaleString()} left` : ''} · {moqLabel(lot, settings.copy.noMoq)}
         </p>
         <div className="lot-price-row">
@@ -66,8 +66,8 @@ export function LotCard({ lot }: { lot: Lot }) {
               {lot.channel === 'marketplace'
                 ? 'Buy now'
                 : sealedOpen
-                  ? 'Start'
-                  : 'Current'}
+                  ? 'Start Price'
+                  : 'Current Price'}
             </div>
             <div className="price">
               {usd(
@@ -135,13 +135,14 @@ export function LotCard({ lot }: { lot: Lot }) {
             unitPrice={listPrice}
             title={settings.copy.confirmCartTitle}
             body={fillCopy(settings.copy.confirmCartBody, { n: lotMoq(lot) })}
-            priceLabel="List price / pc"
+            priceLabel="Current Price"
             onCancel={() => setCartOpen(false)}
             onConfirm={() => {
               const q = lotMoq(lot)
-              const err = addToCart(lot.id, q)
               setCartOpen(false)
-              setCartMsg({ ok: !err, text: err ?? fillCopy(settings.copy.okAddedCart, { n: q }) })
+              void addToCart(lot.id, q).then((err) => {
+                setCartMsg({ ok: !err, text: err ?? fillCopy(settings.copy.okAddedCart, { n: q }) })
+              })
             }}
           />
         ) : null}
@@ -152,13 +153,14 @@ export function LotCard({ lot }: { lot: Lot }) {
             unitPrice={offerPrice}
             title={settings.copy.confirmOfferTitle}
             body={settings.copy.confirmOfferBody}
-            priceLabel="Your offer / pc"
+            priceLabel="Offer Price"
             onCancel={() => setOfferOpen(false)}
             onConfirm={() => {
               const q = lotMoq(lot)
-              const err = placeOffer(lot.id, q, offerPrice)
               setOfferOpen(false)
-              setCartMsg({ ok: !err, text: err ?? settings.copy.okOffer })
+              void placeOffer(lot.id, q, offerPrice).then((err) => {
+                setCartMsg({ ok: !err, text: err ?? settings.copy.okOffer })
+              })
             }}
           />
         ) : null}

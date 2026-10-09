@@ -1,8 +1,8 @@
+import { lazy, Suspense, type ReactNode } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { Layout } from './components/Layout'
+import { ThemeApplier } from './components/ThemeApplier'
 import { Account } from './pages/Account'
-import { Admin } from './pages/Admin'
-import { Super } from './pages/Super'
 import { Auctions } from './pages/Auctions'
 import { BidHistory } from './pages/BidHistory'
 import { Complaint } from './pages/Complaint'
@@ -16,9 +16,10 @@ import { MyPage } from './pages/MyPage'
 import { BuyersPage, SellersPage, SupportPage } from './pages/PublicInfo'
 import { Register } from './pages/Register'
 import { Watchlist } from './pages/Watchlist'
-import { ThemeApplier } from './components/ThemeApplier'
 import { useStore } from './store'
-import type { ReactNode } from 'react'
+
+const Admin = lazy(() => import('./pages/Admin').then((m) => ({ default: m.Admin })))
+const Super = lazy(() => import('./pages/Super').then((m) => ({ default: m.Super })))
 
 function Guard({ children }: { children: ReactNode }) {
   const { user } = useStore()
@@ -55,86 +56,95 @@ function SuperGuard() {
   const { isSuperAdmin, settings } = useStore()
   const home = settings.showAuctions ? '/auctions' : '/marketplace'
   if (!isSuperAdmin) return <Navigate to={home} replace />
-  return <Super />
+  return (
+    <Suspense fallback={<p className="muted tiny" style={{ padding: 16 }}>Loading…</p>}>
+      <Super />
+    </Suspense>
+  )
 }
 
 function AdminGuard() {
   const { isStaff, settings } = useStore()
   const home = settings.showAuctions ? '/auctions' : '/marketplace'
   if (!isStaff) return <Navigate to={home} replace />
-  return <Admin />
+  return (
+    <Suspense fallback={<p className="muted tiny" style={{ padding: 16 }}>Loading…</p>}>
+      <Admin />
+    </Suspense>
+  )
 }
 
 export default function App() {
   return (
     <>
-    <ThemeApplier />
-    <Routes>
-      <Route path="/" element={<Home />} />
-      <Route path="/login" element={<Login />} />
-      <Route path="/register" element={<Register />} />
-      <Route path="/buyers" element={<BuyersPage />} />
-      <Route path="/sellers" element={<SellersPage />} />
-      <Route path="/support" element={<SupportPage />} />
-      <Route
-        element={
-          <Guard>
-            <Layout />
-          </Guard>
-        }
-      >
-        <Route path="/top" element={<Navigate to="/account" replace />} />
+      <ThemeApplier />
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+        <Route path="/buyers" element={<BuyersPage />} />
+        <Route path="/sellers" element={<SellersPage />} />
+        <Route path="/support" element={<SupportPage />} />
         <Route
-          path="/auctions"
           element={
-            <ChannelGate flag="showAuctions">
-              <Auctions />
-            </ChannelGate>
+            <Guard>
+              <Layout />
+            </Guard>
           }
-        />
-        <Route
-          path="/auctions/:type"
-          element={
-            <ChannelGate flag="showAuctions">
-              <Auctions />
-            </ChannelGate>
-          }
-        />
-        <Route
-          path="/marketplace"
-          element={
-            <ChannelGate flag="showMarketplace">
-              <Marketplace />
-            </ChannelGate>
-          }
-        />
-        <Route path="/device-spec" element={<DeviceSpec />} />
-        <Route path="/info" element={<InfoPage />} />
-        <Route path="/tutorial" element={<Tutorial />} />
-        <Route path="/account" element={<MyPage />}>
-          <Route index element={<BidHistory />} />
-          <Route path="marketplace-history" element={<MarketplaceHistory />} />
-          <Route path="settings" element={<Account />} />
+        >
+          <Route path="/top" element={<Navigate to="/account" replace />} />
           <Route
-            path="favourites"
+            path="/auctions"
             element={
-              <ChannelGate flag="showFavourites">
-                <Watchlist />
+              <ChannelGate flag="showAuctions">
+                <Auctions />
               </ChannelGate>
             }
           />
-          <Route path="invoices" element={<Invoices />} />
-          <Route path="complaint" element={<Complaint />} />
+          <Route
+            path="/auctions/:type"
+            element={
+              <ChannelGate flag="showAuctions">
+                <Auctions />
+              </ChannelGate>
+            }
+          />
+          <Route
+            path="/marketplace"
+            element={
+              <ChannelGate flag="showMarketplace">
+                <Marketplace />
+              </ChannelGate>
+            }
+          />
+          <Route path="/device-spec" element={<DeviceSpec />} />
+          <Route path="/info" element={<InfoPage />} />
+          <Route path="/tutorial" element={<Tutorial />} />
+          <Route path="/account" element={<MyPage />}>
+            <Route index element={<BidHistory />} />
+            <Route path="marketplace-history" element={<MarketplaceHistory />} />
+            <Route path="settings" element={<Account />} />
+            <Route
+              path="favourites"
+              element={
+                <ChannelGate flag="showFavourites">
+                  <Watchlist />
+                </ChannelGate>
+              }
+            />
+            <Route path="invoices" element={<Invoices />} />
+            <Route path="complaint" element={<Complaint />} />
+          </Route>
+          <Route path="/watchlist" element={<Navigate to="/account/favourites" replace />} />
+          <Route path="/favourites" element={<Navigate to="/account/favourites" replace />} />
+          <Route path="/invoices" element={<Navigate to="/account/invoices" replace />} />
+          <Route path="/admin" element={<AdminGuard />} />
+          <Route path="/admin/invoices" element={<Navigate to="/admin?section=money" replace />} />
+          <Route path="/super" element={<SuperGuard />} />
+          <Route path="/super/invoices" element={<Navigate to="/super?section=money" replace />} />
         </Route>
-        <Route path="/watchlist" element={<Navigate to="/account/favourites" replace />} />
-        <Route path="/favourites" element={<Navigate to="/account/favourites" replace />} />
-        <Route path="/invoices" element={<Navigate to="/account/invoices" replace />} />
-        <Route path="/admin" element={<AdminGuard />} />
-        <Route path="/admin/invoices" element={<Navigate to="/super?tab=payments" replace />} />
-        <Route path="/super" element={<SuperGuard />} />
-      </Route>
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
     </>
   )
 }

@@ -54,6 +54,7 @@ export function normalizeAuctionTypes(
     intro?: string
     closesAt?: number
     closeMinutes?: number
+    feePct?: number
   }>,
 ) {
   const seen = new Set<string>()
@@ -62,6 +63,7 @@ export function normalizeAuctionTypes(
     const value = slugAuctionType(t.value)
     if (!value || RESERVED_LIST_SLUGS.has(value) || seen.has(value)) continue
     seen.add(value)
+    const feeRaw = Number(t.feePct)
     out.push({
       value,
       label: (t.label || value).trim(),
@@ -70,6 +72,7 @@ export function normalizeAuctionTypes(
       closesAt: typeof t.closesAt === 'number' && t.closesAt > 0 ? t.closesAt : undefined,
       closeMinutes:
         typeof t.closeMinutes === 'number' && t.closeMinutes > 0 ? Math.floor(t.closeMinutes) : undefined,
+      feePct: Number.isFinite(feeRaw) && feeRaw >= 0 ? feeRaw : undefined,
     })
   }
   return out
@@ -140,7 +143,8 @@ export function ensureAuctionClocks(
   now = Date.now(),
 ): { settings: SiteSettings; lots: Lot[] } {
   const auctionTypes = settings.auctionTypes.map((t) => {
-    if (t.closesAt && t.closesAt > 0) return t
+    // Keep an open clock. Missing or expired clocks roll forward so lists stay usable.
+    if (t.closesAt && t.closesAt > now) return t
     const mins = Math.max(1, t.closeMinutes || (t.value === 'live' ? 240 : 18 * 60))
     return { ...t, closeMinutes: mins, closesAt: now + mins * 60 * 1000 }
   })

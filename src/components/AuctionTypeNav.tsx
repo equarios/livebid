@@ -1,5 +1,7 @@
+import { useRef } from 'react'
 import { listLabel, typeCounts, type AuctionListKind } from '../lib/auctionLists'
 import { useNow, useStore } from '../store'
+import { FilterPanel } from './FilterPanel'
 
 export function auctionTypeFilterOptions(settings: { auctionTypes: { value: string }[] }): AuctionListKind[] {
   return [...settings.auctionTypes.map((t) => t.value), 'ongoing', 'closed']
@@ -20,6 +22,7 @@ export function AuctionTypeNav({
 }) {
   const now = useNow()
   const { lots, settings } = useStore()
+  const triggerRef = useRef<HTMLButtonElement>(null)
   const counts = typeCounts(lots, settings, now)
   const options = auctionTypeFilterOptions(settings)
   const allSelected = selected.length === 0
@@ -32,6 +35,7 @@ export function AuctionTypeNav({
   return (
     <div className={`filter-menu auction-type-menu${open ? ' open' : ''}`}>
       <button
+        ref={triggerRef}
         type="button"
         className={`filter-trigger${active ? ' is-active' : ''}`}
         onClick={onOpen}
@@ -42,26 +46,31 @@ export function AuctionTypeNav({
         <span className="filter-trigger-value">{summary}</span>
         <em>{badge}</em>
       </button>
-      {open ? (
-        <div className="filter-panel auction-type-panel" role="listbox" aria-label="Auction lists" aria-multiselectable>
-          <label className="filter-check auction-type-check">
-            <input type="checkbox" checked={allSelected} onChange={onSelectAll} />
-            <span>All Auctions</span>
-            <em>{counts.all ?? 0}</em>
+      <FilterPanel
+        open={open}
+        anchorRef={triggerRef}
+        className="auction-type-panel"
+        role="listbox"
+        aria-label="Auction lists"
+        aria-multiselectable
+      >
+        <label className="filter-check auction-type-check">
+          <input type="checkbox" checked={allSelected} onChange={onSelectAll} />
+          <span>All Auctions</span>
+          <em>{counts.all ?? 0}</em>
+        </label>
+        {options.map((kind) => (
+          <label key={kind} className="filter-check auction-type-check">
+            <input
+              type="checkbox"
+              checked={selected.includes(kind)}
+              onChange={() => onToggle(kind)}
+            />
+            <span>{listLabel(kind, settings)}</span>
+            <em>{counts[kind] ?? 0}</em>
           </label>
-          {options.map((kind) => (
-            <label key={kind} className="filter-check auction-type-check">
-              <input
-                type="checkbox"
-                checked={selected.includes(kind)}
-                onChange={() => onToggle(kind)}
-              />
-              <span>{listLabel(kind, settings)}</span>
-              <em>{counts[kind] ?? 0}</em>
-            </label>
-          ))}
-        </div>
-      ) : null}
+        ))}
+      </FilterPanel>
     </div>
   )
 }

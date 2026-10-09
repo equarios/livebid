@@ -1,5 +1,25 @@
+import { useEffect, useState } from 'react'
 import { fillCopy, isEndingSoon, timeLeft } from '../lib/format'
-import { useNow, useStore } from '../store'
+import { useStore } from '../store'
+
+/** Local 1s clock for countdown UI only — does not re-render the whole app. */
+function useLocalNow(endsAt: number) {
+  const [now, setNow] = useState(() => Date.now())
+  const closed = endsAt <= now
+
+  useEffect(() => {
+    if (closed) return
+    setNow(Date.now())
+    const t = setInterval(() => {
+      const stamp = Date.now()
+      setNow(stamp)
+      if (endsAt <= stamp) clearInterval(t)
+    }, 1000)
+    return () => clearInterval(t)
+  }, [endsAt, closed])
+
+  return now
+}
 
 export function TimeLeft({
   endsAt,
@@ -10,7 +30,7 @@ export function TimeLeft({
   closedLabel?: string
   warn?: boolean
 }) {
-  const now = useNow()
+  const now = useLocalNow(endsAt)
   const { settings } = useStore()
   const closed = endsAt <= now
   const label = closedLabel ?? settings.copy.closed
@@ -33,7 +53,7 @@ export function TimeLeft({
 }
 
 export function EndsIn({ endsAt }: { endsAt: number }) {
-  const now = useNow()
+  const now = useLocalNow(endsAt)
   const { settings } = useStore()
   return (
     <>

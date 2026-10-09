@@ -31,9 +31,9 @@ export function Register() {
     setStep('profile')
   }
 
-  function onProfile(e: FormEvent) {
+  async function onProfile(e: FormEvent) {
     e.preventDefault()
-    const err = register(accountId, company, email, password)
+    const err = await register(accountId, company, email, password)
     if (err) setError(err)
     else setDone(true)
   }

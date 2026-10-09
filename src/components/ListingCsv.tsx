@@ -396,9 +396,9 @@ export function ListingCsv() {
                 <tr>
                   <th>Auction</th>
                   <th>Lot</th>
-                  <th>Item</th>
-                  <th>Qty</th>
-                  <th>Price / pc</th>
+                  <th>Items</th>
+                  <th>Quantity</th>
+                  <th>Current Price</th>
                   <th></th>
                 </tr>
               </thead>

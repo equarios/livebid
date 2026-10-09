@@ -25,6 +25,68 @@ export function appliedFeePct(inv: Invoice) {
   return Number.isFinite(n) && (n as number) > 0 ? (n as number) : 0
 }
 
+/** Normalize a configured fee % (0 allowed = no fee). */
+export function normalizeFeePct(n: unknown): number {
+  const v = Number(n)
+  if (!Number.isFinite(v) || v < 0) return 0
+  return Math.round(v * 100) / 100
+}
+
+/**
+ * Fee % for a catalog surface.
+ * Explicit 0 on type/marketplace = no fee. Undefined falls back to invoice default.
+ */
+export function catalogFeePct(
+  channel: Channel,
+  auctionType: string | undefined,
+  settings?: SiteSettings | null,
+): number {
+  if (channel === 'marketplace') {
+    const m = settings?.marketplaceFeePct
+    if (m === 0) return 0
+    if (Number.isFinite(m) && (m as number) >= 0) return normalizeFeePct(m)
+    return invoiceRatePct(settings)
+  }
+  const slug = auctionType || 'live'
+  const def = settings?.auctionTypes?.find((t) => t.value === slug)
+  if (def?.feePct === 0) return 0
+  if (Number.isFinite(def?.feePct) && (def!.feePct as number) >= 0) {
+    return normalizeFeePct(def!.feePct)
+  }
+  return invoiceRatePct(settings)
+}
+
+export function feePctForLot(
+  lot: Pick<Lot, 'channel' | 'auctionType'>,
+  settings?: SiteSettings | null,
+) {
+  return catalogFeePct(lot.channel, lot.auctionType, settings)
+}
+
+/** Goods + fee breakdown for client quotes (bid / cart / offer). */
+export function quoteMoney(qty: number, unitPrice: number, feePct: number) {
+  const goods = roundMoney(Math.max(0, qty) * Math.max(0, unitPrice))
+  const rate = normalizeFeePct(feePct)
+  const fee = rate > 0 ? roundMoney(goods * (rate / 100)) : 0
+  return { goods, fee, feePct: rate > 0 ? rate : 0, total: roundMoney(goods + fee) }
+}
+
+export function suggestedFeePct(
+  inv: Pick<Invoice, 'channel' | 'lotId' | 'feePct' | 'lines' | 'qty' | 'unitPrice'>,
+  lots: Lot[],
+  settings?: SiteSettings | null,
+) {
+  if (Number.isFinite(inv.feePct) && (inv.feePct as number) >= 0) {
+    return normalizeFeePct(inv.feePct)
+  }
+  const lines = invoiceLines(inv as Invoice)
+  const lot =
+    lots.find((l) => l.id === inv.lotId) ||
+    lots.find((l) => lines.some((line) => line.lotId === l.id))
+  if (lot) return feePctForLot(lot, settings)
+  return catalogFeePct(inv.channel || 'auction', undefined, settings)
+}
+
 export function invoicePayDays(settings?: SiteSettings | null) {
   const n = settings?.invoice?.payDays
   return Number.isFinite(n) && (n as number) >= 1 ? Math.round(n as number) : 7
@@ -56,14 +118,20 @@ export function buildInvoice(
     status?: Invoice['status']
   },
   settings?: SiteSettings | null,
+  lots?: Lot[],
 ): Invoice {
   const lines = partial.lines
   const qty = lines.reduce((s, line) => s + line.qty, 0)
   const unitPrice = lines[0]?.unitPrice || 0
+  const feePct =
+    Number.isFinite(partial.feePct) && (partial.feePct as number) >= 0
+      ? normalizeFeePct(partial.feePct)
+      : suggestedFeePct(partial, lots || [], settings)
   const draft: Invoice = {
     ...partial,
     qty,
     unitPrice,
+    feePct,
     amount: 0,
     status: partial.status || 'draft',
     lines,

@@ -1,4 +1,5 @@
 import { usd } from '../lib/format'
+import { feePctForLot, quoteMoney } from '../lib/invoices'
 import type { Lot } from '../types'
 import { ConfirmDialog } from './ConfirmDialog'
 import { useStore } from '../store'
@@ -20,13 +21,14 @@ export function ConfirmBidDialog({
   unitPrice,
   title,
   body,
-  priceLabel = 'Your price / pc',
+  priceLabel = 'Your Price',
   onCancel,
   onConfirm,
 }: Props) {
   const { settings } = useStore()
   const copy = settings.copy
-  const total = qty * unitPrice
+  const feePct = feePctForLot(lot, settings)
+  const quote = quoteMoney(qty, unitPrice, feePct)
 
   return (
     <ConfirmDialog
@@ -44,7 +46,7 @@ export function ConfirmBidDialog({
           </dd>
         </div>
         <div>
-          <dt>Desired qty</dt>
+          <dt>Quantity</dt>
           <dd>{qty} pcs</dd>
         </div>
         <div>
@@ -52,8 +54,18 @@ export function ConfirmBidDialog({
           <dd>{usd(unitPrice)}</dd>
         </div>
         <div>
-          <dt>Order total</dt>
-          <dd className="price-cell">{usd(total)}</dd>
+          <dt>Goods</dt>
+          <dd className="price-cell">{usd(quote.goods)}</dd>
+        </div>
+        {quote.feePct > 0 ? (
+          <div>
+            <dt>Fee {quote.feePct}%</dt>
+            <dd className="price-cell">{usd(quote.fee)}</dd>
+          </div>
+        ) : null}
+        <div>
+          <dt>Est. total</dt>
+          <dd className="price-cell">{usd(quote.total)}</dd>
         </div>
       </dl>
     </ConfirmDialog>

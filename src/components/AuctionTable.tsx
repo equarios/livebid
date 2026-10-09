@@ -1,11 +1,11 @@
-import { Fragment, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useLayoutEffect, useMemo, useRef, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { FillBar } from './FillBar'
 import { InlineBid } from './InlineBid'
 import { ItemLink } from './ItemLink'
 import { bidStatus, fillStats, type FillStats } from '../lib/allocate'
-import { auctionClockRows, isSealedLot, listPath, typePillClass } from '../lib/auctionLists'
-import { lotTypeLabel, timeLeft, usd } from '../lib/format'
+import { auctionClockRows, isSealedLot, listPath } from '../lib/auctionLists'
+import { timeLeft, usd } from '../lib/format'
 import { moqLabel } from '../lib/moq'
 import { useNow, useStore } from '../store'
 import type { Bid, Lot, SiteSettings } from '../types'
@@ -67,7 +67,7 @@ function orderFocusRows(rows: Row[]) {
   })
 }
 
-const DESK_KEY = 'equarios-auction-desk-hidden'
+export const AUCTION_DESK_KEY = 'equarios-auction-desk-hidden'
 
 function closeHeat(pct: number) {
   if (pct >= 0.75) return 'hot'
@@ -84,23 +84,85 @@ function closeProgress(endsAt: number, now: number, durationMs: number, windowMi
   return Math.max(0, Math.min(1, 1 - left / Math.max(1, durationMs)))
 }
 
-export function BidTotals({ lots, children }: { lots: Lot[]; children?: ReactNode }) {
+export function bidDeskSummary(
+  lots: Lot[],
+  myLastBid: (id: string) => Bid | undefined,
+  bids: Bid[],
+  me: string | undefined,
+  settings: SiteSettings,
+  now: number,
+) {
+  const hideWin =
+    lots.length > 0 && lots.every((lot) => isSealedLot(lot, settings) && lot.endsAt > now)
+  let totalBid = 0
+  let winningAmount = 0
+  for (const lot of lots) {
+    const last = myLastBid(lot.id)
+    if (!last) continue
+    totalBid += last.qty * last.amount
+    const stats = fillStats(lot, bids, me)
+    if (!isSealedLot(lot, settings) && stats.myPcs > 0) {
+      winningAmount += stats.myPcs * last.amount
+    }
+  }
+  return { totalBid, winningAmount, hideWin }
+}
+
+export function BidTotals({
+  lots,
+  children,
+  collapsed = false,
+  /** Desk scrolls away; sticky offset ignores desk height (command bar owns sticky). */
+  scrollAway = false,
+  /** When false, money/timer chips are omitted (shown on the list command bar instead). */
+  showChips = true,
+}: {
+  lots: Lot[]
+  children?: ReactNode
+  /** When true, the whole desk is removed (toggle + recap live on the list head). */
+  collapsed?: boolean
+  scrollAway?: boolean
+  showChips?: boolean
+}) {
   const now = useNow()
-  const { myLastBid, bids, user, settings } = useStore()
+  const { myLastBid, bids, user, settings, isStaff, reopenAuctions, extendAuctionType } = useStore()
   const me = user?.accountId
   const deskRef = useRef<HTMLDivElement>(null)
-  const [hidden, setHidden] = useState(() => {
-    try {
-      return localStorage.getItem(DESK_KEY) === '1'
-    } catch {
-      return false
-    }
-  })
+  const { totalBid, winningAmount, hideWin } = bidDeskSummary(
+    lots,
+    myLastBid,
+    bids,
+    me,
+    settings,
+    now,
+  )
+  const clockRows = settings.features.endingSoon
+    ? auctionClockRows(lots, settings, now, settings.endingSoonMinutes)
+    : []
+  const closingSoon = clockRows.filter((row) => row.closing)
+  const closeBars = closingSoon.length ? closingSoon : clockRows.slice(0, 1)
+  const listsClosed =
+    settings.auctionTypes.length > 0 &&
+    settings.auctionTypes.every((t) => !t.closesAt || t.closesAt <= now)
+  const staffActions =
+    isStaff &&
+    (listsClosed ||
+      settings.auctionTypes.some((t) => !t.closesAt || t.closesAt <= now))
+
   useLayoutEffect(() => {
+    if (scrollAway || (collapsed && !staffActions)) {
+      document.documentElement.style.setProperty('--auction-desk-h', '0px')
+      return () => {
+        document.documentElement.style.removeProperty('--auction-desk-h')
+      }
+    }
     const el = deskRef.current
     if (!el) return
     const apply = () => {
-      document.documentElement.style.setProperty('--auction-desk-h', `${Math.round(el.getBoundingClientRect().height)}px`)
+      document.documentElement.style.setProperty(
+        '--auction-desk-h',
+        `${Math.round(el.getBoundingClientRect().height)}px`,
+      )
     }
     const ro = new ResizeObserver(apply)
     ro.observe(el)
@@ -109,120 +171,95 @@ export function BidTotals({ lots, children }: { lots: Lot[]; children?: ReactNod
       ro.disconnect()
       document.documentElement.style.removeProperty('--auction-desk-h')
     }
-  }, [hidden, children])
-  const hideWin =
-    lots.length > 0 && lots.every((lot) => isSealedLot(lot, settings) && lot.endsAt > now)
-  let alreadyBid = 0
-  let winningAmount = 0
-  for (const lot of lots) {
-    const last = myLastBid(lot.id)
-    if (!last) continue
-    alreadyBid += last.qty * last.amount
-    const stats = fillStats(lot, bids, me)
-    if (!isSealedLot(lot, settings) && stats.myPcs > 0) {
-      winningAmount += stats.myPcs * last.amount
-    }
-  }
-  const clockRows = settings.features.endingSoon
-    ? auctionClockRows(lots, settings, now, settings.endingSoonMinutes)
-    : []
-  const closingSoon = clockRows.filter((row) => row.closing)
-  const closeBars = closingSoon.length ? closingSoon : clockRows.slice(0, 1)
-  function toggle() {
-    const next = !hidden
-    setHidden(next)
-    try {
-      localStorage.setItem(DESK_KEY, next ? '1' : '0')
-    } catch {
-      /* ignore */
-    }
-  }
+  }, [collapsed, children, staffActions, scrollAway])
+
+  if (collapsed && !staffActions) return null
 
   return (
-    <div ref={deskRef} className={`auction-desk${hidden ? ' is-collapsed' : ''}`}>
-      <div className="auction-desk-head">
-        <div>
-          <strong>Bidding snapshot</strong>
-          {hidden ? (
-            <p className="muted tiny auction-desk-recap">
-              {usd(alreadyBid)} bid
-              {hideWin ? '' : ` · ${usd(winningAmount)} winning`}
-              {closingSoon.length ? ` · ${closingSoon.length} closing soon` : ''}
-            </p>
-          ) : null}
-        </div>
-        <div className="auction-desk-head-actions">
-          {settings.features.endingSoon ? (
-            <span
-              className={`auction-close-count${closingSoon.length ? ' on' : ''}`}
-              title={
-                closingSoon.length
-                  ? closingSoon.map((row) => row.label).join(', ')
-                  : 'No auctions in the warning window'
-              }
-            >
-              Closing <strong>{closingSoon.length}</strong>
-            </span>
-          ) : null}
-          <button type="button" className="btn btn-ghost btn-sm" onClick={toggle}>
-            {hidden ? 'Show' : 'Hide'}
-          </button>
-        </div>
-      </div>
-      {children ? <div className="auction-desk-filters">{children}</div> : null}
-      {!hidden ? (
-        <>
-          <div className="auction-desk-kpis">
-            <div
-              className="auction-desk-stat"
-              title="Your qty × your price on these lots"
-            >
-              <span className="label">Already bid</span>
-              <strong>{usd(alreadyBid)}</strong>
-            </div>
-            <div
-              className="auction-desk-stat is-win"
-              title={
-                hideWin
-                  ? 'Win/lose stays hidden on Offline Auctions until close'
-                  : 'Pcs you are currently allocated × your price'
-              }
-            >
-              <span className="label">Winning</span>
-              <strong>{hideWin ? 'Hidden' : usd(winningAmount)}</strong>
-            </div>
-            {closeBars.map((row) => {
-              const pct = closeProgress(
-                row.endsAt,
-                now,
-                row.durationMs,
-                settings.endingSoonMinutes,
-                row.closing,
-              )
-              const heat = row.closing ? closeHeat(pct) : 'ok'
-              return (
-                <Link
-                  key={row.value}
-                  to={listPath(row.value)}
-                  className={`auction-close-bar is-${heat}`}
-                  title={`${row.label} · ${row.count} lots · ${timeLeft(row.endsAt, now)} left`}
-                >
-                  <span className="auction-close-bar-top">
-                    <strong>{row.label}</strong>
-                    <TimeLeft endsAt={row.endsAt} />
-                  </span>
-                  <span className="muted tiny">
-                    {row.count === 1 ? '1 lot' : `${row.count} lots`} ·{' '}
-                    {row.closing ? 'closing now' : 'next close'}
-                  </span>
-                  <span className="auction-close-track" aria-hidden>
-                    <span className="auction-close-fill" style={{ width: `${Math.round(pct * 100)}%` }} />
-                  </span>
-                </Link>
-              )
-            })}
+    <div
+      ref={deskRef}
+      className={`auction-desk${collapsed ? ' is-collapsed' : ''}${scrollAway ? ' is-scrollaway' : ''}`}
+    >
+      {staffActions ? (
+        <div className="auction-desk-head">
+          <div />
+          <div className="auction-desk-head-actions">
+            {isStaff && listsClosed ? (
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={() => reopenAuctions()}
+                title="Start a new shared close clock for every auction list"
+              >
+                Reopen lists
+              </button>
+            ) : null}
+            {isStaff && !listsClosed
+              ? settings.auctionTypes.map((t) =>
+                  t.closesAt && t.closesAt > now ? null : (
+                    <button
+                      key={t.value}
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => extendAuctionType(t.value)}
+                    >
+                      Open {t.label}
+                    </button>
+                  ),
+                )
+              : null}
           </div>
-        </>
+        </div>
+      ) : null}
+      {children && !collapsed ? <div className="auction-desk-filters">{children}</div> : null}
+      {!collapsed && showChips ? (
+        <div className="auction-desk-chips" aria-label="Bidding totals">
+          <div
+            className="filter-trigger is-static is-bid-chip"
+            title="Your qty × your price on these lots"
+          >
+            <span className="filter-trigger-title">Total Bid</span>
+            <span className="filter-trigger-value">{usd(totalBid)}</span>
+          </div>
+          <div
+            className={`filter-trigger is-static${hideWin ? '' : ' is-win-chip'}`}
+            title={
+              hideWin
+                ? 'Win/lose stays hidden on Offline Auctions until close'
+                : 'Pcs you are currently allocated × your price'
+            }
+          >
+            <span className="filter-trigger-title">Winning</span>
+            <span className="filter-trigger-value">
+              {hideWin ? 'Hidden' : usd(winningAmount)}
+            </span>
+          </div>
+          {closeBars.map((row) => {
+            const pct = closeProgress(
+              row.endsAt,
+              now,
+              row.durationMs,
+              settings.endingSoonMinutes,
+              row.closing,
+            )
+            const heat = row.closing ? closeHeat(pct) : 'ok'
+            return (
+              <Link
+                key={row.value}
+                to={listPath(row.value)}
+                className={`filter-trigger is-close-chip is-${heat}`}
+                style={{ ['--close-pct' as string]: `${Math.round(pct * 100)}%` }}
+                title={`${row.label} · ${row.count} lots · ${timeLeft(row.endsAt, now)} left`}
+              >
+                <span className="filter-trigger-title">{row.label}</span>
+                <span className="filter-trigger-value">
+                  <TimeLeft endsAt={row.endsAt} />
+                  <em>{row.count === 1 ? '1' : row.count}</em>
+                </span>
+              </Link>
+            )
+          })}
+        </div>
       ) : null}
     </div>
   )
@@ -232,29 +269,19 @@ function YouWin({ row }: { row: Row }) {
   const { settings } = useStore()
   const { lot, last, stats, st, closed, winTotal } = row
   const sealedOpen = isSealedLot(lot, settings) && !closed
+  const myPcs = sealedOpen ? last?.qty ?? 0 : stats.myPcs
   return (
-    <div className="you-win">
-      <FillBar
-        total={lot.qty}
-        myPcs={sealedOpen ? last?.qty ?? 0 : stats.myPcs}
-        sealed={sealedOpen}
-        status={st}
-        kind={lotTypeLabel(lot, settings)}
-        kindClass={typePillClass(lot, settings)}
-      />
-      <div className="you-win-amt">
-        {winTotal == null ? (
-          <strong className="muted">Hidden</strong>
-        ) : (
-          <>
-            <strong>{usd(winTotal)}</strong>
-            {stats.myPcs > 0 ? (
-              <span className="muted tiny">{stats.myPcs} pcs allocated</span>
-            ) : null}
-          </>
-        )}
-      </div>
-    </div>
+    <FillBar
+      total={lot.qty}
+      myPcs={myPcs}
+      sealed={sealedOpen}
+      status={st}
+      endsAt={lot.endsAt}
+      amount={winTotal == null ? 'Hidden' : usd(winTotal)}
+      amountNote={
+        !sealedOpen && stats.myPcs > 0 ? `${stats.myPcs.toLocaleString()} pcs allocated` : null
+      }
+    />
   )
 }
 
@@ -281,42 +308,46 @@ function LotCells({
           />
         </td>
       ) : null}
-      <td className="mono">{lot.id}</td>
-      <td>
-        <ItemLink lot={lot} showMoq={false} showGrade={false} />
+      <td className="item-col">
+        <ItemLink lot={lot} showMoq={false} showGrade={false} showLotId />
       </td>
       <td>
         <span className={`grade-inline grade-${lot.grade}`}>{lot.grade}</span>
       </td>
-      <td>
-        {lot.qty.toLocaleString()}
-        <div className="muted tiny">{moqLabel(lot, settings.copy.noMoq)}</div>
+      <td className="lot-qty">
+        <div className="cell-stack">
+          <span className="cell-primary">{lot.qty.toLocaleString()}</span>
+          <span className="cell-secondary">pcs</span>
+          <span className="cell-chip">{moqLabel(lot, settings.copy.noMoq)}</span>
+        </div>
       </td>
       <td className="price-cell">
         {isSealedLot(lot, settings) && !row.closed ? (
-          <span className="muted">Hidden</span>
+          <div className="cell-stack cell-stack-end">
+            <span className="cell-chip soft">Hidden</span>
+          </div>
         ) : (
-          usd(lot.currentPrice)
+          <div className="cell-stack cell-stack-end">
+            <span className="cell-primary">{usd(lot.currentPrice)}</span>
+            <span className="cell-secondary">/pc</span>
+          </div>
         )}
       </td>
       <td className="price-cell">
         {yourTotal != null && last ? (
-          <>
-            {usd(yourTotal)}
-            <div className="muted tiny">
+          <div className="cell-stack cell-stack-end">
+            <span className="cell-primary">{usd(yourTotal)}</span>
+            <span className="cell-secondary">
               {last.qty} pcs × {usd(last.amount)}
-              {last.qty >= lot.qty ? ' · take all' : ' · small qty'}
-            </div>
-          </>
+            </span>
+            <span className="cell-chip">{last.qty >= lot.qty ? 'take all' : 'small qty'}</span>
+          </div>
         ) : (
           <span className="muted">—</span>
         )}
       </td>
       <td className="fill-cell">
         <YouWin row={row} />
-      </td>
-      <td>
-        <TimeLeft endsAt={lot.endsAt} />
       </td>
       <td>
         <InlineBid lot={lot} withWatch />
@@ -348,26 +379,42 @@ function LotCardBlock({
           Compare
         </label>
       ) : null}
-      <ItemLink lot={lot} showMoq={false} showGrade={false} />
+      <ItemLink lot={lot} showMoq={false} showGrade={false} showLotId />
       <div className="auction-card-meta">
         <span className={`grade-inline grade-${lot.grade}`}>{lot.grade}</span>
-        <span>
-          {lot.qty.toLocaleString()} pcs
-          <span className="muted"> · {moqLabel(lot, settings.copy.noMoq)}</span>
-        </span>
-        <TimeLeft endsAt={lot.endsAt} />
+        <div className="cell-stack lot-qty">
+          <span className="cell-primary">{lot.qty.toLocaleString()}</span>
+          <span className="cell-secondary">pcs</span>
+          <span className="cell-chip">{moqLabel(lot, settings.copy.noMoq)}</span>
+        </div>
       </div>
       <YouWin row={row} />
       <div className="auction-card-prices">
-        <span>
-          High / pc{' '}
-          <strong>
-            {isSealedLot(lot, settings) && !closed ? 'Hidden' : usd(lot.currentPrice)}
-          </strong>
-        </span>
-        <span>
-          Your bid <strong>{yourTotal != null && last ? usd(yourTotal) : '—'}</strong>
-        </span>
+        <div className="cell-stack">
+          <span className="cell-secondary">Current Price</span>
+          {isSealedLot(lot, settings) && !closed ? (
+            <span className="cell-chip soft">Hidden</span>
+          ) : (
+            <>
+              <span className="cell-primary">{usd(lot.currentPrice)}</span>
+              <span className="cell-secondary">/pc</span>
+            </>
+          )}
+        </div>
+        <div className="cell-stack">
+          <span className="cell-secondary">Your bid</span>
+          <span className="cell-primary">
+            {yourTotal != null && last ? usd(yourTotal) : '—'}
+          </span>
+          {yourTotal != null && last ? (
+            <>
+              <span className="cell-secondary">
+                {last.qty} pcs × {usd(last.amount)}
+              </span>
+              <span className="cell-chip">{last.qty >= lot.qty ? 'take all' : 'small qty'}</span>
+            </>
+          ) : null}
+        </div>
       </div>
       <InlineBid lot={lot} stacked withWatch />
     </article>
@@ -379,21 +426,27 @@ export function AuctionTable({
   compareIds,
   onToggleCompare,
   showTotals = true,
+  showBidGroups = true,
 }: {
   lots: Lot[]
   compareIds?: string[]
   onToggleCompare?: (id: string) => void
   showTotals?: boolean
+  /** When false, keep your-bids-first order but hide in-table section titles. */
+  showBidGroups?: boolean
 }) {
   const now = useNow()
   const { myLastBid, bids, user, settings } = useStore()
   const me = user?.accountId
-  const colSpan = (onToggleCompare ? 1 : 0) + 9
+  const colSpan = (onToggleCompare ? 1 : 0) + 7
 
   const sections = useMemo(() => {
     const ordered = orderFocusRows(buildRows(lots, myLastBid, bids, me, settings, now))
     const mine = ordered.filter((r) => r.last)
     const rest = ordered.filter((r) => !r.last)
+    if (!showBidGroups) {
+      return [{ key: 'all', title: null as string | null, rows: ordered }]
+    }
     if (!mine.length) return [{ key: 'all', title: null as string | null, rows: rest }]
     if (!rest.length) {
       return [{ key: 'mine', title: `Your bids · ${mine.length}`, rows: mine }]
@@ -402,7 +455,7 @@ export function AuctionTable({
       { key: 'mine', title: `Your bids · ${mine.length}`, rows: mine },
       { key: 'rest', title: `Not bid yet · ${rest.length}`, rows: rest },
     ]
-  }, [lots, myLastBid, bids, me, settings, now])
+  }, [lots, myLastBid, bids, me, settings, now, showBidGroups])
 
   return (
     <>
@@ -412,15 +465,13 @@ export function AuctionTable({
           <thead>
             <tr>
               {onToggleCompare ? <th>Cmp</th> : null}
-              <th>Lot</th>
-              <th>Item</th>
+              <th>Items</th>
               <th>Grade</th>
-              <th>Total pcs</th>
-              <th>High / pc</th>
+              <th>Quantity</th>
+              <th>Current Price</th>
               <th>Your bid total</th>
-              <th>You · Winning</th>
-              <th>Time left</th>
-              <th>Your order</th>
+              <th>Winning Status</th>
+              <th>Bid Order</th>
             </tr>
           </thead>
           <tbody>

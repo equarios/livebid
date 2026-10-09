@@ -1,12 +1,14 @@
+import { useLayoutEffect } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
+import { AuctionTypeHead } from '../components/AuctionTypeHead'
 import { RecentLots } from '../components/RecentLots'
 import { usd } from '../lib/format'
-import { invoiceDueLabel, invoiceTotals, invoiceVisibleToBuyer } from '../lib/invoices'
-import { useNow, useStore } from '../store'
+import { invoiceTotals, invoiceVisibleToBuyer } from '../lib/invoices'
+import { useStore } from '../store'
 
 const TABS = [
   { to: '/account', label: 'Bid History', end: true },
-  { to: '/account/marketplace-history', label: 'Marketplace History' },
+  { to: '/account/marketplace-history', label: 'Marketplace' },
   { to: '/account/settings', label: 'Account Settings' },
   { to: '/account/favourites', label: 'Favorites' },
   { to: '/account/invoices', label: 'Invoice' },
@@ -14,55 +16,75 @@ const TABS = [
 ] as const
 
 export function MyPage() {
-  const now = useNow()
   const { pathname } = useLocation()
-  const { lots, invoices, user, isStaff, settings } = useStore()
+  const { invoices, user, isStaff, settings, cart, cartOrders, offers } = useStore()
   const onInvoices = pathname.startsWith('/account/invoices')
-  const live = lots.filter((l) => l.channel === 'auction' && l.endsAt > now).length
+  const onMarket = pathname.startsWith('/account/marketplace-history')
   const mine = invoices.filter(
     (i) => invoiceVisibleToBuyer(i) && (isStaff || !i.accountId || i.accountId === user?.accountId),
   )
   const unpaid = mine.filter((i) => i.status !== 'paid' && !i.shippedAt)
   const due = unpaid.reduce((n, i) => n + invoiceTotals(i, settings).total, 0)
-  const soonest = unpaid.map((i) => invoiceDueLabel(i, now, settings)).find((label) => label)
+  const openCartOrders = (cartOrders || []).filter(
+    (o) =>
+      o.accountId === user?.accountId &&
+      (o.status === 'pending' || o.status === 'accepted'),
+  ).length
+  const cartCount = cart.length + openCartOrders
+  const offerCount = (offers || []).filter(
+    (o) =>
+      o.accountId === user?.accountId &&
+      (o.status === 'pending' || o.status === 'accepted'),
+  ).length
+
+  useLayoutEffect(() => {
+    document.documentElement.style.setProperty('--auction-desk-h', '0px')
+    return () => {
+      document.documentElement.style.removeProperty('--auction-desk-h')
+    }
+  }, [])
 
   return (
-    <div className="mypage">
-      <div className="mypage-subbar">
-        <nav className="mypage-tabs" aria-label="My Page">
-          {TABS.map((tab) => (
-            <NavLink key={tab.to} to={tab.to} end={'end' in tab ? tab.end : false}>
-              {tab.label}
-            </NavLink>
-          ))}
-        </nav>
-      </div>
-      <div className="mypage-body">
-        {!onInvoices ? (
-          <>
-            <div className="auction-desk-kpis">
-              <div className="auction-desk-stat">
-                <span className="label">Live auctions</span>
-                <strong>{live}</strong>
-                <Link to="/auctions">Open auction</Link>
-              </div>
-              <div className="auction-desk-stat">
-                <span className="label">Marketplace</span>
-                <strong>{lots.filter((l) => l.channel === 'marketplace').length}</strong>
-                <Link to="/marketplace">Open marketplace</Link>
-              </div>
-              <div className="auction-desk-stat is-lose">
-                <span className="label">Unpaid invoices</span>
-                <strong>{usd(due)}</strong>
-                <Link to="/account/invoices">View invoices</Link>
-                {soonest ? <div className="muted tiny">{soonest}</div> : null}
-              </div>
-            </div>
-            <RecentLots />
-          </>
-        ) : null}
-        <Outlet />
-      </div>
+    <div className="mypage is-command-bar">
+      <section className="auction-type-block is-solo">
+        <AuctionTypeHead>
+          <div className="auction-command">
+            <nav className="mypage-tabs" aria-label="My Page">
+              {TABS.map((tab) => (
+                <NavLink key={tab.to} to={tab.to} end={'end' in tab ? tab.end : false}>
+                  {tab.label}
+                  {tab.to === '/account/marketplace-history' && cartCount ? (
+                    <em>{cartCount}</em>
+                  ) : null}
+                </NavLink>
+              ))}
+            </nav>
+            {onMarket && cartCount ? (
+              <a href="#cart" className="auction-command-link is-yours">
+                Cart {cartCount}
+              </a>
+            ) : null}
+            {onMarket && offerCount ? (
+              <a href="#offers" className="auction-command-link is-open">
+                Offers {offerCount}
+              </a>
+            ) : null}
+            {due > 0 ? (
+              <Link
+                to="/account/invoices"
+                className="auction-command-stat is-lose"
+                title="Unpaid invoice total"
+              >
+                Unpaid {usd(due)}
+              </Link>
+            ) : null}
+          </div>
+        </AuctionTypeHead>
+        <div className="mypage-body">
+          {!onInvoices && !onMarket ? <RecentLots /> : null}
+          <Outlet />
+        </div>
+      </section>
     </div>
   )
 }

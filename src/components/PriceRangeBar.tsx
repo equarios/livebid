@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { usd } from '../lib/format'
+import { FilterPanel } from './FilterPanel'
 
 export function priceBounds(prices: number[]): { min: number; max: number } {
   if (!prices.length) return { min: 0, max: 0 }
@@ -30,6 +31,7 @@ export function PriceMenu({
   onOpen: () => void
   onChange: (lo: number, hi: number) => void
 }) {
+  const triggerRef = useRef<HTMLButtonElement>(null)
   const [fromText, setFromText] = useState(String(lo))
   const [toText, setToText] = useState(String(hi))
   const all = lo <= min && hi >= max
@@ -64,52 +66,51 @@ export function PriceMenu({
   return (
     <div className={`filter-menu ${open ? 'open' : ''}`}>
       <button
+        ref={triggerRef}
         type="button"
         className={`filter-trigger${active ? ' is-active' : ''}`}
         onClick={onOpen}
         aria-expanded={open}
       >
-        <span className="filter-trigger-title">Price / pc</span>
+        <span className="filter-trigger-title">Current Price</span>
         <span className="filter-trigger-value">{summary}</span>
       </button>
-      {open ? (
-        <div className="filter-panel">
-          <label className="inline-field">
-            <span>Min $</span>
-            <input
-              type="number"
-              min={0}
-              step={1}
-              inputMode="numeric"
-              placeholder="0"
-              value={fromText}
-              aria-label="Minimum price per pc"
-              onChange={(e) => setFromText(e.target.value)}
-              onBlur={(e) => commitFrom(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') commitFrom(fromText)
-              }}
-            />
-          </label>
-          <label className="inline-field">
-            <span>Max $</span>
-            <input
-              type="number"
-              min={0}
-              step={1}
-              inputMode="numeric"
-              placeholder={String(max)}
-              value={toText}
-              aria-label="Maximum price per pc"
-              onChange={(e) => setToText(e.target.value)}
-              onBlur={(e) => commitTo(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') commitTo(toText)
-              }}
-            />
-          </label>
-        </div>
-      ) : null}
+      <FilterPanel open={open} anchorRef={triggerRef}>
+        <label className="inline-field">
+          <span>Min $</span>
+          <input
+            type="number"
+            min={0}
+            step={1}
+            inputMode="numeric"
+            placeholder="0"
+            value={fromText}
+            aria-label="Minimum price per pc"
+            onChange={(e) => setFromText(e.target.value)}
+            onBlur={(e) => commitFrom(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') commitFrom(fromText)
+            }}
+          />
+        </label>
+        <label className="inline-field">
+          <span>Max $</span>
+          <input
+            type="number"
+            min={0}
+            step={1}
+            inputMode="numeric"
+            placeholder={String(max)}
+            value={toText}
+            aria-label="Maximum price per pc"
+            onChange={(e) => setToText(e.target.value)}
+            onBlur={(e) => commitTo(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') commitTo(toText)
+            }}
+          />
+        </label>
+      </FilterPanel>
     </div>
   )
 }

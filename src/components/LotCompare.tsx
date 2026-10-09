@@ -57,7 +57,7 @@ export function LotCompare({
                 <dd>{specLocks(lot)}</dd>
               </div>
               <div>
-                <dt>Pcs / MOQ</dt>
+                <dt>Quantity / MOQ</dt>
                 <dd>
                   {lot.qty.toLocaleString()} · {moqLabel(lot, settings.copy.noMoq)}
                 </dd>
@@ -65,8 +65,8 @@ export function LotCompare({
               <div>
                 <dt>
                   {lot.channel === 'auction' && isSealedLot(lot, settings) && lot.endsAt > now
-                    ? 'Start / pc'
-                    : 'Price / pc'}
+                    ? 'Start Price'
+                    : 'Current Price'}
                 </dt>
                 <dd>
                   {usd(

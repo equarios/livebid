@@ -37,12 +37,12 @@ export function ConfirmDialog({
         <p className="muted">{body}</p>
         {children}
         <div className="modal-actions">
-          <button type="button" className="btn btn-ghost btn-sm" onClick={onCancel}>
+          <button type="button" className="btn" onClick={onCancel}>
             {copy.btnCancel}
           </button>
           <button
             type="button"
-            className="btn btn-primary btn-sm"
+            className="btn btn-primary"
             onClick={onConfirm}
             disabled={confirmDisabled}
           >

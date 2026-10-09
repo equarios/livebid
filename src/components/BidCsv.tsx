@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState, type ChangeEvent } from 'react'
 import { ConfirmDialog } from './ConfirmDialog'
+import { FilterPanel } from './FilterPanel'
 import { ModalShell } from './ModalShell'
 import { csvAuctionMatches, downloadCsv, parseBidCsv, type CsvBidRow } from '../lib/csv'
 import { isoDate, lotTypeLabel, usd } from '../lib/format'
@@ -33,6 +34,7 @@ export function BidCsv({
   const [fail, setFail] = useState<Array<{ lotId: string; message: string }>>([])
   const [localOpen, setLocalOpen] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
   const csvOpen = open ?? localOpen
   const toggleOpen = onOpen ?? (() => setLocalOpen((v) => !v))
   const closeMenu = () => {
@@ -282,6 +284,7 @@ export function BidCsv({
   return (
     <div className={`bid-csv filter-menu${csvOpen ? ' open' : ''}`}>
       <button
+        ref={triggerRef}
         type="button"
         className={`filter-trigger${active ? ' is-active' : ''}`}
         onClick={toggleOpen}
@@ -292,32 +295,30 @@ export function BidCsv({
         <span className="filter-trigger-title">CSV</span>
         <span className="filter-trigger-value">Bid file</span>
       </button>
-      {csvOpen ? (
-        <div className="filter-panel bid-csv-panel" role="menu">
-          <button
-            type="button"
-            className="bid-csv-option"
-            role="menuitem"
-            onClick={() => {
-              closeMenu()
-              setPick('download')
-            }}
-          >
-            Download template
-          </button>
-          <button
-            type="button"
-            className="bid-csv-option"
-            role="menuitem"
-            onClick={() => {
-              closeMenu()
-              setPick('upload')
-            }}
-          >
-            Upload bids
-          </button>
-        </div>
-      ) : null}
+      <FilterPanel open={csvOpen} anchorRef={triggerRef} className="bid-csv-panel" role="menu">
+        <button
+          type="button"
+          className="bid-csv-option"
+          role="menuitem"
+          onClick={() => {
+            closeMenu()
+            setPick('download')
+          }}
+        >
+          Download template
+        </button>
+        <button
+          type="button"
+          className="bid-csv-option"
+          role="menuitem"
+          onClick={() => {
+            closeMenu()
+            setPick('upload')
+          }}
+        >
+          Upload bids
+        </button>
+      </FilterPanel>
       <input
         ref={fileRef}
         type="file"
@@ -403,11 +404,11 @@ export function BidCsv({
                 <tr>
                   <th>Auction</th>
                   <th>Lot</th>
-                  <th>Item</th>
-                  <th>Total pcs</th>
-                  <th>Desired qty</th>
-                  <th>Min / pc</th>
-                  <th>Price / pc</th>
+                  <th>Items</th>
+                  <th>Quantity</th>
+                  <th>Quantity</th>
+                  <th>Min Price</th>
+                  <th>Current Price</th>
                   <th>Bid total</th>
                   <th></th>
                 </tr>
@@ -428,7 +429,7 @@ export function BidCsv({
                         type="number"
                         min={1}
                         step={1}
-                        aria-label={`Desired qty for ${row.lotId}`}
+                        aria-label={`Quantity for ${row.lotId}`}
                         value={Number.isFinite(row.qty) ? row.qty : ''}
                         onChange={(e) =>
                           patchRow(row.line, {

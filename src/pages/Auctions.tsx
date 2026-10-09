@@ -1,6 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { startTransition, useEffect, useMemo, useRef, useState } from 'react'
 import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { AuctionTable, BidTotals } from '../components/AuctionTable'
+import {
+  AuctionTable,
+  AUCTION_DESK_KEY,
+  BidTotals,
+  bidDeskSummary,
+} from '../components/AuctionTable'
 import { AuctionTypeHead } from '../components/AuctionTypeHead'
 import { AuctionTypeNav, auctionTypeFilterOptions } from '../components/AuctionTypeNav'
 import { BidCsv } from '../components/BidCsv'
@@ -10,19 +15,20 @@ import {
   makerOptions,
   toggleValue,
 } from '../components/CheckMenu'
+import { isFilterUiTarget } from '../components/FilterPanel'
 import { LotCompare } from '../components/LotCompare'
 import {
   groupLotsByType,
   inAuctionList,
   isAuctionListKind,
-  listIntro,
   listPath,
-  localTimeZone,
   migrateLotAuctionType,
   type AuctionListKind,
 } from '../lib/auctionLists'
+import { usd } from '../lib/format'
 import { useNow, useStore } from '../store'
 import type { Grade, SiteSettings } from '../types'
+import { TimeLeft } from '../components/TimeLeft'
 
 const COACH_KEY = 'equarios-bid-coach-dismissed'
 
@@ -43,15 +49,13 @@ export function Auctions() {
 function AuctionList() {
   const now = useNow()
   const navigate = useNavigate()
-  const { lots, settings, user, bids } = useStore()
+  const { lots, settings, user, bids, myLastBid } = useStore()
+  const me = user?.accountId
   const location = useLocation()
   const typeSlugs = useMemo(() => settings.auctionTypes.map((t) => t.value), [settings.auctionTypes])
   const GRADES = settings.grades
   const [params] = useSearchParams()
-  const [q, setQ] = useState(params.get('q') || '')
-  useEffect(() => {
-    setQ(params.get('q') || '')
-  }, [params])
+  const q = params.get('q') || ''
   const [listFilters, setListFilters] = useState<AuctionListKind[]>(() =>
     filtersFromHash(location.hash, settings),
   )
@@ -70,6 +74,24 @@ function AuctionList() {
   })
   const [compareIds, setCompareIds] = useState<string[]>([])
   const [compareOpen, setCompareOpen] = useState(false)
+  const [deskCollapsed, setDeskCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem(AUCTION_DESK_KEY) === '1'
+    } catch {
+      return false
+    }
+  })
+  function toggleDesk() {
+    setDeskCollapsed((prev) => {
+      const next = !prev
+      try {
+        localStorage.setItem(AUCTION_DESK_KEY, next ? '1' : '0')
+      } catch {
+        /* ignore */
+      }
+      return next
+    })
+  }
 
   const selectedTypes = listFilters.filter((f) => typeSlugs.includes(f))
   const wantOngoing = listFilters.includes('ongoing')
@@ -122,7 +144,7 @@ function AuctionList() {
 
   useEffect(() => {
     function onDoc(e: MouseEvent) {
-      if (!filtersRef.current?.contains(e.target as Node)) setOpen(null)
+      if (!isFilterUiTarget(e.target, filtersRef.current)) setOpen(null)
     }
     document.addEventListener('mousedown', onDoc)
     return () => document.removeEventListener('mousedown', onDoc)
@@ -163,18 +185,19 @@ function AuctionList() {
   }
 
   function toggleListFilter(value: AuctionListKind) {
-    setListFilters((prev) => {
-      const allowed = new Set(auctionTypeFilterOptions(settings))
-      if (!allowed.has(value)) return prev
-      return toggleValue(prev, value)
+    startTransition(() => {
+      setListFilters((prev) => {
+        const allowed = new Set(auctionTypeFilterOptions(settings))
+        if (!allowed.has(value)) return prev
+        return toggleValue(prev, value)
+      })
     })
   }
 
-  const tz = localTimeZone()
   const csvLots = filtered.filter((l) => l.endsAt > now)
 
   return (
-    <div>
+    <div className="auctions-page is-command-bar">
       <h1 className="sr-only">{settings.copy.auctionsTitle}</h1>
       {showCoach ? (
         <div className="coach-panel">
@@ -206,22 +229,15 @@ function AuctionList() {
           </button>
         </div>
       ) : null}
-      <BidTotals lots={filtered}>
-        <div className="filters" ref={filtersRef}>
-          <input
-            placeholder={settings.copy.searchAuctions}
-            value={q}
-            onChange={(e) => {
-              setQ(e.target.value)
-            }}
-          />
+      <BidTotals lots={filtered} collapsed={deskCollapsed} scrollAway showChips={false}>
+        <div className="filters filters-no-search" ref={filtersRef}>
           <div className="filter-groups">
             <AuctionTypeNav
               open={open === 'type'}
               onOpen={() => setOpen((v) => (v === 'type' ? null : 'type'))}
               selected={listFilters}
               onToggle={toggleListFilter}
-              onSelectAll={() => setListFilters([])}
+              onSelectAll={() => startTransition(() => setListFilters([]))}
             />
             {settings.filters.maker ? (
             <CheckMenu
@@ -230,7 +246,9 @@ function AuctionList() {
               onOpen={() => setOpen((v) => (v === 'maker' ? null : 'maker'))}
               options={makersList}
               selected={makers}
-              onToggle={(value) => setMakers((prev) => toggleValue(prev, value))}
+              onToggle={(value) =>
+                startTransition(() => setMakers((prev) => toggleValue(prev, value)))
+              }
             />
             ) : null}
             {settings.filters.grade ? (
@@ -240,7 +258,9 @@ function AuctionList() {
               onOpen={() => setOpen((v) => (v === 'grade' ? null : 'grade'))}
               options={GRADES}
               selected={grades}
-              onToggle={(value) => setGrades((prev) => toggleValue(prev, value))}
+              onToggle={(value) =>
+                startTransition(() => setGrades((prev) => toggleValue(prev, value)))
+              }
             />
             ) : null}
             {settings.filters.capacity ? (
@@ -250,7 +270,9 @@ function AuctionList() {
               onOpen={() => setOpen((v) => (v === 'memory' ? null : 'memory'))}
               options={capacities}
               selected={memories}
-              onToggle={(value) => setMemories((prev) => toggleValue(prev, value))}
+              onToggle={(value) =>
+                startTransition(() => setMemories((prev) => toggleValue(prev, value)))
+              }
             />
             ) : null}
             {!closedOnly ? (
@@ -270,21 +292,86 @@ function AuctionList() {
       </BidTotals>
       {groups.length ? (
         <div className="auction-lists-stack">
-          {groups.map((group) => (
+          {groups.map((group) => {
+            const yourBids = group.lots.filter((lot) => myLastBid(lot.id)).length
+            const openLots = group.lots.length - yourBids
+            const solo = groups.length === 1
+            const groupSummary = bidDeskSummary(
+              group.lots,
+              myLastBid,
+              bids,
+              me,
+              settings,
+              now,
+            )
+            const typeMeta = settings.auctionTypes.find((t) => t.value === group.value)
+            const endsAt =
+              typeMeta?.closesAt ||
+              (group.lots.length ? Math.max(...group.lots.map((l) => l.endsAt)) : 0)
+            const showTimer = endsAt > now
+            return (
             <section
               key={group.value}
               id={`auction-list-${group.value}`}
-              className="auction-type-block"
+              className={`auction-type-block${solo ? ' is-solo' : ''}`}
             >
               <AuctionTypeHead>
-                <div>
+                <div className="auction-command">
                   <h2>
                     {group.label}
                     <em>{group.lots.length}</em>
                   </h2>
-                  <p className="muted tiny auction-type-block-intro">
-                    {listIntro(group.value, settings)} USD · {tz}. Your bids stay at the top.
-                  </p>
+                  {(typeMeta?.feePct ?? settings.invoice.feePct) > 0 ? (
+                    <em className="is-fee" title="System usage fee on winning goods">
+                      Fee {typeMeta?.feePct ?? settings.invoice.feePct}%
+                    </em>
+                  ) : null}
+                  {showTimer ? (
+                    <span
+                      className="auction-command-timer"
+                      title={`${group.label} · time left`}
+                    >
+                      <TimeLeft endsAt={endsAt} />
+                    </span>
+                  ) : null}
+                  {yourBids > 0 ? (
+                    <em className="is-yours">Your bids {yourBids}</em>
+                  ) : null}
+                  {openLots > 0 ? <em className="is-open">Open {openLots}</em> : null}
+                  <span
+                    className="auction-command-stat is-money"
+                    title="Your qty × your price on these lots"
+                  >
+                    Total Bid {usd(groupSummary.totalBid)}
+                  </span>
+                  <span
+                    className={`auction-command-stat${groupSummary.hideWin ? '' : ' is-win'}`}
+                    title={
+                      groupSummary.hideWin
+                        ? 'Win/lose stays hidden until close'
+                        : 'Pcs you are currently allocated × your price'
+                    }
+                  >
+                    Winning {groupSummary.hideWin ? 'Hidden' : usd(groupSummary.winningAmount)}
+                  </span>
+                </div>
+                <div className="auction-type-head-tools">
+                  {deskCollapsed ? (
+                    <p className="muted tiny auction-type-head-recap">Filters hidden</p>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm auction-desk-chip-hide"
+                    onClick={toggleDesk}
+                    aria-label={
+                      deskCollapsed
+                        ? 'Show search and filters'
+                        : 'Hide search and filters'
+                    }
+                    title={deskCollapsed ? 'Show' : 'Hide'}
+                  >
+                    {deskCollapsed ? '+' : '−'}
+                  </button>
                 </div>
               </AuctionTypeHead>
               <AuctionTable
@@ -292,9 +379,11 @@ function AuctionList() {
                 compareIds={compareIds}
                 onToggleCompare={toggleCompare}
                 showTotals={false}
+                showBidGroups={false}
               />
             </section>
-          ))}
+            )
+          })}
         </div>
       ) : (
         <p className="empty">{settings.copy.emptyFilters}</p>

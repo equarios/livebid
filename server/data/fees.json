@@ -1,0 +1,8 @@
+{
+  "marketplaceFeePct": 0,
+  "invoiceFeePct": 2,
+  "auctionTypeFees": {
+    "live": 0,
+    "offline": 0
+  }
+}

@@ -80,7 +80,7 @@ export function PaymentSubmitDialog({ invoice, onClose, onDone }: Props) {
             <dd>{invoice.qty.toLocaleString()} pcs</dd>
           </div>
           <div>
-            <dt>Price / pc</dt>
+            <dt>Current Price</dt>
             <dd>{usd(invoice.unitPrice)}</dd>
           </div>
           <div>

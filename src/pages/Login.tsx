@@ -30,34 +30,34 @@ export function Login() {
     setStep('password')
   }
 
-  function onPassword(e: FormEvent) {
+  async function onPassword(e: FormEvent) {
     e.preventDefault()
-    const err = login(ident, password)
+    const err = await login(ident, password)
     if (err) setError(err)
     else {
       if (!remember) {
-        /* demo still uses localStorage session */
+        /* session cookie is httpOnly; remember is UI-only for now */
       }
       navigate(from, { replace: true })
     }
   }
 
-  function onRequestReset(e: FormEvent) {
+  async function onRequestReset(e: FormEvent) {
     e.preventDefault()
-    const result = requestPasswordReset(ident)
+    const result = await requestPasswordReset(ident)
     if ('error' in result) {
       setError(result.error)
       setIssuedCode(null)
       return
     }
     setError(null)
-    setIssuedCode(result.code)
-    setResetOk(null)
+    setIssuedCode(result.code || '__sent__')
+    setResetOk(result.message || null)
   }
 
-  function onApplyReset(e: FormEvent) {
+  async function onApplyReset(e: FormEvent) {
     e.preventDefault()
-    const err = resetPassword(ident, code, newPass)
+    const err = await resetPassword(ident, code, newPass)
     if (err) {
       setError(err)
       return
@@ -105,7 +105,14 @@ export function Login() {
           ) : (
             <>
               <p className="ok">
-                Demo cannot email, so your code is <strong>{issuedCode}</strong>. It expires in 30 minutes.
+                {issuedCode && issuedCode !== '__sent__' ? (
+                  <>
+                    Reset code sent (also shown here in local/dev): <strong>{issuedCode}</strong>.
+                    Expires in 30 minutes.
+                  </>
+                ) : (
+                  <>Check your email for a reset code. It expires in 30 minutes.</>
+                )}
               </p>
               <label>
                 Reset code

@@ -23,24 +23,37 @@ export function OfferDesk({ staff }: { staff?: boolean }) {
   }
 
   const actionButtons = (offer: MarketOffer) => (
-    <div className="offer-row-actions">
+    <div className="row-actions">
       {staff && offer.status === 'pending' ? (
         <>
-          <button type="button" className="btn btn-primary btn-sm" onClick={() => reviewOffer(offer.id, 'accepted')}>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => void reviewOffer(offer.id, 'accepted')}
+          >
             {settings.copy.btnAccept}
           </button>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => reviewOffer(offer.id, 'declined')}>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => void reviewOffer(offer.id, 'declined')}
+          >
             {settings.copy.btnDecline}
           </button>
         </>
       ) : null}
       {!staff && offer.status === 'accepted' ? (
-        <button type="button" className="btn btn-primary btn-sm" onClick={() => confirmOffer(offer.id)}>
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={() => void confirmOffer(offer.id)}
+        >
           {settings.copy.btnConfirm}
         </button>
       ) : null}
-      {(offer.status === 'pending' || offer.status === 'accepted') && (staff || offer.accountId === user?.accountId) ? (
-        <button type="button" className="btn btn-ghost btn-sm" onClick={() => cancelOffer(offer.id)}>
+      {(offer.status === 'pending' || offer.status === 'accepted') &&
+      (staff || offer.accountId === user?.accountId) ? (
+        <button type="button" className="btn" onClick={() => cancelOffer(offer.id)}>
           {settings.copy.btnCancel}
         </button>
       ) : null}
@@ -55,10 +68,10 @@ export function OfferDesk({ staff }: { staff?: boolean }) {
           <tr>
             <th>When</th>
             {staff ? <th>Buyer</th> : null}
-            <th>Item</th>
-            <th>Pcs</th>
-            <th>Offer / pc</th>
-            <th>List / pc</th>
+            <th>Items</th>
+            <th>Quantity</th>
+            <th>Offer Price</th>
+            <th>Current Price</th>
             <th>Status</th>
             <th />
           </tr>
@@ -71,8 +84,10 @@ export function OfferDesk({ staff }: { staff?: boolean }) {
               <tr key={offer.id}>
                 <td className="mono">{formatDateTime(offer.createdAt)}</td>
                 {staff ? <td>{buyer?.company || offer.accountId}</td> : null}
-                <td>{lot ? <ItemLink lot={lot} /> : offer.lotId}</td>
-                <td>{offer.qty}</td>
+                <td className="item-col">
+                  {lot ? <ItemLink lot={lot} showMoq={false} showGrade={false} showLotId /> : offer.lotId}
+                </td>
+                <td className="lot-qty">{offer.qty}</td>
                 <td className="price-cell">{usd(offer.unitPrice)}</td>
                 <td className="price-cell">{usd(offer.listedPrice)}</td>
                 <td>
@@ -80,7 +95,7 @@ export function OfferDesk({ staff }: { staff?: boolean }) {
                     {statusLabel(offer.status)}
                   </span>
                 </td>
-                <td>{actionButtons(offer)}</td>
+                <td className="cart-actions-col">{actionButtons(offer)}</td>
               </tr>
             )
           })}
@@ -93,7 +108,11 @@ export function OfferDesk({ staff }: { staff?: boolean }) {
         const buyer = accounts.find((a) => a.accountId === offer.accountId)
         return (
           <article key={offer.id} className="auction-card">
-            {lot ? <ItemLink lot={lot} /> : <strong>{offer.lotId}</strong>}
+            {lot ? (
+              <ItemLink lot={lot} showMoq={false} showGrade={false} showLotId />
+            ) : (
+              <strong>{offer.lotId}</strong>
+            )}
             {staff ? <div className="muted tiny">{buyer?.company || offer.accountId}</div> : null}
             <div className="auction-card-meta">
               <span>{offer.qty} pcs</span>

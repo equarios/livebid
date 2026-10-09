@@ -60,7 +60,7 @@ export function Tutorial() {
       <div className="card account-card">
         <ol>
           <li>Open Auction, set qty and price, confirm bid.</li>
-          <li>Live Auctions: watch fill and winning in You · Winning. Offline Auctions hide win/lose until close.</li>
+          <li>Live Auctions: watch fill and winning in Winning Status. Offline Auctions hide win/lose until close.</li>
           <li>Buy fixed stock on Marketplace, then Checkout.</li>
           <li>My Page → Invoice: pay and upload receipt.</li>
           <li>Bid History shows Won / Partially Won / Lost after you bid.</li>

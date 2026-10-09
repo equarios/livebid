@@ -13,8 +13,9 @@ export function Complaint() {
 
   return (
     <form className="card account-card" onSubmit={onSubmit}>
-      <h2>Complaint</h2>
-      <p className="muted">Tell ops about a lot, invoice, or shipping issue. Super admin reviews these in this demo.</p>
+      <p className="muted tiny mypage-intro">
+        Tell ops about a lot, invoice, or shipping issue. Super admin reviews these in this demo.
+      </p>
       <label>
         Details
         <textarea rows={6} value={text} onChange={(e) => setText(e.target.value)} required />

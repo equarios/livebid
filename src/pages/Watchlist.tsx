@@ -13,13 +13,15 @@ export function Watchlist() {
       return a.endsAt - b.endsAt
     })
   }, [lots, watchlist, myLastBid])
+
+  const withBids = rows.filter((lot) => myLastBid(lot.id)).length
+
   return (
-    <div>
-      <div className="page-head">
-        <div>
-          <h1>{settings.copy.favouritesTitle}</h1>
-          <p className="muted">{settings.copy.favouritesIntro}</p>
-        </div>
+    <div className="watchlist-page">
+      <div className="mypage-meta">
+        <em>{rows.length} saved</em>
+        {withBids ? <em className="is-yours">Your bids {withBids}</em> : null}
+        <span className="muted tiny">{settings.copy.favouritesIntro}</span>
       </div>
       <div className="grid">
         {rows.map((lot) => (

@@ -61,6 +61,7 @@ export function settleClosedAuctions(
     const uniqueId = extraInv.some((inv) => inv.id === id) || invoices.some((inv) => inv.id === id)
       ? `${id}-${group.lines[0].lotId.slice(-3)}`
       : id
+    const sampleLot = lots.find((l) => l.id === group.lines[0].lotId)
     const inv = buildInvoice(
       {
         id: uniqueId,
@@ -73,6 +74,7 @@ export function settleClosedAuctions(
         lines: group.lines,
       },
       settings,
+      sampleLot ? [sampleLot] : lots,
     )
     extraInv.push(inv)
     extraNotes.push({

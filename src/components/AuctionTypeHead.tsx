@@ -7,12 +7,10 @@ export function AuctionTypeHead({ children }: { children: ReactNode }) {
     const parent = el?.parentElement
     if (!el || !parent) return
     const apply = () => {
-      const style = getComputedStyle(el)
-      const margin =
-        (parseFloat(style.marginTop) || 0) + (parseFloat(style.marginBottom) || 0)
+      // Border-box only — margin below the head is breathing room, not sticky offset.
       parent.style.setProperty(
         '--auction-type-head-h',
-        `${Math.round(el.getBoundingClientRect().height + margin)}px`,
+        `${Math.round(el.getBoundingClientRect().height)}px`,
       )
     }
     const ro = new ResizeObserver(apply)

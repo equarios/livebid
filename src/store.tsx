@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react'
@@ -25,12 +26,15 @@ import {
   settleInvoice,
   settleInvoiceIssue,
 } from './lib/invoices'
+import { api, isApiAvailable, type ApiUser } from './lib/api'
 import { buyerCareNotices, settleClosedAuctions } from './lib/settle'
 import { checkBidPrice, checkOrderQty, lotMoq } from './lib/moq'
 import type {
   Account,
   Bid,
   CartItem,
+  CartOrder,
+  EmailPrefs,
   InventorySku,
   Invoice,
   ListingDrop,
@@ -45,6 +49,19 @@ import type {
   User,
 } from './types'
 
+const DEFAULT_EMAIL_PREFS: EmailPrefs = {
+  win: true,
+  offer: true,
+  cart: true,
+  invoice: true,
+  payment: true,
+  shipping: true,
+  auth: true,
+  outbid: false,
+  closing: false,
+  fill: false,
+}
+
 type Store = {
   user: User | null
   lots: Lot[]
@@ -53,6 +70,7 @@ type Store = {
   invoices: Invoice[]
   notices: Notice[]
   cart: CartItem[]
+  cartOrders: CartOrder[]
   offers: MarketOffer[]
   listingDrops: ListingDrop[]
   inventory: InventorySku[]
@@ -60,24 +78,34 @@ type Store = {
   settings: SiteSettings
   isSuperAdmin: boolean
   isStaff: boolean
-  login: (accountId: string, password: string) => string | null
-  register: (accountId: string, company: string, email: string, password: string) => string | null
-  requestPasswordReset: (ident: string) => { error: string } | { code: string; email: string }
-  resetPassword: (ident: string, code: string, password: string) => string | null
-  logout: () => void
-  placeBid: (lotId: string, amount: number, qty: number) => string | null
+  apiMode: boolean
+  login: (accountId: string, password: string) => Promise<string | null>
+  register: (accountId: string, company: string, email: string, password: string) => Promise<string | null>
+  requestPasswordReset: (
+    ident: string,
+  ) => Promise<{ error: string } | { code?: string; email?: string; message?: string }>
+  resetPassword: (ident: string, code: string, password: string) => Promise<string | null>
+  refreshNotices: () => Promise<void>
+  emailPrefs: EmailPrefs | null
+  loadEmailPrefs: () => Promise<EmailPrefs | null>
+  saveEmailPrefs: (prefs: Partial<EmailPrefs>) => Promise<string | null>
+  logout: () => Promise<void>
+  placeBid: (lotId: string, amount: number, qty: number) => Promise<string | null>
   placeBids: (
     entries: Array<{ lotId: string; amount: number; qty: number }>,
   ) => { ok: number; errors: Array<{ lotId: string; message: string }> }
   buyNow: (lotId: string, qty?: number) => string | null
-  addToCart: (lotId: string, qty: number) => string | null
-  removeFromCart: (lotId: string) => void
-  checkoutCart: () => string | null
-  placeOffer: (lotId: string, qty: number, unitPrice: number) => string | null
-  reviewOffer: (id: string, decision: 'accepted' | 'declined') => string | null
-  confirmOffer: (id: string) => string | null
+  addToCart: (lotId: string, qty: number) => Promise<string | null>
+  removeFromCart: (lotId: string) => Promise<void>
+  checkoutCart: () => Promise<string | null>
+  reviewCartOrder: (id: string, decision: 'accepted' | 'declined') => Promise<string | null>
+  confirmCartOrder: (id: string) => Promise<string | null>
+  cancelCartOrder: (id: string) => string | null
+  placeOffer: (lotId: string, qty: number, unitPrice: number) => Promise<string | null>
+  reviewOffer: (id: string, decision: 'accepted' | 'declined') => Promise<string | null>
+  confirmOffer: (id: string) => Promise<string | null>
   cancelOffer: (id: string) => string | null
-  toggleWatch: (lotId: string) => void
+  toggleWatch: (lotId: string) => Promise<void>
   submitPayment: (id: string, receiptName: string, receiptData: string) => string | null
   reviewPayment: (id: string, side: PayReviewSide, decision: PayDecision) => string | null
   reviewInvoiceIssue: (id: string, side: PayReviewSide, decision: PayDecision) => string | null
@@ -122,6 +150,7 @@ type Persisted = {
   invoices: Invoice[]
   notices: Notice[]
   cart: CartItem[]
+  cartOrders: CartOrder[]
   offers: MarketOffer[]
   listingDrops: ListingDrop[]
   inventory: InventorySku[]
@@ -151,6 +180,7 @@ function mergeAccounts(stored?: Account[] | null): Account[] {
           company: m.company || '',
           email: m.email || '',
           address: m.address || '',
+          phone: m.phone || undefined,
           role: m.role === 'admin' || m.role === 'superadmin' ? m.role : 'member',
           status: m.status === 'pending' || m.status === 'disabled' ? m.status : 'active',
         }),
@@ -168,6 +198,8 @@ function mergeAccounts(stored?: Account[] | null): Account[] {
       ...a,
       accountId: id,
       address: a.address || prev?.address || '',
+      phone: a.phone || prev?.phone || undefined,
+      email: a.email || prev?.email || '',
       role: a.role || prev?.role || 'member',
       status: a.status || prev?.status || 'active',
     })
@@ -250,6 +282,10 @@ function mergeSettings(partial?: Partial<SiteSettings> | null): SiteSettings {
               intro: existingLive.intro || liveDef.intro,
               closesAt: existingLive.closesAt || liveDef.closesAt,
               closeMinutes: existingLive.closeMinutes || liveDef.closeMinutes,
+              feePct:
+                existingLive.feePct === 0 || Number.isFinite(existingLive.feePct)
+                  ? existingLive.feePct
+                  : liveDef.feePct,
             }
           : liveDef,
         existingOffline
@@ -263,6 +299,10 @@ function mergeSettings(partial?: Partial<SiteSettings> | null): SiteSettings {
               fillMode: 'sealed',
               closesAt: existingOffline.closesAt || offlineDef.closesAt,
               closeMinutes: existingOffline.closeMinutes || offlineDef.closeMinutes,
+              feePct:
+                existingOffline.feePct === 0 || Number.isFinite(existingOffline.feePct)
+                  ? existingOffline.feePct
+                  : offlineDef.feePct,
             }
           : offlineDef,
         ...custom,
@@ -275,10 +315,29 @@ function mergeSettings(partial?: Partial<SiteSettings> | null): SiteSettings {
       if (copy.navAuctions === 'Auction') copy.navAuctions = DEFAULT_SETTINGS.copy.navAuctions
       if (/under \{?n\}? min/i.test(copy.endingSoon)) copy.endingSoon = DEFAULT_SETTINGS.copy.endingSoon
       if (/48 hours/i.test(copy.siteNotice)) copy.siteNotice = DEFAULT_SETTINGS.copy.siteNotice
+      if (copy.btnCheckout === 'Checkout' || copy.btnCheckout === 'Send for review') {
+        copy.btnCheckout = DEFAULT_SETTINGS.copy.btnCheckout
+      }
+      if (/creates unpaid invoices for every item/i.test(copy.confirmCheckoutBody)) {
+        copy.confirmCheckoutTitle = DEFAULT_SETTINGS.copy.confirmCheckoutTitle
+        copy.confirmCheckoutBody = DEFAULT_SETTINGS.copy.confirmCheckoutBody
+      }
+      if (!copy.confirmAcceptCartTitle) {
+        copy.confirmAcceptCartTitle = DEFAULT_SETTINGS.copy.confirmAcceptCartTitle
+      }
+      if (!copy.confirmAcceptCartBody) {
+        copy.confirmAcceptCartBody = DEFAULT_SETTINGS.copy.confirmAcceptCartBody
+      }
       return copy
     })(),
     icons: { ...DEFAULT_SETTINGS.icons, ...partial?.icons },
     invoice: { ...DEFAULT_SETTINGS.invoice, ...partial?.invoice },
+    marketplaceFeePct: (() => {
+      const m = partial?.marketplaceFeePct
+      if (m === 0) return 0
+      if (Number.isFinite(m) && (m as number) >= 0) return m as number
+      return DEFAULT_SETTINGS.marketplaceFeePct
+    })(),
     reopenMinutes: Math.max(
       1,
       Math.round(partial?.reopenMinutes ?? (partial?.reopenHours ?? DEFAULT_SETTINGS.reopenHours) * 60),
@@ -514,6 +573,7 @@ function loadData(): Persisted {
           })),
         ),
         cart: parsed.cart || [],
+        cartOrders: Array.isArray(parsed.cartOrders) ? parsed.cartOrders : [],
         offers: Array.isArray(parsed.offers) ? parsed.offers : [],
         listingDrops: Array.isArray(parsed.listingDrops) ? parsed.listingDrops : [],
         inventory:
@@ -535,6 +595,7 @@ function loadData(): Persisted {
     invoices: demoInvoices(),
     notices: [],
     cart: [],
+    cartOrders: [],
     offers: [],
     listingDrops: [],
     inventory: inventoryFromLots(SEED_LOTS),
@@ -549,50 +610,199 @@ function clockedPersisted(data: Persisted): Persisted {
   return { ...data, settings: next.settings, lots: next.lots }
 }
 
-export function StoreProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(() => {
+function persistData(data: Persisted) {
+  try {
+    localStorage.setItem(DATA_KEY, JSON.stringify(data))
+  } catch {
     try {
-      const raw = localStorage.getItem(AUTH_KEY)
-      if (!raw) return null
-      const parsed = JSON.parse(raw) as User
-      if (parsed.accountId === SUPER_USER.accountId) {
-        return { ...parsed, role: 'superadmin', status: 'active' }
+      const slim = {
+        ...data,
+        invoices: data.invoices.map((inv) => ({
+          ...inv,
+          receiptData: inv.receiptData && inv.receiptData.length > 120000 ? undefined : inv.receiptData,
+        })),
       }
-      return {
-        ...parsed,
-        role: parsed.role === 'superadmin' ? 'member' : parsed.role || 'member',
-        status: parsed.status || 'active',
-      }
+      localStorage.setItem(DATA_KEY, JSON.stringify(slim))
     } catch {
-      return null
+      /* quota — keep in-memory invoices so admin can still review this session */
     }
-  })
+  }
+}
+
+/** Settle closed lots + buyer-care notices; no-op when nothing changed. */
+function applySettleCare(prev: Persisted, accountId?: string | null): Persisted {
+  const stamp = Date.now()
+  const settled = settleClosedAuctions(
+    prev.lots,
+    prev.bids,
+    prev.invoices,
+    prev.notices || [],
+    stamp,
+    prev.accounts.filter((a) => a.role === 'admin' || a.role === 'superadmin'),
+    prev.settings,
+  )
+  const notices = buyerCareNotices(
+    prev.lots,
+    prev.bids,
+    prev.watchlist,
+    accountId || undefined,
+    settled.notices,
+    stamp,
+    prev.settings.endingSoonMinutes,
+    prev.settings,
+  )
+  if (settled.invoices === prev.invoices && notices === (prev.notices || [])) return prev
+  return { ...prev, invoices: settled.invoices, notices }
+}
+
+export function StoreProvider({ children }: { children: ReactNode }) {
+  const [user, setUser] = useState<User | null>(null)
+  const [apiMode, setApiMode] = useState(false)
+  const [emailPrefs, setEmailPrefs] = useState<EmailPrefs | null>(null)
   const [data, setData] = useState<Persisted>(loadData)
   const [now, setNow] = useState(Date.now())
+  const dataRef = useRef(data)
+  dataRef.current = data
+  const userIdRef = useRef(user?.accountId)
+  userIdRef.current = user?.accountId
+  const apiModeRef = useRef(false)
+  apiModeRef.current = apiMode
+
+  const pushServerNotice = useCallback(
+    async (input: {
+      accountId: string
+      kind: Notice['kind']
+      title: string
+      body: string
+      href: string
+      id?: string
+    }) => {
+      if (!apiModeRef.current) return
+      try {
+        await api.pushNotice(input)
+      } catch {
+        /* best-effort */
+      }
+    },
+    [],
+  )
+
+  const applyBootstrap = useCallback(async (sessionUser?: ApiUser | User | null) => {
+    const boot = await api.bootstrap()
+    setData((prev) => ({
+      ...prev,
+      lots: (boot.lots as Lot[]) || [],
+      bids: (boot.bids as Bid[]) || [],
+      cart: (boot.cart as CartItem[]) || [],
+      cartOrders: (boot.cartOrders as CartOrder[]) || [],
+      offers: (boot.offers as MarketOffer[]) || [],
+      invoices: (boot.invoices as Invoice[]) || [],
+      watchlist: (boot.watchlist as string[]) || [],
+      notices: (boot.notices as Notice[]) || prev.notices,
+      accounts: (boot.accounts as Account[])?.length
+        ? (boot.accounts as Account[])
+        : prev.accounts,
+      inventory: (boot.inventory as InventorySku[])?.length
+        ? (boot.inventory as InventorySku[])
+        : prev.inventory,
+      // keep settings from client defaults / local until settings API exists
+      settings: prev.settings,
+      listingDrops: prev.listingDrops,
+    }))
+    if (sessionUser) setUser(sessionUser as User)
+  }, [])
 
   useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 1000)
+    let cancelled = false
+    ;(async () => {
+      const ok = await isApiAvailable()
+      if (cancelled) return
+      if (!ok) {
+        // Offline / no server: fall back to legacy localStorage session (demo only).
+        try {
+          const raw = localStorage.getItem(AUTH_KEY)
+          if (raw) {
+            const parsed = JSON.parse(raw) as User
+            setUser({
+              ...parsed,
+              role:
+                parsed.accountId === SUPER_USER.accountId
+                  ? 'superadmin'
+                  : parsed.role === 'superadmin'
+                    ? 'member'
+                    : parsed.role || 'member',
+              status: parsed.status || 'active',
+            })
+          }
+        } catch {
+          /* ignore */
+        }
+        setData((prev) => {
+          const stamp = Date.now()
+          const stale = prev.settings.auctionTypes.some((t) => !t.closesAt || t.closesAt <= stamp)
+          if (!stale) return prev
+          const next = ensureAuctionClocks(prev.settings, prev.lots, stamp)
+          return { ...prev, settings: next.settings, lots: next.lots }
+        })
+        return
+      }
+      setApiMode(true)
+      localStorage.removeItem(AUTH_KEY)
+      try {
+        const { user: session } = await api.me()
+        if (cancelled) return
+        if (session) await applyBootstrap(session)
+        else setUser(null)
+      } catch {
+        if (!cancelled) setUser(null)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [applyBootstrap])
+
+  // Coarse clock for list filters / badges — countdowns use local timers in TimeLeft.
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 15000)
     return () => clearInterval(t)
   }, [])
 
   useEffect(() => {
-    try {
-      localStorage.setItem(DATA_KEY, JSON.stringify(data))
-    } catch {
-      try {
-        const slim = {
-          ...data,
-          invoices: data.invoices.map((inv) => ({
-            ...inv,
-            receiptData: inv.receiptData && inv.receiptData.length > 120000 ? undefined : inv.receiptData,
-          })),
+    // In API mode the server is source of truth — only keep settings locally.
+    if (apiMode) {
+      const id = window.setTimeout(() => {
+        try {
+          const raw = localStorage.getItem(DATA_KEY)
+          const prev = raw ? JSON.parse(raw) : {}
+          localStorage.setItem(
+            DATA_KEY,
+            JSON.stringify({ ...prev, settings: data.settings }),
+          )
+        } catch {
+          /* ignore */
         }
-        localStorage.setItem(DATA_KEY, JSON.stringify(slim))
-      } catch {
-        /* quota — keep in-memory invoices so admin can still review this session */
-      }
+      }, 400)
+      return () => clearTimeout(id)
     }
-  }, [data])
+    const id = window.setTimeout(() => persistData(data), 400)
+    return () => clearTimeout(id)
+  }, [data, apiMode])
+
+  useEffect(() => {
+    function flush() {
+      persistData(dataRef.current)
+    }
+    function onVis() {
+      if (document.visibilityState === 'hidden') flush()
+    }
+    window.addEventListener('beforeunload', flush)
+    document.addEventListener('visibilitychange', onVis)
+    return () => {
+      window.removeEventListener('beforeunload', flush)
+      document.removeEventListener('visibilitychange', onVis)
+    }
+  }, [])
 
   useEffect(() => {
     function onStorage(e: StorageEvent) {
@@ -613,6 +823,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
+    if (apiMode) return
     const t = setInterval(() => {
       setData((prev) => {
         const nowTs = Date.now()
@@ -653,40 +864,32 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       })
     }, 12000)
     return () => clearInterval(t)
+  }, [apiMode])
+
+  const runSettleCare = useCallback(() => {
+    if (apiModeRef.current) return
+    setData((prev) => applySettleCare(prev, userIdRef.current))
   }, [])
 
   useEffect(() => {
-    const tick = () => {
-      setData((prev) => {
-        const settled = settleClosedAuctions(
-          prev.lots,
-          prev.bids,
-          prev.invoices,
-          prev.notices || [],
-          Date.now(),
-          prev.accounts.filter((a) => a.role === 'admin' || a.role === 'superadmin'),
-          prev.settings,
-        )
-        const notices = buyerCareNotices(
-          prev.lots,
-          prev.bids,
-          prev.watchlist,
-          user?.accountId,
-          settled.notices,
-          Date.now(),
-          prev.settings.endingSoonMinutes,
-          prev.settings,
-        )
-        if (settled.invoices === prev.invoices && notices === (prev.notices || [])) return prev
-        return { ...prev, invoices: settled.invoices, notices }
-      })
-    }
-    tick()
-    const t = setInterval(tick, 1000)
+    if (apiMode) return
+    runSettleCare()
+    const t = setInterval(runSettleCare, 5000)
     return () => clearInterval(t)
-  }, [user?.accountId])
+  }, [runSettleCare, user?.accountId, apiMode])
 
-  const login = useCallback((accountId: string, password: string) => {
+  const login = useCallback(async (accountId: string, password: string) => {
+    if (apiModeRef.current || (await isApiAvailable())) {
+      setApiMode(true)
+      try {
+        const { user: session } = await api.login(accountId, password)
+        localStorage.removeItem(AUTH_KEY)
+        await applyBootstrap(session)
+        return null
+      } catch (e) {
+        return e instanceof Error ? e.message : data.settings.copy.warnLogin
+      }
+    }
     const key = accountId.trim()
     const found = data.accounts.find(
       (a) =>
@@ -699,10 +902,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setUser(next)
     localStorage.setItem(AUTH_KEY, JSON.stringify(next))
     return null
-  }, [data.accounts, data.settings.copy])
+  }, [applyBootstrap, data.accounts, data.settings.copy])
 
   const register = useCallback(
-    (accountId: string, company: string, email: string, password: string) => {
+    async (accountId: string, company: string, email: string, password: string) => {
+      if (apiModeRef.current || (await isApiAvailable())) {
+        setApiMode(true)
+        try {
+          await api.register({ accountId, company, email, password })
+          return null
+        } catch (e) {
+          return e instanceof Error ? e.message : data.settings.copy.warnRegister
+        }
+      }
       if (!accountId.trim() || !company.trim() || !email.trim() || password.length < 6) {
         return data.settings.copy.warnRegister
       }
@@ -731,55 +943,131 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const RESET_KEY = 'equarios-reset'
 
-  const requestPasswordReset = useCallback((ident: string) => {
-    const key = ident.trim()
-    const found = data.accounts.find(
-      (a) =>
-        a.accountId === key.toUpperCase() || a.email.toLowerCase() === key.toLowerCase(),
-    )
-    if (!found) return { error: data.settings.copy.warnLogin }
-    if (found.status === 'disabled') return { error: data.settings.copy.warnDisabled }
-    const code = String(1000 + Math.floor(Math.random() * 9000))
-    try {
-      localStorage.setItem(
-        RESET_KEY,
-        JSON.stringify({ accountId: found.accountId, code, at: Date.now() }),
+  const requestPasswordReset = useCallback(
+    async (ident: string) => {
+      if (apiModeRef.current || (await isApiAvailable())) {
+        setApiMode(true)
+        try {
+          const res = await api.requestPasswordReset(ident)
+          return {
+            code: res.code,
+            email: res.email,
+            message: res.message,
+          }
+        } catch (e) {
+          return { error: e instanceof Error ? e.message : data.settings.copy.warnLogin }
+        }
+      }
+      const key = ident.trim()
+      const found = data.accounts.find(
+        (a) =>
+          a.accountId === key.toUpperCase() || a.email.toLowerCase() === key.toLowerCase(),
       )
-    } catch {
-      return { error: 'Could not start a reset on this device.' }
-    }
-    return { code, email: found.email }
-  }, [data.accounts, data.settings.copy])
+      if (!found) return { error: data.settings.copy.warnLogin }
+      if (found.status === 'disabled') return { error: data.settings.copy.warnDisabled }
+      const code = String(1000 + Math.floor(Math.random() * 9000))
+      try {
+        localStorage.setItem(
+          RESET_KEY,
+          JSON.stringify({ accountId: found.accountId, code, at: Date.now() }),
+        )
+      } catch {
+        return { error: 'Could not start a reset on this device.' }
+      }
+      return { code, email: found.email }
+    },
+    [data.accounts, data.settings.copy],
+  )
 
-  const resetPassword = useCallback((ident: string, code: string, password: string) => {
-    if (password.length < 6) return data.settings.copy.warnRegister
-    let packed: { accountId: string; code: string; at: number } | null = null
+  const resetPassword = useCallback(
+    async (ident: string, code: string, password: string) => {
+      if (password.length < 6) return data.settings.copy.warnRegister
+      if (apiModeRef.current || (await isApiAvailable())) {
+        setApiMode(true)
+        try {
+          await api.confirmPasswordReset(ident, code, password)
+          return null
+        } catch (e) {
+          return e instanceof Error ? e.message : 'Could not reset password.'
+        }
+      }
+      let packed: { accountId: string; code: string; at: number } | null = null
+      try {
+        packed = JSON.parse(localStorage.getItem(RESET_KEY) || 'null')
+      } catch {
+        packed = null
+      }
+      if (!packed?.code) return 'Request a reset code first.'
+      if (Date.now() - packed.at > 30 * 60 * 1000) return 'That reset code expired. Request a new one.'
+      if (packed.code !== code.trim()) return 'That reset code does not match.'
+      const key = ident.trim()
+      const found = data.accounts.find(
+        (a) =>
+          a.accountId === packed.accountId &&
+          (a.accountId === key.toUpperCase() || a.email.toLowerCase() === key.toLowerCase()),
+      )
+      if (!found) return data.settings.copy.warnLogin
+      setData((prev) => ({
+        ...prev,
+        accounts: prev.accounts.map((a) =>
+          a.accountId === found.accountId ? { ...a, password } : a,
+        ),
+      }))
+      localStorage.removeItem(RESET_KEY)
+      return null
+    },
+    [data.accounts, data.settings.copy],
+  )
+
+  const refreshNotices = useCallback(async () => {
+    if (!apiModeRef.current) return
     try {
-      packed = JSON.parse(localStorage.getItem(RESET_KEY) || 'null')
+      const res = await api.notices()
+      setData((prev) => ({ ...prev, notices: (res.notices as Notice[]) || [] }))
     } catch {
-      packed = null
+      /* ignore */
     }
-    if (!packed?.code) return 'Request a reset code first.'
-    if (Date.now() - packed.at > 30 * 60 * 1000) return 'That reset code expired. Request a new one.'
-    if (packed.code !== code.trim()) return 'That reset code does not match.'
-    const key = ident.trim()
-    const found = data.accounts.find(
-      (a) =>
-        a.accountId === packed.accountId &&
-        (a.accountId === key.toUpperCase() || a.email.toLowerCase() === key.toLowerCase()),
-    )
-    if (!found) return data.settings.copy.warnLogin
-    setData((prev) => ({
-      ...prev,
-      accounts: prev.accounts.map((a) =>
-        a.accountId === found.accountId ? { ...a, password } : a,
-      ),
-    }))
-    localStorage.removeItem(RESET_KEY)
-    return null
-  }, [data.accounts, data.settings.copy])
+  }, [])
 
-  const logout = useCallback(() => {
+  const loadEmailPrefs = useCallback(async () => {
+    if (!apiModeRef.current) {
+      setEmailPrefs(DEFAULT_EMAIL_PREFS)
+      return DEFAULT_EMAIL_PREFS
+    }
+    try {
+      const res = await api.emailPrefs()
+      const prefs = { ...DEFAULT_EMAIL_PREFS, ...(res.prefs as EmailPrefs) }
+      setEmailPrefs(prefs)
+      return prefs
+    } catch {
+      setEmailPrefs(DEFAULT_EMAIL_PREFS)
+      return DEFAULT_EMAIL_PREFS
+    }
+  }, [])
+
+  const saveEmailPrefs = useCallback(async (prefs: Partial<EmailPrefs>) => {
+    if (!apiModeRef.current) {
+      setEmailPrefs((prev) => ({ ...(prev || DEFAULT_EMAIL_PREFS), ...prefs }))
+      return null
+    }
+    try {
+      const res = await api.saveEmailPrefs(prefs)
+      const next = { ...DEFAULT_EMAIL_PREFS, ...(res.prefs as EmailPrefs) }
+      setEmailPrefs(next)
+      return null
+    } catch (e) {
+      return e instanceof Error ? e.message : 'Could not save email preferences.'
+    }
+  }, [])
+
+  const logout = useCallback(async () => {
+    if (apiModeRef.current) {
+      try {
+        await api.logout()
+      } catch {
+        /* ignore */
+      }
+    }
     setUser(null)
     localStorage.removeItem(AUTH_KEY)
   }, [])
@@ -805,7 +1093,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   )
 
   const placeBid = useCallback(
-    (lotId: string, amount: number, qty: number) => {
+    async (lotId: string, amount: number, qty: number) => {
+      if (apiModeRef.current) {
+        try {
+          await api.placeBid(lotId, amount, qty)
+          await applyBootstrap()
+          return null
+        } catch (e) {
+          return e instanceof Error ? e.message : data.settings.copy.warnNoBid
+        }
+      }
       const lot = data.lots.find((l) => l.id === lotId)
       if (!data.settings.features.bidding) return data.settings.copy.warnNoBid
       if (!user) return data.settings.copy.warnLogin
@@ -824,22 +1121,27 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         lastOwnAmount: lastOwn,
       })
       if (priceErr) return priceErr
-      setData((prev) => ({
-        ...prev,
-        lots: prev.lots.map((l) =>
-          l.id === lotId
-            ? {
-                ...l,
-                currentPrice: independent ? l.currentPrice : Math.max(l.currentPrice, amount),
-                bidCount: l.bidCount + 1,
-              }
-            : l,
+      setData((prev) =>
+        applySettleCare(
+          {
+            ...prev,
+            lots: prev.lots.map((l) =>
+              l.id === lotId
+                ? {
+                    ...l,
+                    currentPrice: independent ? l.currentPrice : Math.max(l.currentPrice, amount),
+                    bidCount: l.bidCount + 1,
+                  }
+                : l,
+            ),
+            bids: [...prev.bids, { lotId, accountId, amount, qty, at: Date.now() }],
+          },
+          accountId,
         ),
-        bids: [...prev.bids, { lotId, accountId, amount, qty, at: Date.now() }],
-      }))
+      )
       return null
     },
-    [data.lots, data.bids, data.settings, user],
+    [applyBootstrap, data.lots, data.bids, data.settings, user],
   )
 
   const placeBids = useCallback(
@@ -907,7 +1209,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           )
           bids = [...bids, { lotId: entry.lotId, accountId, amount: entry.amount, qty: entry.qty, at }]
         }
-        return { ...prev, lots, bids }
+        return applySettleCare({ ...prev, lots, bids }, accountId)
       })
       return { ok: ok.length, errors }
     },
@@ -933,6 +1235,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           lines: [{ lotId, qty: pcs, unitPrice: lot.buyNowPrice }],
         },
         data.settings,
+        [lot],
       )
       setData((prev) => ({
         ...prev,
@@ -967,7 +1270,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   )
 
   const addToCart = useCallback(
-    (lotId: string, qty: number) => {
+    async (lotId: string, qty: number) => {
+      if (apiModeRef.current) {
+        try {
+          const already = data.cart.find((c) => c.lotId === lotId)?.qty ?? 0
+          await api.addToCart(lotId, already + qty)
+          await applyBootstrap()
+          return null
+        } catch (e) {
+          return e instanceof Error ? e.message : data.settings.copy.warnCart
+        }
+      }
       const lot = data.lots.find((l) => l.id === lotId)
       if (!data.settings.features.cart) return data.settings.copy.warnCart
       if (!lot || lot.channel !== 'marketplace' || !lot.buyNowPrice) {
@@ -987,17 +1300,37 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       })
       return null
     },
-    [data.lots, data.cart, data.settings],
+    [applyBootstrap, data.lots, data.cart, data.settings],
   )
 
-  const removeFromCart = useCallback((lotId: string) => {
+  const removeFromCart = useCallback(async (lotId: string) => {
+    if (apiModeRef.current) {
+      try {
+        await api.removeFromCart(lotId)
+        await applyBootstrap()
+      } catch {
+        /* ignore */
+      }
+      return
+    }
     setData((prev) => ({ ...prev, cart: prev.cart.filter((c) => c.lotId !== lotId) }))
-  }, [])
+  }, [applyBootstrap])
 
-  const checkoutCart = useCallback(() => {
+  const checkoutCart = useCallback(async () => {
+    if (apiModeRef.current) {
+      try {
+        await api.checkoutCart()
+        await applyBootstrap()
+        return null
+      } catch (e) {
+        return e instanceof Error ? e.message : data.settings.copy.emptyCart
+      }
+    }
+    if (!user) return data.settings.copy.warnLogin
+    if (!data.settings.features.cart) return data.settings.copy.warnCart
     if (!data.cart.length) return data.settings.copy.emptyCart
     const stamp = Date.now()
-    const lines = []
+    const lines: CartOrder['lines'] = []
     for (const item of data.cart) {
       const lot = data.lots.find((l) => l.id === item.lotId)
       if (!lot || lot.channel !== 'marketplace' || !lot.buyNowPrice) {
@@ -1007,59 +1340,215 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (qtyErr) return `${lot.model}: ${qtyErr}`
       lines.push({ lotId: item.lotId, qty: item.qty, unitPrice: lot.buyNowPrice })
     }
-    const d = new Date(stamp)
-    const yy = String(d.getFullYear()).slice(-2)
-    const doy = String(
-      Math.floor((stamp - Date.UTC(d.getFullYear(), 0, 0)) / 86400000),
-    ).padStart(3, '0')
-    const invoices: Invoice[] = [
-      buildInvoice(
+    const order: CartOrder = {
+      id: `CART-${stamp.toString().slice(-8)}`,
+      accountId: user.accountId,
+      lines,
+      status: 'pending',
+      createdAt: stamp,
+    }
+    const pcs = lines.reduce((n, l) => n + l.qty, 0)
+    setData((prev) => {
+      const staff = prev.accounts.filter((a) => a.role === 'admin' || a.role === 'superadmin')
+      const notices: Notice[] = [
+        ...staff.map((a) => ({
+          id: `N-CART-${order.id}-${a.accountId}`,
+          accountId: a.accountId,
+          kind: 'cart' as const,
+          title: 'New cart checkout',
+          body: `${user.company} · ${lines.length} item${lines.length === 1 ? '' : 's'} · ${pcs.toLocaleString()} pcs`,
+          href: '/admin',
+          at: stamp,
+        })),
+        {
+          id: `N-CART-SENT-${order.id}`,
+          accountId: user.accountId,
+          kind: 'cart' as const,
+          title: 'Cart sent for review',
+          body: 'Admin will check availability. If accepted, confirm on Marketplace to create an invoice.',
+          href: '/account/marketplace-history#cart',
+          at: stamp,
+        },
+        ...(prev.notices || []),
+      ]
+      return {
+        ...prev,
+        cart: [],
+        cartOrders: [order, ...(prev.cartOrders || [])],
+        notices,
+      }
+    })
+    return null
+  }, [applyBootstrap, data.cart, data.lots, data.settings, user])
+
+  const reviewCartOrder = useCallback(
+    async (id: string, decision: 'accepted' | 'declined') => {
+      if (apiModeRef.current) {
+        try {
+          await api.reviewCartOrder(id, decision)
+          await applyBootstrap()
+          return null
+        } catch (e) {
+          return e instanceof Error ? e.message : 'Review failed.'
+        }
+      }
+      if (user?.role !== 'admin' && user?.role !== 'superadmin') {
+        return 'Only staff can review cart checkouts.'
+      }
+      const order = (data.cartOrders || []).find((o) => o.id === id)
+      if (!order || order.status !== 'pending') return 'That cart is not waiting for review.'
+      if (decision === 'accepted') {
+        for (const line of order.lines) {
+          const lot = data.lots.find((l) => l.id === line.lotId)
+          if (!lot || lot.channel !== 'marketplace' || !lot.buyNowPrice) {
+            return data.settings.copy.warnListingGone.replace('{id}', line.lotId)
+          }
+          const qtyErr = checkOrderQty(lot, line.qty, data.settings.copy)
+          if (qtyErr) return `${lot.model}: ${qtyErr}`
+        }
+      }
+      setData((prev) => ({
+        ...prev,
+        cartOrders: (prev.cartOrders || []).map((o) =>
+          o.id === id
+            ? { ...o, status: decision, reviewedAt: Date.now(), reviewedBy: user.accountId }
+            : o,
+        ),
+        notices: [
+          {
+            id: `N-CART-${id}-${decision}`,
+            accountId: order.accountId,
+            kind: 'cart' as const,
+            title: decision === 'accepted' ? 'Cart accepted' : 'Cart declined',
+            body:
+              decision === 'accepted'
+                ? 'Confirm the cart on Marketplace to create an invoice at listed prices.'
+                : 'Your cart checkout was declined. Items were not reserved.',
+            href: '/account/marketplace-history#cart',
+            at: Date.now(),
+          },
+          ...(prev.notices || []),
+        ],
+      }))
+      return null
+    },
+    [applyBootstrap, data.cartOrders, data.lots, data.settings, user],
+  )
+
+  const confirmCartOrder = useCallback(
+    async (id: string) => {
+      if (apiModeRef.current) {
+        try {
+          await api.confirmCartOrder(id)
+          await applyBootstrap()
+          return null
+        } catch (e) {
+          return e instanceof Error ? e.message : 'Confirm failed.'
+        }
+      }
+      if (!user) return data.settings.copy.warnLogin
+      const order = (data.cartOrders || []).find((o) => o.id === id)
+      if (!order || order.accountId !== user.accountId) return 'Cart order not found.'
+      if (order.status !== 'accepted') return 'This cart is not accepted yet.'
+      const stamp = Date.now()
+      const lines = []
+      for (const line of order.lines) {
+        const lot = data.lots.find((l) => l.id === line.lotId)
+        if (!lot || lot.channel !== 'marketplace' || !lot.buyNowPrice) {
+          return data.settings.copy.warnListingGone.replace('{id}', line.lotId)
+        }
+        const qtyErr = checkOrderQty(lot, line.qty, data.settings.copy)
+        if (qtyErr) return `${lot.model}: ${qtyErr}`
+        lines.push({
+          lotId: line.lotId,
+          qty: line.qty,
+          unitPrice: lot.buyNowPrice,
+        })
+      }
+      const d = new Date(stamp)
+      const yy = String(d.getFullYear()).slice(-2)
+      const doy = String(
+        Math.floor((stamp - Date.UTC(d.getFullYear(), 0, 0)) / 86400000),
+      ).padStart(3, '0')
+      const invoice = buildInvoice(
         {
           id: `MKT-${yy}-${doy}-${stamp.toString().slice(-3)}`,
           lotId: lines[0].lotId,
           channel: 'marketplace',
           createdAt: stamp,
-          accountId: user?.accountId,
+          accountId: user.accountId,
+          remarks: `Accepted cart ${order.id}`,
           lines,
         },
         data.settings,
-      ),
-    ]
-    const byId = new Map(data.cart.map((c) => [c.lotId, c.qty]))
-    setData((prev) => ({
-      ...prev,
-      cart: [],
-      lots: prev.lots
-        .map((l) => {
-          const take = byId.get(l.id)
-          if (!take) return l
-          return { ...l, qty: l.qty - take }
-        })
-        .filter((l) => l.channel !== 'marketplace' || l.qty > 0),
-      invoices: [...invoices, ...prev.invoices],
-      notices: [
-        ...staffIssueNotices(prev.accounts, invoices, stamp),
-        ...(user?.accountId
-          ? [
-              {
-                id: `N-DRAFT-CART-${stamp}`,
-                accountId: user.accountId,
-                kind: 'invoice' as const,
-                title: 'Checkout recorded',
-                body: `${invoices.length} invoice${invoices.length === 1 ? '' : 's'} will appear after Admin and Super issue ${invoices.length === 1 ? 'it' : 'them'}.`,
-                href: '/account',
-                at: stamp,
-              },
-            ]
-          : []),
-        ...(prev.notices || []),
-      ],
-    }))
-    return null
-  }, [data.cart, data.lots, data.settings, user])
+        data.lots,
+      )
+      const byId = new Map(lines.map((l) => [l.lotId, l.qty]))
+      setData((prev) => ({
+        ...prev,
+        cartOrders: (prev.cartOrders || []).map((o) =>
+          o.id === id ? { ...o, status: 'confirmed' as const } : o,
+        ),
+        invoices: [invoice, ...prev.invoices],
+        lots: prev.lots
+          .map((l) => {
+            const take = byId.get(l.id)
+            if (!take) return l
+            return { ...l, qty: l.qty - take }
+          })
+          .filter((l) => l.channel !== 'marketplace' || l.qty > 0),
+        notices: [
+          ...staffIssueNotices(prev.accounts, [invoice], stamp),
+          {
+            id: `N-CARTINV-${id}`,
+            accountId: user.accountId,
+            kind: 'invoice' as const,
+            title: 'Cart confirmed',
+            body: `Invoice ${invoice.id} will appear after Admin and Super issue it.`,
+            href: '/account/invoices',
+            at: stamp,
+          },
+          ...(prev.notices || []),
+        ],
+      }))
+      return null
+    },
+    [applyBootstrap, data.cartOrders, data.lots, data.settings, user],
+  )
+
+  const cancelCartOrder = useCallback(
+    (id: string) => {
+      if (!user) return data.settings.copy.warnLogin
+      const order = (data.cartOrders || []).find((o) => o.id === id)
+      if (!order) return 'Cart order not found.'
+      const mine = order.accountId === user.accountId
+      const staff = user.role === 'admin' || user.role === 'superadmin'
+      if (!mine && !staff) return 'Cart order not found.'
+      if (order.status !== 'pending' && order.status !== 'accepted') {
+        return 'This cart cannot be cancelled.'
+      }
+      setData((prev) => ({
+        ...prev,
+        cartOrders: (prev.cartOrders || []).map((o) =>
+          o.id === id ? { ...o, status: 'cancelled' as const } : o,
+        ),
+      }))
+      return null
+    },
+    [data.cartOrders, data.settings, user],
+  )
 
   const placeOffer = useCallback(
-    (lotId: string, qty: number, unitPrice: number) => {
+    async (lotId: string, qty: number, unitPrice: number) => {
+      if (apiModeRef.current) {
+        try {
+          await api.placeOffer(lotId, qty, unitPrice)
+          await applyBootstrap()
+          return null
+        } catch (e) {
+          return e instanceof Error ? e.message : data.settings.copy.warnOffers
+        }
+      }
       if (!user) return data.settings.copy.warnLogin
       if (!data.settings.features.offers) return data.settings.copy.warnOffers
       const lot = data.lots.find((l) => l.id === lotId)
@@ -1107,11 +1596,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       })
       return null
     },
-    [data.lots, data.offers, data.settings, user],
+    [applyBootstrap, data.lots, data.offers, data.settings, user],
   )
 
   const reviewOffer = useCallback(
-    (id: string, decision: 'accepted' | 'declined') => {
+    async (id: string, decision: 'accepted' | 'declined') => {
+      if (apiModeRef.current) {
+        try {
+          await api.reviewOffer(id, decision)
+          await applyBootstrap()
+          return null
+        } catch (e) {
+          return e instanceof Error ? e.message : 'Review failed.'
+        }
+      }
       if (user?.role !== 'admin' && user?.role !== 'superadmin') return 'Only staff can review offers.'
       const offer = (data.offers || []).find((o) => o.id === id)
       if (!offer || offer.status !== 'pending') return 'That offer is not waiting for review.'
@@ -1130,9 +1628,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             title: decision === 'accepted' ? 'Offer accepted' : 'Offer declined',
             body:
               decision === 'accepted'
-                ? 'Confirm the offer on Marketplace to create an invoice.'
+                ? 'Confirm the offer under My Page → Marketplace to create an invoice.'
                 : 'Your marketplace offer was declined.',
-            href: '/marketplace',
+            href: '/account/marketplace-history#offers',
             at: Date.now(),
           },
           ...(prev.notices || []),
@@ -1140,11 +1638,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }))
       return null
     },
-    [data.offers, user],
+    [applyBootstrap, data.offers, user],
   )
 
   const confirmOffer = useCallback(
-    (id: string) => {
+    async (id: string) => {
+      if (apiModeRef.current) {
+        try {
+          await api.confirmOffer(id)
+          await applyBootstrap()
+          return null
+        } catch (e) {
+          return e instanceof Error ? e.message : 'Confirm failed.'
+        }
+      }
       if (!user) return data.settings.copy.warnLogin
       const offer = (data.offers || []).find((o) => o.id === id)
       if (!offer || offer.accountId !== user.accountId) return 'Offer not found.'
@@ -1166,6 +1673,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           lines: [{ lotId: offer.lotId, qty: offer.qty, unitPrice: offer.unitPrice }],
         },
         data.settings,
+        [lot],
       )
       setData((prev) => ({
         ...prev,
@@ -1190,7 +1698,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }))
       return null
     },
-    [data.lots, data.offers, data.settings, user],
+    [applyBootstrap, data.lots, data.offers, data.settings, user],
   )
 
   const cancelOffer = useCallback(
@@ -1211,14 +1719,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [data.offers, user],
   )
 
-  const toggleWatch = useCallback((lotId: string) => {
+  const toggleWatch = useCallback(async (lotId: string) => {
+    if (apiModeRef.current) {
+      try {
+        await api.toggleWatch(lotId)
+        await applyBootstrap()
+      } catch {
+        /* ignore */
+      }
+      return
+    }
     setData((prev) => ({
       ...prev,
       watchlist: prev.watchlist.includes(lotId)
         ? prev.watchlist.filter((id) => id !== lotId)
         : [...prev.watchlist, lotId],
     }))
-  }, [])
+  }, [applyBootstrap])
 
   const addLot = useCallback((lot: Lot) => {
     setData((prev) => {
@@ -1387,6 +1904,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const clocked = ensureAuctionClocks(settings, prev.lots)
       return { ...prev, settings: clocked.settings, lots: clocked.lots }
     })
+    if (apiModeRef.current) {
+      const auctionTypeFees: Record<string, number> = {}
+      for (const t of next.auctionTypes || []) {
+        if (t.feePct === 0 || Number.isFinite(t.feePct)) {
+          auctionTypeFees[t.value] = Number(t.feePct) || 0
+        }
+      }
+      void api
+        .saveFees({
+          marketplaceFeePct:
+            next.marketplaceFeePct === 0 || Number.isFinite(next.marketplaceFeePct)
+              ? Number(next.marketplaceFeePct) || 0
+              : next.invoice?.feePct ?? 2,
+          invoiceFeePct: next.invoice?.feePct ?? 2,
+          auctionTypeFees,
+        })
+        .catch(() => undefined)
+    }
   }, [user])
 
   const saveAccount = useCallback(
@@ -1407,6 +1942,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         company: account.company.trim(),
         email: account.email.trim(),
         address: account.address?.trim() || existing?.address || '',
+        phone: account.phone?.trim() || existing?.phone || undefined,
         buyerNumber: account.buyerNumber?.trim() || undefined,
         role: id === SUPER_USER.accountId ? 'superadmin' : account.role === 'admin' ? 'admin' : 'member',
         status: id === SUPER_USER.accountId ? 'active' : account.status,
@@ -1536,21 +2072,33 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (inv.status === 'draft') return 'Issue this invoice first, then review payment.'
       if (!inv.receiptData) return data.settings.copy.warnReceipt
       const review = { decision, by: user.accountId, at: Date.now() }
-      setData((prev) => ({
-        ...prev,
-        invoices: prev.invoices.map((row) => {
+      setData((prev) => {
+        let paid: Invoice | undefined
+        const invoices = prev.invoices.map((row) => {
           if (row.id !== id) return row
-          const next = {
+          const next = settleInvoice({
             ...row,
             adminReview: side === 'admin' ? review : row.adminReview,
             superReview: side === 'super' ? review : row.superReview,
-          }
-          return settleInvoice(next)
-        }),
-      }))
+          })
+          if (row.status !== 'paid' && next.status === 'paid') paid = next
+          return next
+        })
+        if (paid?.accountId) {
+          void pushServerNotice({
+            id: `N-PAID-${paid.id}`,
+            accountId: paid.accountId,
+            kind: 'payment',
+            title: 'Payment confirmed',
+            body: `${paid.id} is marked paid. Shipping updates will follow.`,
+            href: '/account/invoices',
+          })
+        }
+        return { ...prev, invoices }
+      })
       return null
     },
-    [data.invoices, data.settings.copy, user],
+    [data.invoices, data.settings.copy, user, pushServerNotice],
   )
 
   const reviewInvoiceIssue = useCallback(
@@ -1594,11 +2142,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                 ...(prev.notices || []),
               ]
             : prev.notices
+        if (issued?.accountId) {
+          void pushServerNotice({
+            id: `N-ISSUED-${issued.id}`,
+            accountId: issued.accountId,
+            kind: 'invoice',
+            title: 'Invoice issued',
+            body: `${issued.id} is ready. Pay within 7 days of issue and upload the receipt.`,
+            href: '/account/invoices',
+          })
+        }
         return { ...prev, invoices, notices }
       })
       return null
     },
-    [data.invoices, data.settings.copy, user],
+    [data.invoices, data.settings.copy, user, pushServerNotice],
   )
 
   const saveInvoice = useCallback(
@@ -1652,6 +2210,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         trackingNo: invoice.trackingNo?.trim() || undefined,
       }
       const replaceId = (previousId || id).toUpperCase()
+      const trackingJustSet =
+        Boolean(next.trackingNo) &&
+        next.trackingNo !== existing?.trackingNo &&
+        Boolean(next.accountId)
       setData((prev) => ({
         ...prev,
         invoices: [
@@ -1659,12 +2221,35 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           ...prev.invoices.filter((row) => row.id !== replaceId && row.id !== id),
         ],
         notices: existing
-          ? prev.notices
+          ? trackingJustSet && next.accountId
+            ? [
+                {
+                  id: `N-SHIP-${next.id}-${next.trackingNo}`,
+                  accountId: next.accountId,
+                  kind: 'shipping' as const,
+                  title: 'Shipment update',
+                  body: `${next.id} · tracking ${next.trackingNo}`,
+                  href: '/account/invoices',
+                  at: Date.now(),
+                },
+                ...(prev.notices || []),
+              ]
+            : prev.notices
           : [...staffIssueNotices(prev.accounts, [next], Date.now()), ...(prev.notices || [])],
       }))
+      if (trackingJustSet && next.accountId) {
+        void pushServerNotice({
+          id: `N-SHIP-${next.id}-${next.trackingNo}`,
+          accountId: next.accountId,
+          kind: 'shipping',
+          title: 'Shipment update',
+          body: `${next.id} · tracking ${next.trackingNo}`,
+          href: '/account/invoices',
+        })
+      }
       return null
     },
-    [data.lots, data.invoices, data.settings, user],
+    [data.lots, data.invoices, data.settings, user, pushServerNotice],
   )
 
   const removeInvoice = useCallback(
@@ -1720,10 +2305,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         notices: list.map((n) => (n.accountId === mine && !n.read ? { ...n, read: true } : n)),
       }
     })
+    if (apiModeRef.current) {
+      void api.markNoticesRead().catch(() => undefined)
+    }
   }, [user])
+
+  useEffect(() => {
+    if (!apiMode || !user) return
+    void loadEmailPrefs()
+    const t = setInterval(() => void refreshNotices(), 20_000)
+    return () => clearInterval(t)
+  }, [apiMode, user, loadEmailPrefs, refreshNotices])
 
   const value = useMemo(
     () => ({
+      apiMode,
       user,
       lots: data.lots,
       bids: data.bids,
@@ -1731,6 +2327,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       invoices: data.invoices,
       notices: data.notices || [],
       cart: data.cart,
+      cartOrders: data.cartOrders || [],
       offers: data.offers || [],
       listingDrops: data.listingDrops || [],
       inventory: data.inventory || [],
@@ -1742,6 +2339,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       register,
       requestPasswordReset,
       resetPassword,
+      refreshNotices,
+      emailPrefs,
+      loadEmailPrefs,
+      saveEmailPrefs,
       logout,
       placeBid,
       placeBids,
@@ -1749,6 +2350,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       addToCart,
       removeFromCart,
       checkoutCart,
+      reviewCartOrder,
+      confirmCartOrder,
+      cancelCartOrder,
       placeOffer,
       reviewOffer,
       confirmOffer,
@@ -1782,12 +2386,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       reopenAuctions,
     }),
     [
+      apiMode,
       user,
       data,
+      emailPrefs,
       login,
       register,
       requestPasswordReset,
       resetPassword,
+      refreshNotices,
+      loadEmailPrefs,
+      saveEmailPrefs,
       logout,
       placeBid,
       placeBids,
@@ -1795,6 +2404,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       addToCart,
       removeFromCart,
       checkoutCart,
+      reviewCartOrder,
+      confirmCartOrder,
+      cancelCartOrder,
       placeOffer,
       reviewOffer,
       confirmOffer,

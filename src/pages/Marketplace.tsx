@@ -1,5 +1,5 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { startTransition, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { AuctionTypeHead } from '../components/AuctionTypeHead'
 import {
   capacityOptions,
@@ -7,13 +7,12 @@ import {
   makerOptions,
   toggleValue,
 } from '../components/CheckMenu'
-import { InvoiceSummary } from '../components/InvoiceSummary'
+import { isFilterUiTarget } from '../components/FilterPanel'
 import { ItemLink } from '../components/ItemLink'
 import { ConfirmBidDialog } from '../components/ConfirmBidDialog'
-import { OfferDesk } from '../components/OfferDesk'
 import { fillCopy, usd } from '../lib/format'
 import { checkOrderQty, lotMoq, moqLabel } from '../lib/moq'
-import { moneyForChannel, moneyForLot } from '../lib/invoices'
+import { feePctForLot, moneyForChannel, moneyForLot, quoteMoney } from '../lib/invoices'
 import { useStore } from '../store'
 import type { Grade, Lot } from '../types'
 
@@ -54,15 +53,16 @@ function MarketLot({ lot, asCard }: { lot: Lot; asCard?: boolean }) {
   }
 
   function commitAdd(q: number) {
-    const err = addToCart(lot.id, q)
     setConfirmOpen(false)
-    if (err) {
-      setOk(false)
-      setMsg(err)
-      return
-    }
-    setOk(true)
-    setMsg(fillCopy(settings.copy.okAddedCart, { n: q }))
+    void addToCart(lot.id, q).then((err) => {
+      if (err) {
+        setOk(false)
+        setMsg(err)
+        return
+      }
+      setOk(true)
+      setMsg(fillCopy(settings.copy.okAddedCart, { n: q }))
+    })
   }
 
   function startOffer() {
@@ -84,85 +84,100 @@ function MarketLot({ lot, asCard }: { lot: Lot; asCard?: boolean }) {
       setMsg(q)
       return
     }
-    const err = placeOffer(lot.id, q, p)
-    if (err) {
-      setOk(false)
-      setMsg(err)
-      return
-    }
-    setOk(true)
-    setMsg(settings.copy.okOffer)
+    void placeOffer(lot.id, q, p).then((err) => {
+      if (err) {
+        setOk(false)
+        setMsg(err)
+        return
+      }
+      setOk(true)
+      setMsg(settings.copy.okOffer)
+    })
   }
 
   function commitAccepted() {
     if (!liveOffer) return
-    const err = confirmOffer(liveOffer.id)
     setAcceptOpen(false)
-    if (err) {
-      setOk(false)
-      setMsg(err)
-      return
-    }
-    setOk(true)
-    setMsg(settings.copy.okOfferInvoiced)
+    void confirmOffer(liveOffer.id).then((err) => {
+      if (err) {
+        setOk(false)
+        setMsg(err)
+        return
+      }
+      setOk(true)
+      setMsg(settings.copy.okOfferInvoiced)
+    })
   }
 
-  const fields = (
-    <div className="market-lot-fields">
-      <label className="inline-field">
-        <span>Desired qty</span>
-        <input
-          className="qty-input"
-          type="number"
-          min={lotMoq(lot)}
-          max={lot.qty}
-          step={1}
-          value={qty}
-          aria-label={`Desired qty for ${lot.id}`}
-          onChange={(e) => setQty(e.target.value)}
-        />
-      </label>
-      <label className="inline-field">
-        <span>Offer / pc</span>
-        <input
-          className="qty-input"
-          type="number"
-          min={1}
-          max={price - 1}
-          step={1}
-          value={offerPrice}
-          aria-label={`Offer price for ${lot.id}`}
-          onChange={(e) => setOfferPrice(e.target.value)}
-        />
-      </label>
-    </div>
-  )
-
-  const actions = (
-    <>
-      <div className="offer-row-actions">
-        <button
-          type="button"
-          className="btn btn-primary btn-sm"
-          onClick={add}
-          disabled={!settings.features.cart}
-        >
-          {settings.copy.btnBuy}
-        </button>
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
-          onClick={startOffer}
-          disabled={!settings.features.offers || liveOffer?.status === 'accepted'}
-        >
-          {settings.copy.btnOffer}
-        </button>
-        {liveOffer?.status === 'accepted' ? (
-          <button type="button" className="btn btn-primary btn-sm" onClick={() => setAcceptOpen(true)}>
-            {settings.copy.btnConfirm}
+  const orderUi = (
+    <div className={`inline-bid${asCard ? ' stacked' : ''}`}>
+      <div className="inline-bid-row">
+        <label className="inline-field">
+          <span>Quantity</span>
+          <input
+            type="number"
+            min={lotMoq(lot)}
+            max={lot.qty}
+            step={1}
+            value={qty}
+            aria-label={`Quantity for ${lot.id}`}
+            onChange={(e) => setQty(e.target.value)}
+          />
+        </label>
+        <label className="inline-field">
+          <span>Offer Price</span>
+          <input
+            type="number"
+            min={1}
+            max={Math.max(1, price - 1)}
+            step={1}
+            value={offerPrice}
+            aria-label={`Offer price for ${lot.id}`}
+            onChange={(e) => setOfferPrice(e.target.value)}
+          />
+        </label>
+        <div className="inline-bid-actions">
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={add}
+            disabled={!settings.features.cart}
+          >
+            {settings.copy.btnBuy}
           </button>
-        ) : null}
+          <button
+            type="button"
+            className="btn"
+            onClick={startOffer}
+            disabled={!settings.features.offers || liveOffer?.status === 'accepted'}
+          >
+            {settings.copy.btnOffer}
+          </button>
+          {liveOffer?.status === 'accepted' ? (
+            <button type="button" className="btn btn-primary" onClick={() => setAcceptOpen(true)}>
+              {settings.copy.btnConfirm}
+            </button>
+          ) : null}
+        </div>
       </div>
+      {(() => {
+        const q = Number(qty)
+        const offerP = Number(offerPrice)
+        const feePct = feePctForLot(lot, settings)
+        const buyQuote =
+          Number.isFinite(q) && q > 0 ? quoteMoney(q, price, feePct) : null
+        const offerQuote =
+          Number.isFinite(q) && q > 0 && Number.isFinite(offerP) && offerP > 0
+            ? quoteMoney(q, offerP, feePct)
+            : null
+        return buyQuote ? (
+          <div className="muted tiny bid-cost-hint">
+            Buy est. {usd(buyQuote.total)}
+            {buyQuote.feePct > 0 ? ` (incl. ${buyQuote.feePct}% fee)` : ''}
+            {offerQuote ? ` · Offer est. ${usd(offerQuote.total)}` : ''}
+          </div>
+        ) : null
+      })()}
       {liveOffer ? (
         <div className="muted tiny">
           {liveOffer.status === 'pending'
@@ -178,7 +193,7 @@ function MarketLot({ lot, asCard }: { lot: Lot; asCard?: boolean }) {
           unitPrice={price}
           title={settings.copy.confirmCartTitle}
           body={fillCopy(settings.copy.confirmCartBody, { n: Number(qty) })}
-          priceLabel="List price / pc"
+          priceLabel="Current Price"
           onCancel={() => setConfirmOpen(false)}
           onConfirm={() => commitAdd(Number(qty))}
         />
@@ -190,7 +205,7 @@ function MarketLot({ lot, asCard }: { lot: Lot; asCard?: boolean }) {
           unitPrice={Number(offerPrice)}
           title={settings.copy.confirmOfferTitle}
           body={settings.copy.confirmOfferBody}
-          priceLabel="Your offer / pc"
+          priceLabel="Offer Price"
           onCancel={() => setOfferOpen(false)}
           onConfirm={commitOffer}
         />
@@ -202,60 +217,73 @@ function MarketLot({ lot, asCard }: { lot: Lot; asCard?: boolean }) {
           unitPrice={liveOffer.unitPrice}
           title={settings.copy.confirmAcceptOfferTitle}
           body={settings.copy.confirmAcceptOfferBody}
-          priceLabel="Accepted offer / pc"
+          priceLabel="Accepted Offer"
           onCancel={() => setAcceptOpen(false)}
           onConfirm={commitAccepted}
         />
       ) : null}
-    </>
+    </div>
   )
 
   if (asCard) {
     return (
       <article className="auction-card">
-        <ItemLink lot={lot} showMoq={false} showGrade={false} />
+        <ItemLink lot={lot} showMoq={false} showGrade={false} showLotId />
         <div className="auction-card-meta">
           <span className={`grade-inline grade-${lot.grade}`}>{lot.grade}</span>
-          <span>
-            {lot.qty.toLocaleString()} pcs · {left.toLocaleString()} left
-            <span className="muted"> · {moqLabel(lot, settings.copy.noMoq)}</span>
-          </span>
+          <div className="cell-stack lot-qty">
+            <span className="cell-primary">{lot.qty.toLocaleString()}</span>
+            <span className="cell-secondary">
+              pcs · {left.toLocaleString()} left{inCart ? ` · ${inCart} in cart` : ''}
+            </span>
+            <span className="cell-chip">{moqLabel(lot, settings.copy.noMoq)}</span>
+          </div>
         </div>
         <div className="auction-card-prices">
-          <span>
-            List / pc <strong>{usd(price)}</strong>
-          </span>
-          <span>
-            Total <strong>{usd(lineTotal)}</strong>
-          </span>
+          <div className="cell-stack">
+            <span className="cell-secondary">Current Price</span>
+            <span className="cell-primary">{usd(price)}</span>
+            <span className="cell-secondary">/pc</span>
+          </div>
+          <div className="cell-stack">
+            <span className="cell-secondary">Total amount</span>
+            <span className="cell-primary">{usd(lineTotal)}</span>
+          </div>
         </div>
-        {fields}
-        {actions}
+        {orderUi}
       </article>
     )
   }
 
   return (
     <tr>
-      <td className="mono">{lot.id}</td>
-      <td>
-        <ItemLink lot={lot} showMoq={false} showGrade={false} />
+      <td className="item-col">
+        <ItemLink lot={lot} showMoq={false} showGrade={false} showLotId />
       </td>
       <td>
         <span className={`grade-inline grade-${lot.grade}`}>{lot.grade}</span>
       </td>
-      <td>
-        {lot.qty.toLocaleString()}
-        <div className="muted tiny">
-          {left.toLocaleString()} left{inCart ? ` · ${inCart} in cart` : ''}
+      <td className="lot-qty">
+        <div className="cell-stack">
+          <span className="cell-primary">{lot.qty.toLocaleString()}</span>
+          <span className="cell-secondary">
+            pcs · {left.toLocaleString()} left{inCart ? ` · ${inCart} in cart` : ''}
+          </span>
+          <span className="cell-chip">{moqLabel(lot, settings.copy.noMoq)}</span>
         </div>
-        <div className="muted tiny">{moqLabel(lot, settings.copy.noMoq)}</div>
       </td>
-      <td className="price-cell">{usd(price)}</td>
       <td className="price-cell">
-        {usd(lineTotal)}
-        <div className="muted tiny">
-          {lot.qty} pcs × {usd(price)}
+        <div className="cell-stack cell-stack-end">
+          <span className="cell-primary">{usd(price)}</span>
+          <span className="cell-secondary">/pc</span>
+        </div>
+      </td>
+      <td className="price-cell">
+        <div className="cell-stack cell-stack-end">
+          <span className="cell-primary">{usd(lineTotal)}</span>
+          <span className="cell-secondary">
+            {lot.qty} pcs × {usd(price)}
+          </span>
         </div>
       </td>
       <td className="price-cell">
@@ -264,36 +292,45 @@ function MarketLot({ lot, asCard }: { lot: Lot; asCard?: boolean }) {
       <td className="price-cell">
         {lotMoney.unpaid ? usd(lotMoney.unpaid) : <span className="muted">—</span>}
       </td>
-      <td>{fields}</td>
-      <td>{actions}</td>
+      <td>{orderUi}</td>
     </tr>
   )
 }
 
+const MARKET_DESK_KEY = 'equarios-market-desk-hidden'
+
 export function Marketplace() {
-  const navigate = useNavigate()
-  const { lots, cart, removeFromCart, checkoutCart, invoices, settings } = useStore()
+  const [params] = useSearchParams()
+  const q = params.get('q') || ''
+  const { lots, cart, cartOrders, invoices, settings, offers, user } = useStore()
   const GRADES = settings.grades
   const invoiceMoney = moneyForChannel(invoices, lots, 'marketplace', settings)
-  const [q, setQ] = useState('')
-  const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null)
   const [grades, setGrades] = useState<Grade[]>([])
   const [makers, setMakers] = useState<string[]>([])
   const [memories, setMemories] = useState<string[]>([])
   const [open, setOpen] = useState<'maker' | 'grade' | 'memory' | null>(null)
-  const filtersRef = useRef<HTMLDivElement>(null)
-  const deskRef = useRef<HTMLDivElement>(null)
-  useLayoutEffect(() => {
-    const el = deskRef.current
-    if (!el) return
-    const apply = () => {
-      document.documentElement.style.setProperty('--auction-desk-h', `${Math.round(el.getBoundingClientRect().height)}px`)
+  const [deskCollapsed, setDeskCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem(MARKET_DESK_KEY) === '1'
+    } catch {
+      return false
     }
-    const ro = new ResizeObserver(apply)
-    ro.observe(el)
-    apply()
+  })
+  const filtersRef = useRef<HTMLDivElement>(null)
+  function toggleDesk() {
+    setDeskCollapsed((prev) => {
+      const next = !prev
+      try {
+        localStorage.setItem(MARKET_DESK_KEY, next ? '1' : '0')
+      } catch {
+        /* ignore */
+      }
+      return next
+    })
+  }
+  useLayoutEffect(() => {
+    document.documentElement.style.setProperty('--auction-desk-h', '0px')
     return () => {
-      ro.disconnect()
       document.documentElement.style.removeProperty('--auction-desk-h')
     }
   }, [])
@@ -303,7 +340,7 @@ export function Marketplace() {
 
   useEffect(() => {
     function onDoc(e: MouseEvent) {
-      if (!filtersRef.current?.contains(e.target as Node)) setOpen(null)
+      if (!isFilterUiTarget(e.target, filtersRef.current)) setOpen(null)
     }
     document.addEventListener('mousedown', onDoc)
     return () => document.removeEventListener('mousedown', onDoc)
@@ -322,207 +359,149 @@ export function Marketplace() {
     [lots, q, grades, makers, memories],
   )
 
-  const cartRows = cart
-    .map((item) => {
-      const lot = lots.find((l) => l.id === item.lotId)
-      if (!lot || !lot.buyNowPrice) return null
-      return { item, lot, total: lot.buyNowPrice * item.qty }
-    })
-    .filter((row): row is NonNullable<typeof row> => row != null)
-
-  const cartTotal = cartRows.reduce((sum, row) => sum + row.total, 0)
-
-  function checkout() {
-    const err = checkoutCart()
-    if (err) {
-      setNotice({ ok: false, text: err })
-      return
-    }
-    navigate('/account/invoices')
-  }
+  const openCartOrders = (cartOrders || []).filter(
+    (o) =>
+      o.accountId === user?.accountId &&
+      (o.status === 'pending' || o.status === 'accepted'),
+  ).length
+  const cartCount = cart.length + openCartOrders
+  const myOffers = (offers || []).filter(
+    (o) =>
+      o.accountId === user?.accountId &&
+      (o.status === 'pending' || o.status === 'accepted'),
+  ).length
 
   return (
-    <div>
-      <div ref={deskRef} className="auction-desk">
-        <div className="auction-desk-head">
-          <div>
-            <strong>{settings.copy.marketTitle}</strong>
-          </div>
-        </div>
-        <div className="auction-desk-filters">
-      <div className="filters" ref={filtersRef}>
-        <input
-          placeholder={settings.copy.searchMarket}
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-        />
-        <div className="filter-groups market-filters">
-          {settings.filters.maker ? (
-          <CheckMenu
-            title="Maker"
-            open={open === 'maker'}
-            onOpen={() => setOpen((v) => (v === 'maker' ? null : 'maker'))}
-            options={makersList}
-            selected={makers}
-            onToggle={(value) => setMakers((prev) => toggleValue(prev, value))}
-          />
-          ) : null}
-          {settings.filters.grade ? (
-          <CheckMenu
-            title="Grade"
-            open={open === 'grade'}
-            onOpen={() => setOpen((v) => (v === 'grade' ? null : 'grade'))}
-            options={GRADES}
-            selected={grades}
-            onToggle={(value) => setGrades((prev) => toggleValue(prev, value))}
-          />
-          ) : null}
-          {settings.filters.capacity ? (
-          <CheckMenu
-            title="Capacity"
-            open={open === 'memory'}
-            onOpen={() => setOpen((v) => (v === 'memory' ? null : 'memory'))}
-            options={capacities}
-            selected={memories}
-            onToggle={(value) => setMemories((prev) => toggleValue(prev, value))}
-          />
-          ) : null}
-        </div>
-      </div>
-        </div>
-        <InvoiceSummary
-          total={invoiceMoney.total}
-          paid={invoiceMoney.paid}
-          unpaid={invoiceMoney.unpaid}
-          paidCount={invoiceMoney.paidCount}
-          unpaidCount={invoiceMoney.unpaidCount}
-        />
-      </div>
-      {rows.length ? (
-        <section className="auction-type-block">
-          <AuctionTypeHead>
-            <div>
-              <h2>
-                {settings.copy.marketTitle}
-                <em>{rows.length}</em>
-              </h2>
-              <p className="muted tiny auction-type-block-intro">{settings.copy.marketIntro}</p>
+    <div className="market-page is-command-bar">
+      <h1 className="sr-only">{settings.copy.marketTitle}</h1>
+      {!deskCollapsed ? (
+        <div className="auction-desk is-scrollaway">
+          <div className="auction-desk-filters">
+            <div className="filters filters-no-search" ref={filtersRef}>
+              <div className="filter-groups market-filters">
+                {settings.filters.maker ? (
+                  <CheckMenu
+                    title="Maker"
+                    open={open === 'maker'}
+                    onOpen={() => setOpen((v) => (v === 'maker' ? null : 'maker'))}
+                    options={makersList}
+                    selected={makers}
+                    onToggle={(value) =>
+                      startTransition(() => setMakers((prev) => toggleValue(prev, value)))
+                    }
+                  />
+                ) : null}
+                {settings.filters.grade ? (
+                  <CheckMenu
+                    title="Grade"
+                    open={open === 'grade'}
+                    onOpen={() => setOpen((v) => (v === 'grade' ? null : 'grade'))}
+                    options={GRADES}
+                    selected={grades}
+                    onToggle={(value) =>
+                      startTransition(() => setGrades((prev) => toggleValue(prev, value)))
+                    }
+                  />
+                ) : null}
+                {settings.filters.capacity ? (
+                  <CheckMenu
+                    title="Capacity"
+                    open={open === 'memory'}
+                    onOpen={() => setOpen((v) => (v === 'memory' ? null : 'memory'))}
+                    options={capacities}
+                    selected={memories}
+                    onToggle={(value) =>
+                      startTransition(() => setMemories((prev) => toggleValue(prev, value)))
+                    }
+                  />
+                ) : null}
+              </div>
             </div>
-          </AuctionTypeHead>
-          <div className="table-wrap card auction-table-wrap">
-            <table className="auction-table">
-              <thead>
-                <tr>
-                  <th>Lot</th>
-                  <th>Item</th>
-                  <th>Grade</th>
-                  <th>Total pcs</th>
-                  <th>Price / pc</th>
-                  <th>Total amount</th>
-                  <th>Paid</th>
-                  <th>Unpaid</th>
-                  <th>Order</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((lot) => (
-                  <MarketLot key={lot.id} lot={lot} />
-                ))}
-              </tbody>
-            </table>
           </div>
-          <div className="auction-cards market-cards" aria-label="Marketplace lots">
-            {rows.map((lot) => (
-              <MarketLot key={lot.id} lot={lot} asCard />
-            ))}
+        </div>
+      ) : null}
+      <section className="auction-type-block is-solo">
+        <AuctionTypeHead>
+          <div className="auction-command">
+            <h2>
+              {settings.copy.marketTitle}
+              <em>{rows.length}</em>
+            </h2>
+            {cartCount ? (
+              <Link to="/account/marketplace-history#cart" className="auction-command-link is-yours">
+                Cart {cartCount}
+              </Link>
+            ) : null}
+            {myOffers > 0 ? (
+              <Link to="/account/marketplace-history#offers" className="auction-command-link is-open">
+                Offers {myOffers}
+              </Link>
+            ) : null}
+            <span className="auction-command-stat is-money" title="Paid + unpaid">
+              Total {usd(invoiceMoney.total)}
+            </span>
+            <span className="auction-command-stat is-win" title={`${invoiceMoney.paidCount} paid`}>
+              Paid {usd(invoiceMoney.paid)}
+            </span>
+            <span
+              className="auction-command-stat is-lose"
+              title={`${invoiceMoney.unpaidCount} unpaid`}
+            >
+              Unpaid {usd(invoiceMoney.unpaid)}
+            </span>
           </div>
-        </section>
-      ) : (
-        <p className="empty">
-          {marketLots.length ? settings.copy.emptyFilters : settings.copy.emptyMarket}
-        </p>
-      )}
-
-      <div className="cart-panel card">
-        <h2>My offers</h2>
-        <OfferDesk />
-      </div>
-      <div className="cart-panel card">
-        <h2>
-          {settings.copy.cartTitle}
-          {cartRows.length ? ` (${cartRows.length})` : ''}
-        </h2>
-        {!cartRows.length ? (
-          <p className="muted">{settings.copy.emptyCart}</p>
-        ) : (
+          <div className="auction-type-head-tools">
+            {deskCollapsed ? (
+              <p className="muted tiny auction-type-head-recap">Filters hidden</p>
+            ) : null}
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm auction-desk-chip-hide"
+              onClick={toggleDesk}
+              aria-label={
+                deskCollapsed ? 'Show search filters' : 'Hide search filters'
+              }
+              title={deskCollapsed ? 'Show' : 'Hide'}
+            >
+              {deskCollapsed ? '+' : '−'}
+            </button>
+          </div>
+        </AuctionTypeHead>
+        {rows.length ? (
           <>
-            <div className="table-wrap cart-table-wrap">
-            <table className="auction-table">
-              <thead>
-                <tr>
-                  <th>Item</th>
-                  <th>Pcs</th>
-                  <th>Unit</th>
-                  <th>Total</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {cartRows.map(({ item, lot, total }) => (
-                  <tr key={item.lotId}>
-                    <td>
-                      <ItemLink lot={lot} showMoq={false} showGrade={false} />
-                    </td>
-                    <td>{item.qty}</td>
-                    <td>{usd(lot.buyNowPrice ?? 0)}</td>
-                    <td className="price-cell">{usd(total)}</td>
-                    <td>
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm"
-                        onClick={() => removeFromCart(item.lotId)}
-                      >
-                        {settings.copy.btnRemove}
-                      </button>
-                    </td>
+            <div className="table-wrap card auction-table-wrap">
+              <table className="auction-table">
+                <thead>
+                  <tr>
+                    <th>Items</th>
+                    <th>Grade</th>
+                    <th>Quantity</th>
+                    <th>Current Price</th>
+                    <th>Total amount</th>
+                    <th>Paid</th>
+                    <th>Unpaid</th>
+                    <th>Order</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {rows.map((lot) => (
+                    <MarketLot key={lot.id} lot={lot} />
+                  ))}
+                </tbody>
+              </table>
             </div>
-            <div className="auction-cards cart-cards">
-              {cartRows.map(({ item, lot, total }) => (
-                <article key={item.lotId} className="auction-card">
-                  <ItemLink lot={lot} showMoq={false} showGrade={false} />
-                  <div className="auction-card-meta">
-                    <span className={`grade-inline grade-${lot.grade}`}>{lot.grade}</span>
-                    <span>{item.qty} pcs</span>
-                    <span>{usd(lot.buyNowPrice ?? 0)} / pc</span>
-                    <span>
-                      Total <strong>{usd(total)}</strong>
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => removeFromCart(item.lotId)}
-                  >
-                    {settings.copy.btnRemove}
-                  </button>
-                </article>
+            <div className="auction-cards market-cards" aria-label="Marketplace lots">
+              {rows.map((lot) => (
+                <MarketLot key={lot.id} lot={lot} asCard />
               ))}
             </div>
-            <div className="cart-foot">
-              <strong>Total {usd(cartTotal)}</strong>
-              <button type="button" className="btn btn-primary" onClick={checkout}>
-                {settings.copy.btnCheckout}
-              </button>
-            </div>
           </>
+        ) : (
+          <p className="empty">
+            {marketLots.length ? settings.copy.emptyFilters : settings.copy.emptyMarket}
+          </p>
         )}
-        {notice ? <p className={notice.ok ? 'ok' : 'error'}>{notice.text}</p> : null}
-      </div>
+      </section>
     </div>
   )
 }

@@ -86,19 +86,23 @@ export function Invoices() {
     setPreviewId(inv.id)
   }
 
+  const awaitingCount = rows.filter((inv) => clientInvoiceLabel(inv) === 'Awaiting Payment').length
+
   return (
     <div className="inv-page">
-      <div className="inv-toolbar">
-        <div className="inv-toolbar-main">
-          {company ? <h2 className="inv-company">{company}</h2> : null}
-          {myBuyerNo ? <p className="inv-buyer-no muted">Buyer # {myBuyerNo}</p> : null}
+      <div className="mypage-toolbar">
+        <div className="mypage-meta">
+          {company ? <span className="mypage-meta-label">{company}</span> : null}
+          <em>{rows.length}</em>
+          {myBuyerNo ? <em className="is-open">Buyer # {myBuyerNo}</em> : null}
+          {awaitingCount ? <em className="is-lose">Awaiting {awaitingCount}</em> : null}
         </div>
-        <div className="inv-flags">
-          <label>
+        <div className="mypage-toolbar-flags">
+          <label className="auction-command-flag">
             <input type="checkbox" checked={unopened} onChange={(e) => setUnopened(e.target.checked)} />
             Unopened
           </label>
-          <label>
+          <label className="auction-command-flag">
             <input type="checkbox" checked={poOnly} onChange={(e) => setPoOnly(e.target.checked)} />
             PO only
           </label>
@@ -112,8 +116,8 @@ export function Invoices() {
               <th>Status</th>
               <th>Date</th>
               <th>Pay by</th>
-              <th>Item</th>
-              <th>Qty</th>
+              <th>Items</th>
+              <th>Quantity</th>
               <th>Total ({currency})</th>
               <th>Tracking</th>
               <th>Invoice #</th>

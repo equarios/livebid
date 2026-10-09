@@ -1,4 +1,6 @@
+import { useRef } from 'react'
 import type { Grade, Lot } from '../types'
+import { FilterPanel } from './FilterPanel'
 
 export const GRADES: Grade[] = ['S', 'A', 'B', 'C']
 
@@ -36,6 +38,7 @@ export function CheckMenu<T extends string>({
   onToggle: (value: T) => void
   labelFor?: (value: T) => string
 }) {
+  const triggerRef = useRef<HTMLButtonElement>(null)
   const summary = selected.length
     ? selected.map((v) => (labelFor ? labelFor(v) : v)).join(', ')
     : 'All'
@@ -44,6 +47,7 @@ export function CheckMenu<T extends string>({
   return (
     <div className={`filter-menu ${open ? 'open' : ''}`}>
       <button
+        ref={triggerRef}
         type="button"
         className={`filter-trigger${active ? ' is-active' : ''}`}
         onClick={onOpen}
@@ -53,20 +57,18 @@ export function CheckMenu<T extends string>({
         <span className="filter-trigger-value">{summary}</span>
         {selected.length ? <em>{selected.length}</em> : null}
       </button>
-      {open ? (
-        <div className="filter-panel">
-          {options.map((value) => (
-            <label key={value} className="filter-check">
-              <input
-                type="checkbox"
-                checked={selected.includes(value)}
-                onChange={() => onToggle(value)}
-              />
-              <span>{labelFor ? labelFor(value) : value}</span>
-            </label>
-          ))}
-        </div>
-      ) : null}
+      <FilterPanel open={open} anchorRef={triggerRef}>
+        {options.map((value) => (
+          <label key={value} className="filter-check">
+            <input
+              type="checkbox"
+              checked={selected.includes(value)}
+              onChange={() => onToggle(value)}
+            />
+            <span>{labelFor ? labelFor(value) : value}</span>
+          </label>
+        ))}
+      </FilterPanel>
     </div>
   )
 }

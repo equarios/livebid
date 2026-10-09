@@ -1,11 +1,14 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useState, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { InvoiceDesk } from '../components/InvoiceDesk'
 import { ListingReview } from '../components/ListingReview'
 import { ModalShell } from '../components/ModalShell'
+import { OpsShell, type OpsSection } from '../components/OpsShell'
+import { OpsToday } from '../components/OpsToday'
 import { TimeLeft } from '../components/TimeLeft'
 import { DEFAULT_SETTINGS } from '../data'
 import { RESERVED_LIST_SLUGS, slugAuctionType } from '../lib/auctionLists'
+import { opsQueueCounts } from '../lib/opsQueues'
 import { useNow, useStore } from '../store'
 import type { Account, AccountRole, AccountStatus, AuctionFillMode, AuctionTypeDef, FeatureFlags, SiteSettings } from '../types'
 
@@ -72,6 +75,8 @@ const COPY_LABEL: Record<keyof typeof DEFAULT_SETTINGS.copy, string> = {
   confirmAcceptOfferBody: 'Popup · confirm accepted offer body',
   confirmCheckoutTitle: 'Popup · checkout title',
   confirmCheckoutBody: 'Popup · checkout body',
+  confirmAcceptCartTitle: 'Popup · confirm accepted cart',
+  confirmAcceptCartBody: 'Popup · confirm accepted cart body',
   confirmPayTitle: 'Popup · pay title',
   confirmPayBody: 'Popup · pay body',
   payAckLabel: 'Pay confirm checkbox',
@@ -133,6 +138,7 @@ function AddAuctionTypeDialog({
   const [slug, setSlug] = useState('')
   const [fillMode, setFillMode] = useState<AuctionFillMode>('live')
   const [closeMinutes, setCloseMinutes] = useState(240)
+  const [feePct, setFeePct] = useState(2)
   const [error, setError] = useState<string | null>(null)
   const value = slugAuctionType(slug || label)
 
@@ -151,12 +157,14 @@ function AddAuctionTypeDialog({
       return
     }
     const mins = Math.max(1, Math.floor(closeMinutes) || 240)
+    const fee = Math.max(0, Number(feePct) || 0)
     onCreate({
       value,
       label: name,
       fillMode,
       closeMinutes: mins,
       closesAt: Date.now() + mins * 60 * 1000,
+      feePct: fee,
     })
   }
 
@@ -212,7 +220,19 @@ function AddAuctionTypeDialog({
             onChange={(e) => setCloseMinutes(Number(e.target.value))}
           />
         </label>
-        <p className="muted tiny">First session starts now for that long. Later publishes join the open clock.</p>
+        <label>
+          Fee % on wins
+          <input
+            type="number"
+            min={0}
+            step={0.1}
+            value={feePct}
+            onChange={(e) => setFeePct(Number(e.target.value))}
+          />
+        </label>
+        <p className="muted tiny">
+          Buyers see this % in bid totals. 0 = no fee. First session starts now for the close minutes above.
+        </p>
         {error ? <p className="error">{error}</p> : null}
         <div className="modal-actions">
           <button type="button" className="btn btn-ghost" onClick={onClose}>
@@ -227,13 +247,36 @@ function AddAuctionTypeDialog({
   )
 }
 
-type SuperTab = 'confirm' | 'people' | 'payments' | 'site' | 'copy' | 'features' | 'types'
+type SuperSection = 'today' | 'catalog' | 'money' | 'people' | 'settings'
+type SuperSettingsDesk = 'site' | 'types' | 'copy' | 'features'
 
-const SUPER_TABS = new Set<SuperTab>(['confirm', 'people', 'payments', 'site', 'copy', 'features', 'types'])
+const SUPER_SECTIONS = new Set<SuperSection>(['today', 'catalog', 'money', 'people', 'settings'])
+const SETTINGS_DESKS = new Set<SuperSettingsDesk>(['site', 'types', 'copy', 'features'])
+
+function legacyTabToNav(tab: string | null): { section: SuperSection; desk?: SuperSettingsDesk } | null {
+  if (!tab) return null
+  if (tab === 'confirm') return { section: 'catalog' }
+  if (tab === 'payments') return { section: 'money' }
+  if (tab === 'people') return { section: 'people' }
+  if (SETTINGS_DESKS.has(tab as SuperSettingsDesk)) return { section: 'settings', desk: tab as SuperSettingsDesk }
+  if (SUPER_SECTIONS.has(tab as SuperSection)) return { section: tab as SuperSection }
+  return null
+}
 
 export function Super() {
-  const { accounts, invoices, lots, listingDrops, settings, saveSettings, saveAccount, removeAccount, setAccountStatus } =
-    useStore()
+  const {
+    accounts,
+    invoices,
+    lots,
+    listingDrops,
+    cartOrders,
+    offers,
+    settings,
+    saveSettings,
+    saveAccount,
+    removeAccount,
+    setAccountStatus,
+  } = useStore()
   const now = useNow()
   const [params, setParams] = useSearchParams()
   const [draft, setDraft] = useState<SiteSettings>(() => ({
@@ -257,26 +300,46 @@ export function Super() {
   const [address, setAddress] = useState('')
   const [buyerNo, setBuyerNo] = useState('')
   const [email, setEmail] = useState('')
+  const [phone, setPhone] = useState('')
   const [password, setPassword] = useState('')
   const [role, setRole] = useState<AccountRole>('member')
   const [status, setStatus] = useState<AccountStatus>('active')
 
-  const pending = accounts.filter((a) => a.status === 'pending')
-  const payRequests = invoices.filter((i) => i.status === 'pending_review')
-  const issueWait = invoices.filter((i) => i.status === 'draft')
-  const catalogWait = (listingDrops || []).filter((d) => d.status === 'pending')
-  const paramTab = params.get('tab')
-  const defaultTab: SuperTab = catalogWait.length
-    ? 'confirm'
-    : issueWait.length || payRequests.length
-      ? 'payments'
-      : 'people'
-  const tab: SuperTab =
-    paramTab && SUPER_TABS.has(paramTab as SuperTab) ? (paramTab as SuperTab) : defaultTab
+  const queues = opsQueueCounts({ listingDrops, invoices, accounts, offers, cartOrders })
+  const liveLots = lots.filter((l) => l.channel === 'auction' && l.endsAt > now).length
 
-  function setTab(next: SuperTab) {
-    setParams({ tab: next }, { replace: true })
+  const legacy = legacyTabToNav(params.get('tab'))
+  const sectionParam = params.get('section') || legacy?.section || ''
+  const deskParam = params.get('desk') || legacy?.desk || ''
+  const defaultSection: SuperSection =
+    queues.catalogWaitItems || queues.money || queues.pendingAccounts ? 'today' : 'people'
+  const section: SuperSection = SUPER_SECTIONS.has(sectionParam as SuperSection)
+    ? (sectionParam as SuperSection)
+    : defaultSection
+  const desk: SuperSettingsDesk = SETTINGS_DESKS.has(deskParam as SuperSettingsDesk)
+    ? (deskParam as SuperSettingsDesk)
+    : 'site'
+
+  function go(nextSection: string, nextDesk?: string) {
+    const next = new URLSearchParams()
+    next.set('section', nextSection)
+    if (nextDesk) next.set('desk', nextDesk)
+    setParams(next, { replace: true })
   }
+
+  function setTab(next: string) {
+    if (SETTINGS_DESKS.has(next as SuperSettingsDesk)) go('settings', next)
+    else if (next === 'confirm') go('catalog')
+    else if (next === 'payments') go('money')
+    else go(next)
+  }
+
+  useLayoutEffect(() => {
+    document.documentElement.style.setProperty('--auction-desk-h', '0px')
+    return () => {
+      document.documentElement.style.removeProperty('--auction-desk-h')
+    }
+  }, [])
 
   useEffect(() => {
     setDraft((prev) => ({
@@ -290,11 +353,16 @@ export function Super() {
           fillMode: d.fillMode,
           intro: d.intro,
           closeMinutes: d.closeMinutes,
+          feePct: d.feePct === 0 || Number.isFinite(d.feePct) ? d.feePct : live.feePct,
         }
       }),
+      marketplaceFeePct:
+        prev.marketplaceFeePct === 0 || Number.isFinite(prev.marketplaceFeePct)
+          ? prev.marketplaceFeePct
+          : settings.marketplaceFeePct,
       invoice: { ...DEFAULT_SETTINGS.invoice, ...settings.invoice, ...prev.invoice },
     }))
-  }, [settings.auctionTypes, settings.invoice])
+  }, [settings.auctionTypes, settings.invoice, settings.marketplaceFeePct])
 
   function publishAuctionType(row: AuctionTypeDef) {
     const auctionTypes = [...settings.auctionTypes.filter((t) => t.value !== row.value), row]
@@ -312,6 +380,7 @@ export function Super() {
     setAddress('')
     setBuyerNo('')
     setEmail('')
+    setPhone('')
     setPassword('')
     setRole('member')
     setStatus('active')
@@ -324,6 +393,7 @@ export function Super() {
     setAddress(a.address || '')
     setBuyerNo(a.buyerNumber || '')
     setEmail(a.email)
+    setPhone(a.phone || '')
     setPassword('')
     setRole(a.role === 'superadmin' ? 'superadmin' : a.role)
     setStatus(a.status)
@@ -336,6 +406,7 @@ export function Super() {
       accountId: editingId || accountId,
       company,
       address,
+      phone: phone.trim() || undefined,
       buyerNumber: buyerNo.trim() || undefined,
       email,
       password,
@@ -385,55 +456,59 @@ export function Super() {
     )
   }
 
-  return (
-    <div className="staff-page">
-      <div className="auction-desk">
-        <div className="auction-desk-head">
-          <div>
-            <strong>Super admin</strong>
-            <p className="muted tiny auction-desk-recap">
-              Confirmations and site control. Admin lists stock and stamps receipts; you publish catalogs, final-confirm
-              payments, and own accounts plus settings.
-            </p>
-          </div>
-          {tab === 'types' ? (
-            <div className="auction-desk-head-actions">
-              <button type="button" className="btn btn-primary btn-sm" onClick={() => setAddTypeOpen(true)}>
-                Add auction type
-              </button>
-            </div>
-          ) : null}
-        </div>
-        <div className="super-tabs staff-tabs">
-          {(
-            [
-              ['confirm', catalogWait.length ? `Confirm (${catalogWait.reduce((n, d) => n + d.items.length, 0)})` : 'Confirm'],
-              [
-                'payments',
-                issueWait.length || payRequests.length
-                  ? `Invoices (${issueWait.length + payRequests.length})`
-                  : 'Invoices',
-              ],
-              ['people', pending.length ? `Accounts (${pending.length})` : 'Accounts'],
-              ['site', 'Site'],
-              ['types', 'Auction types'],
-              ['copy', 'Text'],
-              ['features', 'Functions'],
-            ] as const
-          ).map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              className={`btn btn-ghost ${tab === id ? 'on' : ''}`}
-              onClick={() => setTab(id)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      </div>
+  const sections: OpsSection[] = useMemo(
+    () => [
+      { id: 'today', label: 'Today', count: queues.total || undefined },
+      {
+        id: 'catalog',
+        label: 'Catalog',
+        count: queues.catalogWaitItems || undefined,
+      },
+      { id: 'money', label: 'Money', count: queues.money || undefined },
+      { id: 'people', label: 'People', count: queues.pendingAccounts || undefined },
+      {
+        id: 'settings',
+        label: 'Settings',
+        desks: [
+          { id: 'site', label: 'Site' },
+          { id: 'types', label: 'Auction types' },
+          { id: 'copy', label: 'Text' },
+          { id: 'features', label: 'Functions' },
+        ],
+      },
+    ],
+    [queues],
+  )
 
-      {tab === 'people' ? <section className="card admin-section">
+  const settingsActions =
+    section === 'settings' && desk === 'types' ? (
+      <button type="button" className="btn btn-primary btn-sm" onClick={() => setAddTypeOpen(true)}>
+        Add auction type
+      </button>
+    ) : null
+
+  return (
+    <OpsShell
+      title="Super admin"
+      blurb="Approve catalogs, issue invoices, manage people, and configure the site. Admin handles day-to-day listing and first stamps."
+      sections={sections}
+      section={section}
+      desk={desk}
+      onSection={(id) => go(id)}
+      onDesk={(id) => go('settings', id)}
+      actions={settingsActions}
+    >
+      {section === 'today' ? (
+        <OpsToday
+          role="super"
+          queues={queues}
+          liveLots={liveLots}
+          inventoryCount={0}
+          onGo={go}
+        />
+      ) : null}
+
+      {section === 'people' ? <section className="card admin-section">
         <h2>{editingId ? `Edit ${editingId}` : 'Add admin or client'}</h2>
         <form className="admin-form" onSubmit={onSaveAccount}>
           <label>
@@ -463,6 +538,14 @@ export function Super() {
           <label>
             Email
             <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          </label>
+          <label>
+            Phone
+            <input
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="+852 …"
+            />
           </label>
           <label>
             Password {editingId ? '(blank = keep)' : ''}
@@ -509,7 +592,7 @@ export function Super() {
         {accountMsg ? <p className={accountMsg.includes('Only') || accountMsg.includes('cannot') || accountMsg.includes('Fill') || accountMsg.includes('Password') ? 'error' : 'ok'}>{accountMsg}</p> : null}
       </section> : null}
 
-      {tab === 'people' ? <section className="table-wrap card admin-section">
+      {section === 'people' ? <section className="table-wrap card admin-section">
         <h2>All accounts</h2>
         <table className="auction-table">
           <thead>
@@ -570,15 +653,15 @@ export function Super() {
         </table>
       </section> : null}
 
-      {tab === 'confirm' ? <ListingReview /> : null}
+      {section === 'catalog' ? <ListingReview /> : null}
 
-      {tab === 'payments' ? (
+      {section === 'money' ? (
         <section className="card admin-section pay-queue-card invoice-super-panel">
           <InvoiceDesk canAdmin canSuper allowCreate />
         </section>
       ) : null}
 
-      {tab === 'site' ? (
+      {section === 'settings' && desk === 'site' ? (
         <section className="card admin-section">
           <h2>Site</h2>
           <form className="admin-form" onSubmit={(e) => onSaveSettings(e, 'keep')}>
@@ -707,6 +790,23 @@ export function Super() {
                   <input value={invoiceDraft.tel} onChange={(e) => patchInvoice({ tel: e.target.value })} />
                 </label>
                 <label>
+                  Email
+                  <input
+                    type="email"
+                    value={invoiceDraft.email || ''}
+                    onChange={(e) => patchInvoice({ email: e.target.value })}
+                    placeholder="accounts@…"
+                  />
+                </label>
+                <label>
+                  Website
+                  <input
+                    value={invoiceDraft.website || ''}
+                    onChange={(e) => patchInvoice({ website: e.target.value })}
+                    placeholder="www.…"
+                  />
+                </label>
+                <label>
                   Terms
                   <input
                     value={invoiceDraft.terms}
@@ -737,7 +837,7 @@ export function Super() {
                   />
                 </label>
                 <label>
-                  Default fee %
+                  Fallback fee %
                   <input
                     type="number"
                     min={0}
@@ -746,6 +846,9 @@ export function Super() {
                     onChange={(e) => patchInvoice({ feePct: Number(e.target.value) })}
                   />
                 </label>
+                <p className="muted tiny admin-span">
+                  Used when an auction type or marketplace fee is not set. Prefer fee % on Auction types.
+                </p>
                 <label>
                   SWIFT
                   <input
@@ -982,7 +1085,7 @@ export function Super() {
         </section>
       ) : null}
 
-      {tab === 'copy' ? (
+      {section === 'settings' && desk === 'copy' ? (
         <section className="card admin-section">
           <h2>Text, buttons &amp; warnings</h2>
           <form className="admin-form" onSubmit={(e) => onSaveSettings(e, 'keep')}>
@@ -1005,7 +1108,7 @@ export function Super() {
         </section>
       ) : null}
 
-      {tab === 'features' ? (
+      {section === 'settings' && desk === 'features' ? (
         <section className="card admin-section">
           <h2>Functions clients can use</h2>
           <form
@@ -1098,15 +1201,33 @@ export function Super() {
         </section>
       ) : null}
 
-      {tab === 'types' ? (
+      {section === 'settings' && desk === 'types' ? (
         <section className="card admin-section">
           <h2>Auction types</h2>
           <p className="muted tiny">Each type is a list on Auctions. This is the only place to add or edit types.</p>
           <form className="admin-form" onSubmit={(e) => onSaveSettings(e, 'draft')}>
           <div className="type-manager admin-span">
             <p className="muted tiny">
-              Live Auctions and Offline Auctions are the main lists. Default minutes apply when a closed list is
-              published again. Saving labels does not move an open clock.
+              Live Auctions and Offline Auctions are the main lists. Optional fee % is charged on winning goods
+              and shown to buyers before they bid. Default minutes apply when a closed list is published again.
+            </p>
+            <label style={{ maxWidth: 220, marginBottom: 12 }}>
+              Marketplace fee %
+              <input
+                type="number"
+                min={0}
+                step={0.1}
+                value={draft.marketplaceFeePct ?? settings.invoice.feePct ?? 2}
+                onChange={(e) =>
+                  setDraft({
+                    ...draft,
+                    marketplaceFeePct: Math.max(0, Number(e.target.value) || 0),
+                  })
+                }
+              />
+            </label>
+            <p className="muted tiny" style={{ marginTop: -6 }}>
+              Applies to cart, buy-now, and offers. 0 = no marketplace fee.
             </p>
             <div className="type-rows">
               {draft.auctionTypes.map((t, i) => {
@@ -1186,6 +1307,22 @@ export function Super() {
                         <option value="hybrid">Hybrid</option>
                       </select>
                     </label>
+                    <label>
+                      Fee %
+                      <input
+                        type="number"
+                        min={0}
+                        step={0.1}
+                        value={t.feePct ?? settings.invoice.feePct ?? 2}
+                        onChange={(e) => {
+                          const fee = Math.max(0, Number(e.target.value) || 0)
+                          const auctionTypes = draft.auctionTypes.map((row, idx) =>
+                            idx === i ? { ...row, feePct: fee } : row,
+                          )
+                          setDraft({ ...draft, auctionTypes })
+                        }}
+                      />
+                    </label>
                     <div className="type-row-actions">
                       <button
                         type="button"
@@ -1261,6 +1398,6 @@ export function Super() {
           onCreate={publishAuctionType}
         />
       ) : null}
-    </div>
+    </OpsShell>
   )
 }

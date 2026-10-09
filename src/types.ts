@@ -12,6 +12,11 @@ export type AuctionTypeDef = {
   closesAt?: number
   /** Used when closesAt is not set yet. */
   closeMinutes?: number
+  /**
+   * Optional system / auction fee % on winning goods for this list.
+   * 0 = no fee. Undefined falls back to invoice.feePct.
+   */
+  feePct?: number
 }
 
 export type Channel = 'auction' | 'marketplace'
@@ -107,6 +112,8 @@ export type CopySettings = {
   confirmAcceptOfferBody: string
   confirmCheckoutTitle: string
   confirmCheckoutBody: string
+  confirmAcceptCartTitle: string
+  confirmAcceptCartBody: string
   confirmPayTitle: string
   confirmPayBody: string
   payAckLabel: string
@@ -163,6 +170,10 @@ export type InvoiceProfile = {
   legalName: string
   address: string
   tel: string
+  /** Seller contact email on letterhead. */
+  email: string
+  /** Optional website on letterhead. */
+  website?: string
   terms: string
   payDays: number
   feePct: number
@@ -208,6 +219,11 @@ export type SiteSettings = {
   }
   grades: Grade[]
   auctionTypes: AuctionTypeDef[]
+  /**
+   * Fee % on marketplace cart / buy-now / offer goods.
+   * 0 = no fee. Undefined falls back to invoice.feePct.
+   */
+  marketplaceFeePct?: number
   defaultMoq: number
   reopenHours: number
   extendHours: number
@@ -348,11 +364,40 @@ export type Invoice = {
   terms?: string
   shipCompany?: string
   shipAddress?: string
+  shipEmail?: string
+  shipPhone?: string
+  shipAttn?: string
   billCompany?: string
   billAddress?: string
+  billEmail?: string
+  billPhone?: string
+  billAttn?: string
 }
 
-export type NoticeKind = 'win' | 'invoice' | 'outbid' | 'closing' | 'fill' | 'offer'
+export type NoticeKind =
+  | 'win'
+  | 'invoice'
+  | 'outbid'
+  | 'closing'
+  | 'fill'
+  | 'offer'
+  | 'cart'
+  | 'payment'
+  | 'shipping'
+  | 'auth'
+
+export type EmailPrefs = {
+  win: boolean
+  offer: boolean
+  cart: boolean
+  invoice: boolean
+  payment: boolean
+  shipping: boolean
+  auth: boolean
+  outbid: boolean
+  closing: boolean
+  fill: boolean
+}
 
 export type MarketOfferStatus = 'pending' | 'accepted' | 'declined' | 'confirmed' | 'cancelled'
 
@@ -364,6 +409,24 @@ export type MarketOffer = {
   unitPrice: number
   listedPrice: number
   status: MarketOfferStatus
+  createdAt: number
+  reviewedAt?: number
+  reviewedBy?: string
+}
+
+export type CartOrderStatus = 'pending' | 'accepted' | 'declined' | 'confirmed' | 'cancelled'
+
+export type CartOrderLine = {
+  lotId: string
+  qty: number
+  unitPrice: number
+}
+
+export type CartOrder = {
+  id: string
+  accountId: string
+  lines: CartOrderLine[]
+  status: CartOrderStatus
   createdAt: number
   reviewedAt?: number
   reviewedBy?: string
@@ -394,6 +457,7 @@ export type Account = {
   company: string
   email: string
   address?: string
+  phone?: string
   /** Printed Buyer # on invoices; derived from accountId when omitted. */
   buyerNumber?: string
   role: AccountRole

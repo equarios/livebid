@@ -1,0 +1,199 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Account {
+  accountId    String   @id
+  passwordHash String
+  company      String
+  email        String
+  address      String?
+  phone        String?
+  buyerNumber  String?
+  role         String   @default("member")
+  status       String   @default("pending")
+  /// JSON: which events also send email (in-app notices always created)
+  emailPrefsJson String @default("{\"win\":true,\"offer\":true,\"cart\":true,\"invoice\":true,\"payment\":true,\"shipping\":true,\"auth\":true,\"outbid\":false,\"closing\":false,\"fill\":false}")
+  createdAt    DateTime @default(now())
+  sessions     Session[]
+  bids         Bid[]
+  cartItems    CartItem[]
+  cartOrders   CartOrder[]
+  offers       MarketOffer[]
+  invoices     Invoice[]
+  watchlist    WatchItem[]
+  notices      Notice[]
+  passwordResets PasswordReset[]
+}
+
+model PasswordReset {
+  id        String   @id @default(cuid())
+  accountId String
+  code      String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  account   Account  @relation(fields: [accountId], references: [accountId], onDelete: Cascade)
+
+  @@index([accountId])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  accountId String
+  account   Account  @relation(fields: [accountId], references: [accountId], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+model Lot {
+  id               String   @id
+  channel          String
+  auctionType      String?
+  manufacturer     String
+  model            String
+  modelNumber      String
+  capacity         String
+  color            String
+  grade            String
+  battery          Int
+  qty              Int
+  moq              Int?
+  startPrice       Float
+  currentPrice     Float
+  buyNowPrice      Float?
+  bidCount         Int      @default(0)
+  endsAt           BigInt
+  description      String
+  accent           String   @default("#2a6f7c")
+  operator         String?
+  simLocked        Boolean?
+  activationLocked Boolean?
+  origin           String?
+  bids             Bid[]
+  cartItems        CartItem[]
+  offers           MarketOffer[]
+}
+
+model InventorySku {
+  id               String  @id
+  manufacturer     String
+  model            String
+  modelNumber      String
+  capacity         String
+  color            String
+  grade            String
+  battery          Int
+  origin           String  @default("")
+  operator         String?
+  simLocked        Boolean?
+  activationLocked Boolean?
+  description      String
+  defaultMoq       Int?
+  lastPrice        Float?
+}
+
+model Bid {
+  id        String   @id @default(cuid())
+  lotId     String
+  accountId String
+  amount    Float
+  qty       Int
+  at        BigInt
+  lot       Lot      @relation(fields: [lotId], references: [id], onDelete: Cascade)
+  account   Account  @relation(fields: [accountId], references: [accountId], onDelete: Cascade)
+
+  @@index([lotId])
+  @@index([accountId])
+}
+
+model CartItem {
+  id        String  @id @default(cuid())
+  accountId String
+  lotId     String
+  qty       Int
+  account   Account @relation(fields: [accountId], references: [accountId], onDelete: Cascade)
+  lot       Lot     @relation(fields: [lotId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, lotId])
+}
+
+model CartOrder {
+  id         String   @id
+  accountId  String
+  status     String
+  createdAt  BigInt
+  reviewedAt BigInt?
+  reviewedBy String?
+  linesJson  String
+  account    Account  @relation(fields: [accountId], references: [accountId], onDelete: Cascade)
+
+  @@index([accountId, status])
+}
+
+model MarketOffer {
+  id          String  @id
+  lotId       String
+  accountId   String
+  qty         Int
+  unitPrice   Float
+  listedPrice Float
+  status      String
+  createdAt   BigInt
+  reviewedAt  BigInt?
+  reviewedBy  String?
+  lot         Lot     @relation(fields: [lotId], references: [id], onDelete: Cascade)
+  account     Account @relation(fields: [accountId], references: [accountId], onDelete: Cascade)
+
+  @@index([accountId, status])
+}
+
+model Invoice {
+  id        String  @id
+  lotId     String
+  channel   String
+  amount    Float
+  qty       Int
+  unitPrice Float
+  status    String
+  createdAt BigInt
+  accountId String?
+  dataJson  String
+  account   Account? @relation(fields: [accountId], references: [accountId], onDelete: SetNull)
+
+  @@index([accountId])
+  @@index([status])
+}
+
+model WatchItem {
+  id        String  @id @default(cuid())
+  accountId String
+  lotId     String
+  account   Account @relation(fields: [accountId], references: [accountId], onDelete: Cascade)
+
+  @@unique([accountId, lotId])
+}
+
+model Notice {
+  id        String  @id
+  accountId String
+  kind      String
+  title     String
+  body      String
+  href      String
+  at        BigInt
+  read      Boolean @default(false)
+  account   Account @relation(fields: [accountId], references: [accountId], onDelete: Cascade)
+
+  @@index([accountId])
+}
+
+model AppMeta {
+  key   String @id
+  value String
+}

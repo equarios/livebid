@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { BrandLogo } from './BrandLogo'
 import { HelpMenu } from './HelpMenu'
@@ -7,6 +7,14 @@ import { SiteNav } from './SiteNav'
 import { SiteWarnPopup } from './SiteWarnPopup'
 import { useStore } from '../store'
 
+function searchTarget(pathname: string, showAuctions: boolean, showMarketplace: boolean) {
+  if (pathname.startsWith('/marketplace')) return '/marketplace'
+  if (pathname.startsWith('/auctions')) return '/auctions'
+  if (showAuctions) return '/auctions'
+  if (showMarketplace) return '/marketplace'
+  return '/auctions'
+}
+
 export function Layout() {
   const { user, logout, notices, settings, markNoticesRead } = useStore()
   const navigate = useNavigate()
@@ -14,12 +22,17 @@ export function Layout() {
   const [menuOpen, setMenuOpen] = useState(false)
   const [notesOpen, setNotesOpen] = useState(false)
   const [navOpen, setNavOpen] = useState(false)
+  const [q, setQ] = useState(() => new URLSearchParams(location.search).get('q') || '')
   const headerRef = useRef<HTMLElement>(null)
+
   useEffect(() => {
     const el = headerRef.current
     if (!el) return
     const apply = () => {
-      document.documentElement.style.setProperty('--app-header-h', `${Math.round(el.getBoundingClientRect().height)}px`)
+      document.documentElement.style.setProperty(
+        '--app-header-h',
+        `${Math.round(el.getBoundingClientRect().height)}px`,
+      )
     }
     const ro = new ResizeObserver(apply)
     ro.observe(el)
@@ -28,7 +41,12 @@ export function Layout() {
       ro.disconnect()
       document.documentElement.style.removeProperty('--app-header-h')
     }
-  }, [navOpen])
+  }, [navOpen, q])
+
+  useEffect(() => {
+    setQ(new URLSearchParams(location.search).get('q') || '')
+  }, [location.search])
+
   const myNotices = notices.filter((n) => n.accountId === user?.accountId).slice(0, 12)
   const unread = myNotices.filter((n) => !n.read).length
   const home = '/'
@@ -36,6 +54,27 @@ export function Layout() {
   const displayName = (user?.company || user?.accountId || 'Account').replace(/\w\S*/g, (w) =>
     w[0].toUpperCase() + w.slice(1).toLowerCase(),
   )
+  const placeholder =
+    location.pathname.startsWith('/marketplace')
+      ? settings.copy.searchMarket
+      : settings.copy.searchAuctions
+  const onShopList =
+    location.pathname.startsWith('/auctions') || location.pathname.startsWith('/marketplace')
+
+  function goSearch(nextQ: string, replace = false) {
+    const path = searchTarget(
+      location.pathname,
+      settings.showAuctions,
+      settings.showMarketplace,
+    )
+    const qs = nextQ.trim()
+    navigate(`${path}${qs ? `?q=${encodeURIComponent(qs)}` : ''}`, { replace })
+  }
+
+  function onSearchSubmit(e: FormEvent) {
+    e.preventDefault()
+    goSearch(q, false)
+  }
 
   return (
     <LotPreviewProvider>
@@ -45,6 +84,21 @@ export function Layout() {
             <button className="brand" type="button" onClick={() => navigate(home)}>
               <BrandLogo />
             </button>
+            <form className="app-search" onSubmit={onSearchSubmit} role="search">
+              <input
+                value={q}
+                onChange={(e) => {
+                  const next = e.target.value
+                  setQ(next)
+                  if (onShopList) goSearch(next, true)
+                }}
+                placeholder={placeholder}
+                aria-label="Search"
+              />
+              <button type="submit" aria-label="Submit search">
+                ⌕
+              </button>
+            </form>
             <button
               type="button"
               className="nav-toggle"
@@ -133,8 +187,7 @@ export function Layout() {
                       className="btn btn-ghost"
                       onClick={() => {
                         setMenuOpen(false)
-                        logout()
-                        window.location.assign('/')
+                        void logout().then(() => window.location.assign('/'))
                       }}
                     >
                       {settings.copy.signOut}

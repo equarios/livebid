@@ -122,7 +122,7 @@ function LotDetailDialog({ lotId, onClose }: { lotId: string; onClose: () => voi
             <dd>{lot.activationLocked ? 'Locked' : 'Open'}</dd>
           </div>
           <div>
-            <dt>Total pcs</dt>
+            <dt>Quantity</dt>
             <dd>{lot.qty.toLocaleString()}</dd>
           </div>
           <div>
