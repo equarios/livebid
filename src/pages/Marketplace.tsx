@@ -213,10 +213,13 @@ function MarketLot({ lot, asCard }: { lot: Lot; asCard?: boolean }) {
   if (asCard) {
     return (
       <article className="auction-card">
-        <ItemLink lot={lot} />
+        <ItemLink lot={lot} showMoq={false} showGrade={false} />
         <div className="auction-card-meta">
           <span className={`grade-inline grade-${lot.grade}`}>{lot.grade}</span>
-          <span>{lot.qty.toLocaleString()} pcs · {left.toLocaleString()} left</span>
+          <span>
+            {lot.qty.toLocaleString()} pcs · {left.toLocaleString()} left
+            <span className="muted"> · {moqLabel(lot, settings.copy.noMoq)}</span>
+          </span>
         </div>
         <div className="auction-card-prices">
           <span>
@@ -236,7 +239,7 @@ function MarketLot({ lot, asCard }: { lot: Lot; asCard?: boolean }) {
     <tr>
       <td className="mono">{lot.id}</td>
       <td>
-        <ItemLink lot={lot} />
+        <ItemLink lot={lot} showMoq={false} showGrade={false} />
       </td>
       <td>
         <span className={`grade-inline grade-${lot.grade}`}>{lot.grade}</span>
@@ -469,7 +472,7 @@ export function Marketplace() {
                 {cartRows.map(({ item, lot, total }) => (
                   <tr key={item.lotId}>
                     <td>
-                      <ItemLink lot={lot} />
+                      <ItemLink lot={lot} showMoq={false} showGrade={false} />
                     </td>
                     <td>{item.qty}</td>
                     <td>{usd(lot.buyNowPrice ?? 0)}</td>
@@ -491,8 +494,9 @@ export function Marketplace() {
             <div className="auction-cards cart-cards">
               {cartRows.map(({ item, lot, total }) => (
                 <article key={item.lotId} className="auction-card">
-                  <ItemLink lot={lot} />
+                  <ItemLink lot={lot} showMoq={false} showGrade={false} />
                   <div className="auction-card-meta">
+                    <span className={`grade-inline grade-${lot.grade}`}>{lot.grade}</span>
                     <span>{item.qty} pcs</span>
                     <span>{usd(lot.buyNowPrice ?? 0)} / pc</span>
                     <span>

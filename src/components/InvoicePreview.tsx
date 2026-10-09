@@ -14,7 +14,8 @@ export function InvoicePreview({ invoice, onClose }: { invoice: Invoice; onClose
       <div className="modal invoice-preview-modal" onClick={(e) => e.stopPropagation()}>
         <h2>Invoice {invoice.id}</h2>
         <p className="muted tiny">
-          Commercial invoice on Equarios letterhead. Issued after Admin and Super confirmation.
+          Wholesale commercial invoice (Equarios letterhead): bank remittance, line items, auction fee,
+          ship/bill to. Print / PDF for the buyer file.
         </p>
         <div className="invoice-preview-frame">
           <style>{parts.style}</style>

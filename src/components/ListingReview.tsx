@@ -74,7 +74,7 @@ export function ListingReview() {
             <div className="listing-draft-actions">
               <button
                 type="button"
-                className="btn btn-ghost"
+                className="btn btn-ghost btn-sm"
                 onClick={() => {
                   const err = reviewListingDrop(drop.id, 'declined')
                   setMsg(err || `Declined ${drop.id}. Nothing went live.`)
@@ -82,7 +82,7 @@ export function ListingReview() {
               >
                 Decline
               </button>
-              <button type="button" className="btn btn-primary" onClick={() => setConfirm(drop)}>
+              <button type="button" className="btn btn-primary btn-sm" onClick={() => setConfirm(drop)}>
                 Confirm &amp; publish
               </button>
             </div>

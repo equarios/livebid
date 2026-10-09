@@ -1,6 +1,7 @@
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { Link, NavLink, useNavigate } from 'react-router-dom'
 import { BrandLogo } from './BrandLogo'
+import { HelpMenu } from './HelpMenu'
 import { SiteNav } from './SiteNav'
 import { useStore } from '../store'
 
@@ -49,6 +50,7 @@ export function PublicShell({ children }: { children: ReactNode }) {
           </button>
           <div className={`pub-links ${navOpen ? 'is-open' : ''}`}>
             <SiteNav onNavigate={() => setNavOpen(false)} />
+            <HelpMenu onNavigate={() => setNavOpen(false)} />
             {user ? null : (
               <>
                 <Link className="pub-btn" to="/login">

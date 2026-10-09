@@ -1,4 +1,3 @@
-import { specLocks } from '../lib/format'
 import { moqLabel } from '../lib/moq'
 import { lotThumb, photoFallback } from '../lib/photos'
 import { useStore } from '../store'
@@ -6,7 +5,15 @@ import { BatteryMark } from './BatteryMark'
 import { useLotPreview } from './LotPreview'
 import type { Lot } from '../types'
 
-export function ItemLink({ lot }: { lot: Lot }) {
+export function ItemLink({
+  lot,
+  showMoq = true,
+  showGrade = true,
+}: {
+  lot: Lot
+  showMoq?: boolean
+  showGrade?: boolean
+}) {
   const { openLot } = useLotPreview()
   const { settings } = useStore()
   return (
@@ -19,14 +26,21 @@ export function ItemLink({ lot }: { lot: Lot }) {
           e.currentTarget.src = photoFallback(lot)
         }}
       />
-      <span>
+      <span className="item-copy">
         <span className="item-name">
           {lot.manufacturer} {lot.model}
           {lot.modelNumber ? ` ${lot.modelNumber}` : ''} {lot.capacity}
         </span>
         <span className="muted tiny item-specs">
-          {lot.color} · Grade {lot.grade} · {lot.origin || 'INT'} · <BatteryMark value={lot.battery} /> · {specLocks(lot)} ·{' '}
-          {moqLabel(lot, settings.copy.noMoq)}
+          <span>{lot.color}</span>
+          {showGrade ? <span>Grade {lot.grade}</span> : null}
+          <span>{lot.origin || 'INT'}</span>
+          <span>
+            <BatteryMark value={lot.battery} />
+          </span>
+          <span>{lot.simLocked ? 'SIM locked' : 'SIM unlocked'}</span>
+          <span>{lot.activationLocked ? 'Act locked' : 'Act open'}</span>
+          {showMoq ? <span>{moqLabel(lot, settings.copy.noMoq)}</span> : null}
         </span>
       </span>
     </button>

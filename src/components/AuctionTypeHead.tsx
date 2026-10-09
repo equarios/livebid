@@ -7,7 +7,13 @@ export function AuctionTypeHead({ children }: { children: ReactNode }) {
     const parent = el?.parentElement
     if (!el || !parent) return
     const apply = () => {
-      parent.style.setProperty('--auction-type-head-h', `${Math.round(el.getBoundingClientRect().height)}px`)
+      const style = getComputedStyle(el)
+      const margin =
+        (parseFloat(style.marginTop) || 0) + (parseFloat(style.marginBottom) || 0)
+      parent.style.setProperty(
+        '--auction-type-head-h',
+        `${Math.round(el.getBoundingClientRect().height + margin)}px`,
+      )
     }
     const ro = new ResizeObserver(apply)
     ro.observe(el)

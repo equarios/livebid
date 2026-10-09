@@ -1,4 +1,4 @@
-import { Link, NavLink, Outlet } from 'react-router-dom'
+import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { RecentLots } from '../components/RecentLots'
 import { usd } from '../lib/format'
 import { invoiceDueLabel, invoiceTotals, invoiceVisibleToBuyer } from '../lib/invoices'
@@ -15,7 +15,9 @@ const TABS = [
 
 export function MyPage() {
   const now = useNow()
+  const { pathname } = useLocation()
   const { lots, invoices, user, isStaff, settings } = useStore()
+  const onInvoices = pathname.startsWith('/account/invoices')
   const live = lots.filter((l) => l.channel === 'auction' && l.endsAt > now).length
   const mine = invoices.filter(
     (i) => invoiceVisibleToBuyer(i) && (isStaff || !i.accountId || i.accountId === user?.accountId),
@@ -36,25 +38,29 @@ export function MyPage() {
         </nav>
       </div>
       <div className="mypage-body">
-        <div className="auction-desk-kpis">
-          <div className="auction-desk-stat">
-            <span className="label">Live auctions</span>
-            <strong>{live}</strong>
-            <Link to="/auctions">Open auction</Link>
-          </div>
-          <div className="auction-desk-stat">
-            <span className="label">Marketplace</span>
-            <strong>{lots.filter((l) => l.channel === 'marketplace').length}</strong>
-            <Link to="/marketplace">Open marketplace</Link>
-          </div>
-          <div className="auction-desk-stat is-lose">
-            <span className="label">Unpaid invoices</span>
-            <strong>{usd(due)}</strong>
-            <Link to="/account/invoices">Invoice</Link>
-            {soonest ? <div className="muted tiny">{soonest}</div> : null}
-          </div>
-        </div>
-        <RecentLots />
+        {!onInvoices ? (
+          <>
+            <div className="auction-desk-kpis">
+              <div className="auction-desk-stat">
+                <span className="label">Live auctions</span>
+                <strong>{live}</strong>
+                <Link to="/auctions">Open auction</Link>
+              </div>
+              <div className="auction-desk-stat">
+                <span className="label">Marketplace</span>
+                <strong>{lots.filter((l) => l.channel === 'marketplace').length}</strong>
+                <Link to="/marketplace">Open marketplace</Link>
+              </div>
+              <div className="auction-desk-stat is-lose">
+                <span className="label">Unpaid invoices</span>
+                <strong>{usd(due)}</strong>
+                <Link to="/account/invoices">View invoices</Link>
+                {soonest ? <div className="muted tiny">{soonest}</div> : null}
+              </div>
+            </div>
+            <RecentLots />
+          </>
+        ) : null}
         <Outlet />
       </div>
     </div>

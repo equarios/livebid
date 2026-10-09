@@ -18,7 +18,13 @@ import {
 } from './lib/auctionLists'
 import { inventoryFromLots, upsertInventory } from './lib/inventory'
 import { liveLotFromDrop } from './lib/listingDrops'
-import { buildInvoice, invoiceTotals, settleInvoice, settleInvoiceIssue } from './lib/invoices'
+import {
+  buildInvoice,
+  invoiceTotals,
+  normalizeInvoiceLines,
+  settleInvoice,
+  settleInvoiceIssue,
+} from './lib/invoices'
 import { buyerCareNotices, settleClosedAuctions } from './lib/settle'
 import { checkBidPrice, checkOrderQty, lotMoq } from './lib/moq'
 import type {
@@ -1401,6 +1407,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         company: account.company.trim(),
         email: account.email.trim(),
         address: account.address?.trim() || existing?.address || '',
+        buyerNumber: account.buyerNumber?.trim() || undefined,
         role: id === SUPER_USER.accountId ? 'superadmin' : account.role === 'admin' ? 'admin' : 'member',
         status: id === SUPER_USER.accountId ? 'active' : account.status,
       }
@@ -1601,33 +1608,48 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
       const id = invoice.id.trim().toUpperCase()
       if (!id) return 'Invoice ID is required.'
-      if (!invoice.lotId) return 'Choose a lot.'
-      if (!Number.isInteger(invoice.qty) || invoice.qty < 1) return 'Qty must be a whole number of 1 or more.'
-      if (!Number.isFinite(invoice.unitPrice) || invoice.unitPrice < 1) return 'Enter a valid unit price.'
-      const lot = data.lots.find((l) => l.id === invoice.lotId)
+      const lines = normalizeInvoiceLines(
+        invoice.lines,
+        invoice.lotId
+          ? { lotId: invoice.lotId, qty: invoice.qty, unitPrice: invoice.unitPrice }
+          : undefined,
+      )
+      if (!lines.length) return 'Add at least one line item.'
+      for (const line of lines) {
+        if (!line.description?.trim() && (!line.lotId || line.lotId === 'CUSTOM')) {
+          return 'Each custom line needs a description (or pick a catalog lot).'
+        }
+        if (!Number.isFinite(line.unitPrice) || line.unitPrice < 0) {
+          return 'Enter a valid unit price on every line.'
+        }
+      }
+      const primary = lines[0]
+      const lot = data.lots.find((l) => l.id === primary.lotId)
       const existing = data.invoices.find((row) => row.id === (previousId || id).toUpperCase())
-      const lines = invoice.lines?.length
-        ? invoice.lines
-        : [{ lotId: invoice.lotId, qty: invoice.qty, unitPrice: invoice.unitPrice }]
+      const qty = lines.reduce((s, line) => s + line.qty, 0)
       const feePct = Number.isFinite(invoice.feePct)
         ? Math.max(0, invoice.feePct as number)
         : existing?.feePct || 0
       const next: Invoice = {
         ...invoice,
         id,
-        lotId: invoice.lotId,
+        lotId: primary.lotId,
         channel: lot?.channel || invoice.channel || 'marketplace',
-        qty: invoice.qty,
-        unitPrice: invoice.unitPrice,
+        qty,
+        unitPrice: primary.unitPrice,
         feePct,
         lines,
         amount: invoiceTotals({ ...invoice, feePct, lines }, data.settings).total,
         accountId: invoice.accountId?.trim().toUpperCase() || undefined,
         createdAt: invoice.createdAt || Date.now(),
-        status: existing ? invoice.status : 'draft',
+        status: existing ? invoice.status : invoice.status || 'draft',
         issueAdmin: invoice.issueAdmin ?? existing?.issueAdmin,
         issueSuper: invoice.issueSuper ?? existing?.issueSuper,
         issuedAt: invoice.issuedAt ?? existing?.issuedAt,
+        auctionLabel: invoice.auctionLabel?.trim() || existing?.auctionLabel,
+        poNumber: invoice.poNumber?.trim() || undefined,
+        remarks: invoice.remarks?.trim() || undefined,
+        trackingNo: invoice.trackingNo?.trim() || undefined,
       }
       const replaceId = (previousId || id).toUpperCase()
       setData((prev) => ({

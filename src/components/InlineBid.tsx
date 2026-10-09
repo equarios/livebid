@@ -75,18 +75,18 @@ export function InlineBid({
       return
     }
     setMsg(null)
-        if (!settings.features.confirmBid) {
-          const err = placeBid(lot.id, parsed.unitPrice, parsed.qty)
-          if (err) {
-            setOk(false)
-            setMsg(err)
-            return
-          }
-          setOk(true)
-          setMsg(fillCopy(copy.okBid, { qty: parsed.qty, price: usd(parsed.unitPrice) }))
-          return
-        }
-        setPending(parsed)
+    if (!settings.features.confirmBid) {
+      const err = placeBid(lot.id, parsed.unitPrice, parsed.qty)
+      if (err) {
+        setOk(false)
+        setMsg(err)
+        return
+      }
+      setOk(true)
+      setMsg(fillCopy(copy.okBid, { qty: parsed.qty, price: usd(parsed.unitPrice) }))
+      return
+    }
+    setPending(parsed)
   }
 
   function confirm() {
@@ -105,20 +105,20 @@ export function InlineBid({
   return (
     <>
       <form className={`inline-bid ${stacked ? 'stacked' : ''}`} onSubmit={onBid}>
-        <label className="inline-field">
-          <span>Desired qty · {moqLabel(lot, copy.noMoq)}</span>
-          <input
-            type="number"
-            min={lotMoq(lot)}
-            max={lot.qty}
-            step={1}
-            disabled={closed}
-            value={closed ? '' : qty}
-            aria-label={`Desired qty for ${lot.id}`}
-            onChange={(e) => setQty(e.target.value)}
-          />
-        </label>
-        <div className="inline-price-fav">
+        <div className="inline-bid-row">
+          <label className="inline-field">
+            <span>Desired qty · {moqLabel(lot, copy.noMoq)}</span>
+            <input
+              type="number"
+              min={lotMoq(lot)}
+              max={lot.qty}
+              step={1}
+              disabled={closed}
+              value={closed ? '' : qty}
+              aria-label={`Desired qty for ${lot.id}`}
+              onChange={(e) => setQty(e.target.value)}
+            />
+          </label>
           <label className="inline-field">
             <span>Your price / pc</span>
             <input
@@ -139,57 +139,57 @@ export function InlineBid({
                 }
               }}
             />
-            {!closed ? (
-              <div className="price-steps">
-                {independent ? null : (
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  onClick={setHigh}
-                  aria-label={`Set price to high ${usd(lot.currentPrice)} for ${lot.id}`}
-                >
-                  High {usd(lot.currentPrice)}
-                </button>
-                )}
-                {[1, 3, 5].map((delta) => (
-                  <button
-                    key={delta}
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => bump(delta)}
-                    aria-label={`Add ${usd(delta)} to price for ${lot.id}`}
-                  >
-                    +${delta}
-                  </button>
-                ))}
-              </div>
-            ) : null}
           </label>
-          {withWatch && settings.features.favourites ? <FavHeart lotId={lot.id} /> : null}
+          <div className="inline-bid-actions">
+            {settings.features.takeAll ? (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                disabled={closed}
+                onClick={() => {
+                  if (settings.features.confirmTakeAll) setTakeAllOpen(true)
+                  else setQty(String(lot.qty))
+                }}
+              >
+                {copy.btnTakeAll}
+              </button>
+            ) : null}
+            <button
+              className="btn btn-primary btn-sm"
+              type="button"
+              disabled={closed || !settings.features.bidding}
+              onClick={() => onBid()}
+            >
+              {copy.btnBid}
+            </button>
+            {withWatch && settings.features.favourites ? <FavHeart lotId={lot.id} /> : null}
+          </div>
         </div>
-        <div className="inline-bid-actions">
-          {settings.features.takeAll ? (
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            disabled={closed}
-            onClick={() => {
-              if (settings.features.confirmTakeAll) setTakeAllOpen(true)
-              else setQty(String(lot.qty))
-            }}
-          >
-            {copy.btnTakeAll}
-          </button>
-          ) : null}
-          <button
-            className="btn btn-primary btn-sm"
-            type="button"
-            disabled={closed || !settings.features.bidding}
-            onClick={() => onBid()}
-          >
-            {copy.btnBid}
-          </button>
-        </div>
+        {!closed ? (
+          <div className="price-steps">
+            {independent ? null : (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={setHigh}
+                aria-label={`Set price to high ${usd(lot.currentPrice)} for ${lot.id}`}
+              >
+                High {usd(lot.currentPrice)}
+              </button>
+            )}
+            {[1, 3, 5].map((delta) => (
+              <button
+                key={delta}
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => bump(delta)}
+                aria-label={`Add ${usd(delta)} to price for ${lot.id}`}
+              >
+                +${delta}
+              </button>
+            ))}
+          </div>
+        ) : null}
         {last ? (
           <span className="muted tiny">
             Last: {last.qty} pcs @ {usd(last.amount)}

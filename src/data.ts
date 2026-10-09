@@ -200,6 +200,20 @@ export const DEFAULT_SETTINGS: SiteSettings = {
     branchAddress: 'No. 1, Kwun Tong Road, Kwun Tong, Kowloon, Hong Kong',
     accountNumber: '848-258639-838',
     beneficiary: 'EQUARIOS CORPORATION LIMITED',
+    paymentLead:
+      'The payment shall be made by cash remittance to our specified account is as follows',
+    paymentMethod: 'Bank Transfer',
+    bankFeesNote: '*Payer shall be liable for relevant bank fees.',
+    attachNote: 'Details for Devices are as per the attached.',
+    feeCalcNote:
+      '* Please note that the Auction fee is calculated per unit, not the total amount.',
+    paymentAdvanceNote:
+      '(PAYMENT IN ADVANCE) The deadline is {payDays} days from invoice date including date of issue.',
+    feeRemark: '(REMARK) All unit prices are exclusive of {feePct}% System Usage Fee',
+    paymentNotice:
+      '(NOTICE) Please ensure both your buyer number and invoice number are stated in the payment details.',
+    currency: 'USD',
+    invoiceIdPrefix: 'HYB',
   },
 }
 

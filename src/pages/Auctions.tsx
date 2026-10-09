@@ -58,7 +58,7 @@ function AuctionList() {
   const [grades, setGrades] = useState<Grade[]>([])
   const [makers, setMakers] = useState<string[]>([])
   const [memories, setMemories] = useState<string[]>([])
-  const [open, setOpen] = useState<'type' | 'maker' | 'grade' | 'memory' | null>(null)
+  const [open, setOpen] = useState<'type' | 'maker' | 'grade' | 'memory' | 'csv' | null>(null)
   const filtersRef = useRef<HTMLDivElement>(null)
   const skipHashWrite = useRef(false)
   const [coachOn, setCoachOn] = useState(() => {
@@ -257,6 +257,8 @@ function AuctionList() {
               <BidCsv
                 lots={csvLots}
                 listKind={kind === 'closed' ? 'all' : kind}
+                open={open === 'csv'}
+                onOpen={() => setOpen((v) => (v === 'csv' ? null : 'csv'))}
               />
             ) : (
               <p className="muted tiny bid-csv-hint">
@@ -281,8 +283,7 @@ function AuctionList() {
                     <em>{group.lots.length}</em>
                   </h2>
                   <p className="muted tiny auction-type-block-intro">
-                    {listIntro(group.value, settings)} Prices in USD. Times in your local zone ({tz}).
-                    Your bids sit together at the top of this list.
+                    {listIntro(group.value, settings)} USD · {tz}. Your bids stay at the top.
                   </p>
                 </div>
               </AuctionTypeHead>

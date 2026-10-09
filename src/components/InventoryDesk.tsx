@@ -194,7 +194,7 @@ export function InventoryDesk() {
             placeholder="Search devices"
             aria-label="Search inventory"
           />
-          <button type="button" className="auction-close-count" onClick={() => setShowForm((v) => !v)}>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowForm((v) => !v)}>
             {showForm || form.id ? 'Hide new device' : 'New device'}
           </button>
         </div>
@@ -219,7 +219,7 @@ export function InventoryDesk() {
               </strong>
               <button
                 type="button"
-                className="auction-close-count"
+                className="btn btn-ghost btn-sm"
                 onClick={() => {
                   const err = withdrawListingDrop(drop.id)
                   setMsg(err || `Withdrew ${drop.id}.`)
@@ -257,11 +257,11 @@ export function InventoryDesk() {
           </>
         )}
         <div className="listing-draft-actions">
-          <button type="button" className="btn btn-primary" disabled={!queued.length} onClick={sendQueue}>
+          <button type="button" className="btn btn-primary btn-sm" disabled={!queued.length} onClick={sendQueue}>
             Send {queued.length || ''} to Super
           </button>
           {queued.length ? (
-            <button type="button" className="btn btn-ghost" onClick={() => setQueue([])}>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setQueue([])}>
               Clear
             </button>
           ) : null}
@@ -317,7 +317,7 @@ export function InventoryDesk() {
               </label>
               <button
                 type="button"
-                className="auction-close-count"
+                className="btn btn-ghost btn-sm"
                 onClick={() => setQueue((rows) => rows.filter((r) => r.key !== row.key))}
               >
                 Remove
@@ -425,11 +425,11 @@ export function InventoryDesk() {
             <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
           </label>
           <div className="listing-draft-actions span-2">
-            <button className="btn btn-primary" type="submit">
+            <button className="btn btn-primary btn-sm" type="submit">
               {form.id ? 'Save device' : 'Add to inventory'}
             </button>
             {form.id ? (
-              <button type="button" className="btn btn-ghost" onClick={() => setForm(emptySku())}>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setForm(emptySku())}>
                 Cancel
               </button>
             ) : null}
@@ -467,18 +467,22 @@ export function InventoryDesk() {
                 />
               </label>
               <div className="listing-draft-add">
-                <button type="button" className="btn btn-primary" onClick={() => addToQueue(sku)}>
+                <button type="button" className="btn btn-primary btn-sm" onClick={() => addToQueue(sku)}>
                   Add to {targetLabel}
                 </button>
-                <button type="button" className="auction-close-count" onClick={() => {
-                  setForm(sku)
-                  setShowForm(true)
-                }}>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => {
+                    setForm(sku)
+                    setShowForm(true)
+                  }}
+                >
                   Edit
                 </button>
                 <button
                   type="button"
-                  className="auction-close-count"
+                  className="btn btn-ghost btn-sm"
                   onClick={() => {
                     const err = removeSku(sku.id)
                     setMsg(err || `Removed ${skuTitle(sku)}.`)

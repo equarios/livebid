@@ -57,8 +57,9 @@ export function moneyPlain(n: number) {
   return n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
 }
 
-export function moneyUsd(n: number) {
-  return `${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`
+export function moneyUsd(n: number, currency = 'USD') {
+  const code = (currency || 'USD').trim() || 'USD'
+  return `${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${code}`
 }
 
 export function invoiceSlashDate(ts: number) {

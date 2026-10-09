@@ -357,7 +357,7 @@ export function ListingCsv() {
               ))}
             </ul>
             <div className="modal-actions">
-              <button type="button" className="btn" onClick={() => setPick(null)}>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPick(null)}>
                 {settings.copy.btnCancel}
               </button>
             </div>

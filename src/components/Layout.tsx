@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { BrandLogo } from './BrandLogo'
+import { HelpMenu } from './HelpMenu'
 import { LotPreviewProvider } from './LotPreview'
 import { SiteNav } from './SiteNav'
 import { SiteWarnPopup } from './SiteWarnPopup'
@@ -57,6 +58,13 @@ export function Layout() {
               <SiteNav onNavigate={() => setNavOpen(false)} />
             </div>
             <div className="topbar-user">
+              <HelpMenu
+                closeWhen={notesOpen || menuOpen}
+                onOpen={() => {
+                  setNotesOpen(false)
+                  setMenuOpen(false)
+                }}
+              />
               <div className={`notice-menu ${notesOpen ? 'open' : ''}`}>
                 <button
                   type="button"

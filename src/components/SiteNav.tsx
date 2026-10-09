@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { useNow, useStore } from '../store'
 
@@ -6,14 +5,12 @@ export function SiteNav({ onNavigate }: { onNavigate?: () => void }) {
   const { lots, invoices, cart, settings, isSuperAdmin, isStaff, accounts, listingDrops } = useStore()
   const now = useNow()
   const location = useLocation()
-  const [helpOpen, setHelpOpen] = useState(false)
   const pendingCount = accounts.filter((a) => a.status === 'pending').length
   const payCount = invoices.filter((i) => i.status === 'pending_review' || i.status === 'draft').length
   const catalogWait = (listingDrops || []).filter((d) => d.status === 'pending').reduce((n, d) => n + d.items.length, 0)
   const liveCount = lots.filter((l) => l.channel === 'auction' && l.endsAt > now).length
   const auctionsOpen = location.pathname.startsWith('/auctions')
   const myPage = location.pathname.startsWith('/account')
-  const helpOn = ['/device-spec', '/info', '/tutorial'].includes(location.pathname)
 
   return (
     <nav
@@ -23,7 +20,7 @@ export function SiteNav({ onNavigate }: { onNavigate?: () => void }) {
       }}
     >
       {settings.showAuctions ? (
-            <NavLink to="/auctions" className={auctionsOpen ? 'active' : undefined}>
+        <NavLink to="/auctions" className={auctionsOpen ? 'active' : undefined}>
           {settings.copy.navAuctions}
           {liveCount > 0 ? <em>{liveCount}</em> : null}
         </NavLink>
@@ -37,44 +34,13 @@ export function SiteNav({ onNavigate }: { onNavigate?: () => void }) {
       <NavLink to="/account" className={myPage ? 'active' : undefined}>
         {settings.copy.navAccount}
       </NavLink>
-      <div
-        className={`help-menu ${helpOpen ? 'open' : ''}`}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <button
-          type="button"
-          className={`help-menu-btn ${helpOn ? 'active' : ''}`}
-          aria-expanded={helpOpen}
-          onClick={(e) => {
-            e.stopPropagation()
-            setHelpOpen((v) => !v)
-          }}
-        >
-          Help
-          <span aria-hidden>▾</span>
-        </button>
-        {helpOpen ? (
-          <div
-            className="help-menu-panel"
-            onClick={() => {
-              setHelpOpen(false)
-              onNavigate?.()
-            }}
-          >
-            <NavLink to="/device-spec">Device spec</NavLink>
-            <NavLink to="/info">Info</NavLink>
-            <NavLink to="/tutorial">Tutorial</NavLink>
-          </div>
-        ) : null}
-      </div>
       {isStaff ? (
-        <NavLink to="/admin">
+        <NavLink to="/admin" end>
           {settings.copy.navAdmin}
-          {payCount > 0 ? <em>{payCount}</em> : null}
         </NavLink>
       ) : null}
       {isSuperAdmin ? (
-        <NavLink to="/super">
+        <NavLink to={payCount > 0 ? '/super?tab=payments' : '/super'}>
           {settings.copy.navSuper}
           {payCount + pendingCount + catalogWait > 0 ? <em>{payCount + pendingCount + catalogWait}</em> : null}
         </NavLink>

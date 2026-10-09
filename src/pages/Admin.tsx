@@ -1,7 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { InventoryDesk } from '../components/InventoryDesk'
 import { ItemLink } from '../components/ItemLink'
-import { InvoiceDesk } from '../components/InvoiceDesk'
 import { OfferDesk } from '../components/OfferDesk'
 import { TimeLeft } from '../components/TimeLeft'
 import { ORIGINS, typePillClass } from '../lib/auctionLists'
@@ -87,7 +86,6 @@ export function Admin() {
   const {
     lots,
     bids,
-    invoices,
     offers,
     settings,
     listingDrops,
@@ -100,7 +98,6 @@ export function Admin() {
   } = useStore()
   const now = useNow()
   const live = lots.filter((l) => l.channel === 'auction' && l.endsAt > now)
-  const unpaid = invoices.filter((i) => i.status !== 'paid')
   const pendingOffers = (offers || []).filter((o) => o.status === 'pending')
   const waitingSuper = (listingDrops || []).filter((d) => d.status === 'pending')
 
@@ -236,7 +233,7 @@ export function Admin() {
                   Reopen {t.label.replace(/ Auctions$/i, '')} ({listingLabel(listingMinutes(settings, 'reopen'))})
                 </button>
               ))}
-              <button type="button" className="btn btn-primary" onClick={() => reopenAuctions()}>
+              <button type="button" className="btn btn-primary btn-sm" onClick={() => reopenAuctions()}>
                 Reopen all
               </button>
             </div>
@@ -247,7 +244,7 @@ export function Admin() {
             [
               ['inventory', `Inventory (${inventory.length}${waitingSuper.length ? ` · ${waitingSuper.reduce((n, d) => n + d.items.length, 0)} wait` : ''})`],
               ['lots', `Lots (${live.length} live)`],
-              ['work', `Work${pendingOffers.length + unpaid.length ? ` (${pendingOffers.length + unpaid.length})` : ''}`],
+              ['work', `Work${pendingOffers.length ? ` (${pendingOffers.length})` : ''}`],
               ['bids', `Bids (${bids.length})`],
             ] as const
           ).map(([id, label]) => (
@@ -264,18 +261,14 @@ export function Admin() {
       </div>
 
       {tab === 'work' ? (
-        <>
       <section className="card admin-section">
         <h2>Marketplace offers</h2>
-        <p className="muted tiny">Accept a buyer’s price. They confirm, then an invoice is created at the offered rate.</p>
+        <p className="muted tiny">
+          Accept a buyer’s price. They confirm, then an invoice is created at the offered rate. Invoice
+          create / edit / issue lives on Super → Invoices.
+        </p>
         <OfferDesk staff />
       </section>
-
-      <section className="card admin-section">
-        <h2>Invoice issue &amp; payment confirmations</h2>
-        <InvoiceDesk canAdmin />
-      </section>
-        </>
       ) : null}
 
       {tab === 'inventory' ? <InventoryDesk /> : null}
@@ -491,12 +484,12 @@ export function Admin() {
             )
           })}
           <div className="listing-draft-actions">
-            <button className="btn btn-primary" type="submit">
+            <button className="btn btn-primary btn-sm" type="submit">
               Save listing
             </button>
             <button
               type="button"
-              className="btn btn-ghost"
+              className="btn btn-ghost btn-sm"
               onClick={() => {
                 setEditingId(null)
                 setDrafts([blankDraft(settings)])

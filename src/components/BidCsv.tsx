@@ -12,7 +12,17 @@ type PreparedRow = CsvBidRow & { lot: Lot; typeName: string }
 
 type RowIssue = PreparedRow & { issue: string | null; minPrice: number }
 
-export function BidCsv({ lots, listKind = 'all' }: { lots: Lot[]; listKind?: AuctionListKind }) {
+export function BidCsv({
+  lots,
+  listKind = 'all',
+  open,
+  onOpen,
+}: {
+  lots: Lot[]
+  listKind?: AuctionListKind
+  open?: boolean
+  onOpen?: () => void
+}) {
   const now = useNow()
   const { lots: allLots, placeBids, settings, myLastBid } = useStore()
   const [pending, setPending] = useState<PreparedRow[] | null>(null)
@@ -21,7 +31,17 @@ export function BidCsv({ lots, listKind = 'all' }: { lots: Lot[]; listKind?: Auc
   const [uploadKind, setUploadKind] = useState<AuctionListKind | null>(null)
   const [result, setResult] = useState<string | null>(null)
   const [fail, setFail] = useState<Array<{ lotId: string; message: string }>>([])
+  const [localOpen, setLocalOpen] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+  const csvOpen = open ?? localOpen
+  const toggleOpen = onOpen ?? (() => setLocalOpen((v) => !v))
+  const closeMenu = () => {
+    if (onOpen) {
+      if (open) onOpen()
+    } else {
+      setLocalOpen(false)
+    }
+  }
 
   const live = lots.filter((l) => l.channel === 'auction' && l.endsAt > now)
   const reviewName = listLabel(uploadKind || listKind, settings)
@@ -257,37 +277,55 @@ export function BidCsv({ lots, listKind = 'all' }: { lots: Lot[]; listKind?: Auc
   }
 
   const csvReady = settings.features.bidding && live.length > 0
+  const active = csvOpen || Boolean(pick)
 
   return (
-    <div className="bid-csv">
-      <div className="bid-csv-actions">
-        <button
-          type="button"
-          className={`filter-trigger bid-csv-pill${pick === 'download' ? ' is-active' : ''}`}
-          onClick={() => setPick('download')}
-          disabled={!csvReady}
-        >
-          <span className="filter-trigger-title">CSV</span>
-          <span className="filter-trigger-value">Download</span>
-        </button>
-        <button
-          type="button"
-          className={`filter-trigger bid-csv-pill${pick === 'upload' ? ' is-active' : ''}`}
-          onClick={() => setPick('upload')}
-          disabled={!csvReady}
-        >
-          <span className="filter-trigger-title">CSV</span>
-          <span className="filter-trigger-value">Upload</span>
-        </button>
-        <input
-          ref={fileRef}
-          type="file"
-          accept=".csv,text/csv"
-          hidden
-          disabled={!csvReady}
-          onChange={onFile}
-        />
-      </div>
+    <div className={`bid-csv filter-menu${csvOpen ? ' open' : ''}`}>
+      <button
+        type="button"
+        className={`filter-trigger${active ? ' is-active' : ''}`}
+        onClick={toggleOpen}
+        disabled={!csvReady}
+        aria-expanded={csvOpen}
+        aria-haspopup="menu"
+      >
+        <span className="filter-trigger-title">CSV</span>
+        <span className="filter-trigger-value">Bid file</span>
+      </button>
+      {csvOpen ? (
+        <div className="filter-panel bid-csv-panel" role="menu">
+          <button
+            type="button"
+            className="bid-csv-option"
+            role="menuitem"
+            onClick={() => {
+              closeMenu()
+              setPick('download')
+            }}
+          >
+            Download template
+          </button>
+          <button
+            type="button"
+            className="bid-csv-option"
+            role="menuitem"
+            onClick={() => {
+              closeMenu()
+              setPick('upload')
+            }}
+          >
+            Upload bids
+          </button>
+        </div>
+      ) : null}
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".csv,text/csv"
+        hidden
+        disabled={!csvReady}
+        onChange={onFile}
+      />
       {pick ? (
         <ModalShell onClose={() => setPick(null)}>
           <div

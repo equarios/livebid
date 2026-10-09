@@ -172,6 +172,22 @@ export type InvoiceProfile = {
   branchAddress: string
   accountNumber: string
   beneficiary: string
+  /** Remittance box intro. */
+  paymentLead: string
+  paymentMethod: string
+  bankFeesNote: string
+  attachNote: string
+  /** Shown under totals when fee applies. Supports {feePct}. */
+  feeCalcNote: string
+  /** Supports {payDays}. */
+  paymentAdvanceNote: string
+  /** Supports {feePct}. */
+  feeRemark: string
+  paymentNotice: string
+  /** e.g. USD — printed after amounts. */
+  currency: string
+  /** Suggested invoice id prefix, e.g. HYB. */
+  invoiceIdPrefix: string
 }
 
 export type SiteSettings = {
@@ -289,10 +305,16 @@ export type PayReview = {
 }
 
 export type InvoiceLine = {
+  /** Catalog lot id, or CUSTOM / blank for a freeform row. */
   lotId: string
   qty: number
   unitPrice: number
   boxNo?: string
+  /** Overrides catalog description on the printed invoice. */
+  description?: string
+  /** e.g. Unlocked / Locked */
+  sim?: string
+  grade?: string
 }
 
 export type Invoice = {
@@ -322,6 +344,12 @@ export type Invoice = {
   poNumber?: string
   opened?: boolean
   auctionLabel?: string
+  /** Per-invoice Incoterms; falls back to Super profile. */
+  terms?: string
+  shipCompany?: string
+  shipAddress?: string
+  billCompany?: string
+  billAddress?: string
 }
 
 export type NoticeKind = 'win' | 'invoice' | 'outbid' | 'closing' | 'fill' | 'offer'
@@ -366,6 +394,8 @@ export type Account = {
   company: string
   email: string
   address?: string
+  /** Printed Buyer # on invoices; derived from accountId when omitted. */
+  buyerNumber?: string
   role: AccountRole
   status: AccountStatus
 }

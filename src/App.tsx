@@ -130,6 +130,7 @@ export default function App() {
         <Route path="/favourites" element={<Navigate to="/account/favourites" replace />} />
         <Route path="/invoices" element={<Navigate to="/account/invoices" replace />} />
         <Route path="/admin" element={<AdminGuard />} />
+        <Route path="/admin/invoices" element={<Navigate to="/super?tab=payments" replace />} />
         <Route path="/super" element={<SuperGuard />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

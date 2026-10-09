@@ -144,21 +144,69 @@ export function auctionNumber(inv: Invoice, lot?: Lot) {
   return `JPN SIM Unlocked ${lot.model} (${inv.id})`
 }
 
-export function buyerNumber(accountId: string) {
+export function buyerNumber(accountId: string, explicit?: string) {
+  const manual = explicit?.trim()
+  if (manual) return manual
   const digits = accountId.replace(/\D/g, '') || '0'
   return `9${digits.padStart(10, '0')}`.slice(0, 11)
 }
 
+/** Suggest HYB-26-286-039 style ids from Super prefix + existing invoices. */
+export function suggestInvoiceId(invoices: Invoice[], settings?: SiteSettings | null) {
+  const prefix = (settings?.invoice?.invoiceIdPrefix || 'HYB').trim().toUpperCase() || 'HYB'
+  const now = new Date()
+  const yy = String(now.getFullYear()).slice(-2)
+  const start = new Date(now.getFullYear(), 0, 0)
+  const dayOfYear = Math.floor((now.getTime() - start.getTime()) / 86400000)
+  const dayPart = String(dayOfYear).padStart(3, '0')
+  const re = new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-\\d{2}-\\d{3}-(\\d+)$`, 'i')
+  let maxSeq = 0
+  for (const inv of invoices) {
+    const m = inv.id.match(re)
+    if (!m) continue
+    const n = Number(m[1])
+    if (Number.isFinite(n) && n > maxSeq) maxSeq = n
+  }
+  const seq = String(maxSeq + 1).padStart(3, '0')
+  return `${prefix}-${yy}-${dayPart}-${seq}`
+}
+
+export function fillInvoiceTemplate(
+  template: string,
+  vars: { payDays?: number; feePct?: number },
+) {
+  return template
+    .replace(/\{payDays\}/g, String(vars.payDays ?? ''))
+    .replace(/\{feePct\}/g, String(vars.feePct ?? ''))
+}
+
 export function boxNoForLot(lotId: string, explicit?: string) {
-  if (explicit) return explicit
+  if (explicit?.trim()) return explicit.trim()
+  if (!lotId || lotId === 'CUSTOM') return ''
   const n = lotId.replace(/\D/g, '').padStart(10, '0').slice(-10)
   return `BOX-${n}`
 }
 
-export function itemDescription(lot: Lot | undefined, lotId: string) {
-  if (!lot) return lotId
+export function itemDescription(lot: Lot | undefined, lotId: string, override?: string) {
+  if (override?.trim()) return override.trim()
+  if (!lot) return lotId && lotId !== 'CUSTOM' ? lotId : 'Custom item'
   const sku = lot.modelNumber || lot.manufacturer
   return `${sku}_${lot.model} ${lot.capacity}`.replace(/\s+/g, ' ').trim()
+}
+
+export function normalizeInvoiceLines(lines: InvoiceLine[] | undefined, fallback?: InvoiceLine): InvoiceLine[] {
+  const raw = lines?.length ? lines : fallback ? [fallback] : []
+  return raw
+    .map((line) => ({
+      lotId: (line.lotId || 'CUSTOM').trim() || 'CUSTOM',
+      qty: Math.max(1, Math.floor(Number(line.qty) || 0)),
+      unitPrice: Math.max(0, Number(line.unitPrice) || 0),
+      boxNo: line.boxNo?.trim() || undefined,
+      description: line.description?.trim() || undefined,
+      sim: line.sim?.trim() || undefined,
+      grade: line.grade?.trim() || undefined,
+    }))
+    .filter((line) => line.qty >= 1)
 }
 
 export function invoicePill(status: InvoiceStatus) {

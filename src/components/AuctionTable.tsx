@@ -164,7 +164,7 @@ export function BidTotals({ lots, children }: { lots: Lot[]; children?: ReactNod
               Closing <strong>{closingSoon.length}</strong>
             </span>
           ) : null}
-          <button type="button" className="auction-close-count" onClick={toggle}>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={toggle}>
             {hidden ? 'Show' : 'Hide'}
           </button>
         </div>
@@ -283,7 +283,7 @@ function LotCells({
       ) : null}
       <td className="mono">{lot.id}</td>
       <td>
-        <ItemLink lot={lot} />
+        <ItemLink lot={lot} showMoq={false} showGrade={false} />
       </td>
       <td>
         <span className={`grade-inline grade-${lot.grade}`}>{lot.grade}</span>
@@ -348,10 +348,13 @@ function LotCardBlock({
           Compare
         </label>
       ) : null}
-      <ItemLink lot={lot} />
+      <ItemLink lot={lot} showMoq={false} showGrade={false} />
       <div className="auction-card-meta">
         <span className={`grade-inline grade-${lot.grade}`}>{lot.grade}</span>
-        <span>{lot.qty.toLocaleString()} pcs</span>
+        <span>
+          {lot.qty.toLocaleString()} pcs
+          <span className="muted"> · {moqLabel(lot, settings.copy.noMoq)}</span>
+        </span>
         <TimeLeft endsAt={lot.endsAt} />
       </div>
       <YouWin row={row} />

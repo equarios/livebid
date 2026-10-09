@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { InvoiceDesk } from '../components/InvoiceDesk'
 import { ListingReview } from '../components/ListingReview'
 import { ModalShell } from '../components/ModalShell'
@@ -214,10 +215,10 @@ function AddAuctionTypeDialog({
         <p className="muted tiny">First session starts now for that long. Later publishes join the open clock.</p>
         {error ? <p className="error">{error}</p> : null}
         <div className="modal-actions">
-          <button type="button" className="btn" onClick={onClose}>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>
             Cancel
           </button>
-          <button type="button" className="btn btn-primary" onClick={submit}>
+          <button type="button" className="btn btn-primary btn-sm" onClick={submit}>
             Add auction type
           </button>
         </div>
@@ -226,18 +227,35 @@ function AddAuctionTypeDialog({
   )
 }
 
+type SuperTab = 'confirm' | 'people' | 'payments' | 'site' | 'copy' | 'features' | 'types'
+
+const SUPER_TABS = new Set<SuperTab>(['confirm', 'people', 'payments', 'site', 'copy', 'features', 'types'])
+
 export function Super() {
   const { accounts, invoices, lots, listingDrops, settings, saveSettings, saveAccount, removeAccount, setAccountStatus } =
     useStore()
   const now = useNow()
-  const [draft, setDraft] = useState<SiteSettings>(settings)
+  const [params, setParams] = useSearchParams()
+  const [draft, setDraft] = useState<SiteSettings>(() => ({
+    ...settings,
+    invoice: { ...DEFAULT_SETTINGS.invoice, ...settings.invoice },
+  }))
   const [settingsMsg, setSettingsMsg] = useState<string | null>(null)
+  const invoiceDraft = { ...DEFAULT_SETTINGS.invoice, ...draft.invoice }
+
+  function patchInvoice(patch: Partial<SiteSettings['invoice']>) {
+    setDraft((prev) => ({
+      ...prev,
+      invoice: { ...DEFAULT_SETTINGS.invoice, ...prev.invoice, ...patch },
+    }))
+  }
   const [addTypeOpen, setAddTypeOpen] = useState(false)
   const [accountMsg, setAccountMsg] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [accountId, setAccountId] = useState('')
   const [company, setCompany] = useState('')
   const [address, setAddress] = useState('')
+  const [buyerNo, setBuyerNo] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [role, setRole] = useState<AccountRole>('member')
@@ -247,9 +265,18 @@ export function Super() {
   const payRequests = invoices.filter((i) => i.status === 'pending_review')
   const issueWait = invoices.filter((i) => i.status === 'draft')
   const catalogWait = (listingDrops || []).filter((d) => d.status === 'pending')
-  const [tab, setTab] = useState<
-    'confirm' | 'people' | 'payments' | 'site' | 'copy' | 'features' | 'types'
-  >(catalogWait.length ? 'confirm' : issueWait.length || payRequests.length ? 'payments' : 'people')
+  const paramTab = params.get('tab')
+  const defaultTab: SuperTab = catalogWait.length
+    ? 'confirm'
+    : issueWait.length || payRequests.length
+      ? 'payments'
+      : 'people'
+  const tab: SuperTab =
+    paramTab && SUPER_TABS.has(paramTab as SuperTab) ? (paramTab as SuperTab) : defaultTab
+
+  function setTab(next: SuperTab) {
+    setParams({ tab: next }, { replace: true })
+  }
 
   useEffect(() => {
     setDraft((prev) => ({
@@ -265,8 +292,9 @@ export function Super() {
           closeMinutes: d.closeMinutes,
         }
       }),
+      invoice: { ...DEFAULT_SETTINGS.invoice, ...settings.invoice, ...prev.invoice },
     }))
-  }, [settings.auctionTypes])
+  }, [settings.auctionTypes, settings.invoice])
 
   function publishAuctionType(row: AuctionTypeDef) {
     const auctionTypes = [...settings.auctionTypes.filter((t) => t.value !== row.value), row]
@@ -282,6 +310,7 @@ export function Super() {
     setAccountId('')
     setCompany('')
     setAddress('')
+    setBuyerNo('')
     setEmail('')
     setPassword('')
     setRole('member')
@@ -293,6 +322,7 @@ export function Super() {
     setAccountId(a.accountId)
     setCompany(a.company)
     setAddress(a.address || '')
+    setBuyerNo(a.buyerNumber || '')
     setEmail(a.email)
     setPassword('')
     setRole(a.role === 'superadmin' ? 'superadmin' : a.role)
@@ -306,6 +336,7 @@ export function Super() {
       accountId: editingId || accountId,
       company,
       address,
+      buyerNumber: buyerNo.trim() || undefined,
       email,
       password,
       role: editingId === 'SUPER-0001' ? 'superadmin' : role === 'admin' ? 'admin' : 'member',
@@ -338,6 +369,7 @@ export function Super() {
       tagline: draft.tagline.trim(),
       marketplaceLabel: draft.marketplaceLabel.trim() || 'Marketplace',
       grades,
+      invoice: { ...DEFAULT_SETTINGS.invoice, ...draft.invoice },
       auctionTypes: clocks === 'keep' ? settings.auctionTypes : draft.auctionTypes,
       defaultMoq: Math.max(0, Math.floor(Number(draft.defaultMoq) || 0)),
       reopenMinutes: Math.max(1, Math.floor(Number(draft.reopenMinutes ?? (draft.reopenHours || 4) * 60) || 1)),
@@ -366,7 +398,7 @@ export function Super() {
           </div>
           {tab === 'types' ? (
             <div className="auction-desk-head-actions">
-              <button type="button" className="btn btn-primary" onClick={() => setAddTypeOpen(true)}>
+              <button type="button" className="btn btn-primary btn-sm" onClick={() => setAddTypeOpen(true)}>
                 Add auction type
               </button>
             </div>
@@ -421,6 +453,14 @@ export function Super() {
             <textarea rows={3} value={address} onChange={(e) => setAddress(e.target.value)} />
           </label>
           <label>
+            Buyer # (invoice)
+            <input
+              value={buyerNo}
+              onChange={(e) => setBuyerNo(e.target.value)}
+              placeholder="Optional · e.g. 90001116001"
+            />
+          </label>
+          <label>
             Email
             <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
           </label>
@@ -457,11 +497,11 @@ export function Super() {
               <option value="disabled">Disabled</option>
             </select>
           </label>
-          <button className="btn btn-primary" type="submit">
+          <button className="btn btn-primary btn-sm" type="submit">
             {editingId ? 'Save account' : 'Add account'}
           </button>
           {editingId ? (
-            <button type="button" className="btn btn-ghost" onClick={resetAccountForm}>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={resetAccountForm}>
               Cancel
             </button>
           ) : null}
@@ -478,6 +518,7 @@ export function Super() {
               <th>Role</th>
               <th>Status</th>
               <th>Company</th>
+              <th>Buyer #</th>
               <th>Email</th>
               <th />
             </tr>
@@ -493,6 +534,7 @@ export function Super() {
                   </span>
                 </td>
                 <td>{a.company}</td>
+                <td className="mono tiny">{a.buyerNumber || '—'}</td>
                 <td>{a.email}</td>
                 <td className="row-actions">
                   <button type="button" className="btn btn-ghost btn-sm" onClick={() => loadAccount(a)}>
@@ -531,9 +573,8 @@ export function Super() {
       {tab === 'confirm' ? <ListingReview /> : null}
 
       {tab === 'payments' ? (
-        <section className="card admin-section pay-queue-card">
-          <h2>Issue invoices &amp; payment confirmations</h2>
-          <InvoiceDesk canSuper allowCreate={false} />
+        <section className="card admin-section pay-queue-card invoice-super-panel">
+          <InvoiceDesk canAdmin canSuper allowCreate />
         </section>
       ) : null}
 
@@ -629,104 +670,6 @@ export function Super() {
                 }
               />
             </label>
-            <label className="admin-span">
-              Invoice legal name
-              <input
-                value={draft.invoice.legalName}
-                onChange={(e) => setDraft({ ...draft, invoice: { ...draft.invoice, legalName: e.target.value } })}
-              />
-            </label>
-            <label className="admin-span">
-              Invoice address
-              <textarea
-                rows={3}
-                value={draft.invoice.address}
-                onChange={(e) => setDraft({ ...draft, invoice: { ...draft.invoice, address: e.target.value } })}
-              />
-            </label>
-            <label>
-              Invoice tel
-              <input
-                value={draft.invoice.tel}
-                onChange={(e) => setDraft({ ...draft, invoice: { ...draft.invoice, tel: e.target.value } })}
-              />
-            </label>
-            <label>
-              Terms
-              <input
-                value={draft.invoice.terms}
-                onChange={(e) => setDraft({ ...draft, invoice: { ...draft.invoice, terms: e.target.value } })}
-              />
-            </label>
-            <label>
-              Pay days
-              <input
-                type="number"
-                min={1}
-                value={draft.invoice.payDays}
-                onChange={(e) =>
-                  setDraft({ ...draft, invoice: { ...draft.invoice, payDays: Number(e.target.value) } })
-                }
-              />
-            </label>
-            <label>
-              Optional fee % (admin applies per invoice)
-              <input
-                type="number"
-                min={0}
-                step={0.1}
-                value={draft.invoice.feePct}
-                onChange={(e) =>
-                  setDraft({ ...draft, invoice: { ...draft.invoice, feePct: Number(e.target.value) } })
-                }
-              />
-            </label>
-            <label>
-              SWIFT
-              <input
-                value={draft.invoice.swift}
-                onChange={(e) => setDraft({ ...draft, invoice: { ...draft.invoice, swift: e.target.value } })}
-              />
-            </label>
-            <label className="admin-span">
-              Bank name
-              <input
-                value={draft.invoice.bankName}
-                onChange={(e) => setDraft({ ...draft, invoice: { ...draft.invoice, bankName: e.target.value } })}
-              />
-            </label>
-            <label>
-              Branch
-              <input
-                value={draft.invoice.branchName}
-                onChange={(e) => setDraft({ ...draft, invoice: { ...draft.invoice, branchName: e.target.value } })}
-              />
-            </label>
-            <label className="admin-span">
-              Branch address
-              <input
-                value={draft.invoice.branchAddress}
-                onChange={(e) =>
-                  setDraft({ ...draft, invoice: { ...draft.invoice, branchAddress: e.target.value } })
-                }
-              />
-            </label>
-            <label>
-              Account number
-              <input
-                value={draft.invoice.accountNumber}
-                onChange={(e) =>
-                  setDraft({ ...draft, invoice: { ...draft.invoice, accountNumber: e.target.value } })
-                }
-              />
-            </label>
-            <label className="admin-span">
-              Beneficiary
-              <input
-                value={draft.invoice.beneficiary}
-                onChange={(e) => setDraft({ ...draft, invoice: { ...draft.invoice, beneficiary: e.target.value } })}
-              />
-            </label>
             <label>
               Ending-soon minutes
               <input
@@ -736,6 +679,199 @@ export function Super() {
                 onChange={(e) => setDraft({ ...draft, endingSoonMinutes: Number(e.target.value) })}
               />
             </label>
+
+            <div className="invoice-profile-panel admin-span">
+              <h3>Invoice profile</h3>
+              <p className="muted tiny">
+                Letterhead, bank remittance, and notice wording printed on every commercial invoice PDF.
+                Use {'{payDays}'} and {'{feePct}'} in notice templates.
+              </p>
+              <div className="admin-form invoice-profile-fields">
+                <label className="admin-span">
+                  Legal name
+                  <input
+                    value={invoiceDraft.legalName}
+                    onChange={(e) => patchInvoice({ legalName: e.target.value })}
+                  />
+                </label>
+                <label className="admin-span">
+                  Address
+                  <textarea
+                    rows={3}
+                    value={invoiceDraft.address}
+                    onChange={(e) => patchInvoice({ address: e.target.value })}
+                  />
+                </label>
+                <label>
+                  Tel
+                  <input value={invoiceDraft.tel} onChange={(e) => patchInvoice({ tel: e.target.value })} />
+                </label>
+                <label>
+                  Terms
+                  <input
+                    value={invoiceDraft.terms}
+                    onChange={(e) => patchInvoice({ terms: e.target.value })}
+                  />
+                </label>
+                <label>
+                  Currency
+                  <input
+                    value={invoiceDraft.currency}
+                    onChange={(e) => patchInvoice({ currency: e.target.value })}
+                  />
+                </label>
+                <label>
+                  Invoice ID prefix
+                  <input
+                    value={invoiceDraft.invoiceIdPrefix}
+                    onChange={(e) => patchInvoice({ invoiceIdPrefix: e.target.value })}
+                  />
+                </label>
+                <label>
+                  Pay days
+                  <input
+                    type="number"
+                    min={1}
+                    value={invoiceDraft.payDays}
+                    onChange={(e) => patchInvoice({ payDays: Number(e.target.value) })}
+                  />
+                </label>
+                <label>
+                  Default fee %
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.1}
+                    value={invoiceDraft.feePct}
+                    onChange={(e) => patchInvoice({ feePct: Number(e.target.value) })}
+                  />
+                </label>
+                <label>
+                  SWIFT
+                  <input
+                    value={invoiceDraft.swift}
+                    onChange={(e) => patchInvoice({ swift: e.target.value })}
+                  />
+                </label>
+                <label className="admin-span">
+                  Bank name
+                  <input
+                    value={invoiceDraft.bankName}
+                    onChange={(e) => patchInvoice({ bankName: e.target.value })}
+                  />
+                </label>
+                <label>
+                  Branch
+                  <input
+                    value={invoiceDraft.branchName}
+                    onChange={(e) => patchInvoice({ branchName: e.target.value })}
+                  />
+                </label>
+                <label className="admin-span">
+                  Branch address
+                  <input
+                    value={invoiceDraft.branchAddress}
+                    onChange={(e) => patchInvoice({ branchAddress: e.target.value })}
+                  />
+                </label>
+                <label>
+                  Account number
+                  <input
+                    value={invoiceDraft.accountNumber}
+                    onChange={(e) => patchInvoice({ accountNumber: e.target.value })}
+                  />
+                </label>
+                <label className="admin-span">
+                  Beneficiary
+                  <input
+                    value={invoiceDraft.beneficiary}
+                    onChange={(e) => patchInvoice({ beneficiary: e.target.value })}
+                  />
+                </label>
+                <label className="admin-span">
+                  Payment lead
+                  <textarea
+                    rows={2}
+                    value={invoiceDraft.paymentLead}
+                    onChange={(e) => patchInvoice({ paymentLead: e.target.value })}
+                  />
+                </label>
+                <label>
+                  Payment method
+                  <input
+                    value={invoiceDraft.paymentMethod}
+                    onChange={(e) => patchInvoice({ paymentMethod: e.target.value })}
+                  />
+                </label>
+                <label className="admin-span">
+                  Bank fees note
+                  <input
+                    value={invoiceDraft.bankFeesNote}
+                    onChange={(e) => patchInvoice({ bankFeesNote: e.target.value })}
+                  />
+                </label>
+                <label className="admin-span">
+                  Attach note
+                  <input
+                    value={invoiceDraft.attachNote}
+                    onChange={(e) => patchInvoice({ attachNote: e.target.value })}
+                  />
+                </label>
+                <label className="admin-span">
+                  Fee calc note
+                  <input
+                    value={invoiceDraft.feeCalcNote}
+                    onChange={(e) => patchInvoice({ feeCalcNote: e.target.value })}
+                  />
+                </label>
+                <label className="admin-span">
+                  Payment advance note
+                  <input
+                    value={invoiceDraft.paymentAdvanceNote}
+                    onChange={(e) => patchInvoice({ paymentAdvanceNote: e.target.value })}
+                  />
+                </label>
+                <label className="admin-span">
+                  Fee remark
+                  <input
+                    value={invoiceDraft.feeRemark}
+                    onChange={(e) => patchInvoice({ feeRemark: e.target.value })}
+                  />
+                </label>
+                <label className="admin-span">
+                  Payment notice
+                  <input
+                    value={invoiceDraft.paymentNotice}
+                    onChange={(e) => patchInvoice({ paymentNotice: e.target.value })}
+                  />
+                </label>
+              </div>
+              <div className="invoice-profile-preview">
+                <strong>Preview</strong>
+                <p className="tiny">{invoiceDraft.paymentLead}</p>
+                <p className="tiny">
+                  Method: {invoiceDraft.paymentMethod} · SWIFT {invoiceDraft.swift}
+                </p>
+                <p className="tiny">
+                  {invoiceDraft.bankName} · {invoiceDraft.branchName}
+                </p>
+                <p className="tiny">
+                  Acct {invoiceDraft.accountNumber} · {invoiceDraft.beneficiary}
+                </p>
+                <p className="tiny">{invoiceDraft.bankFeesNote}</p>
+                <p className="tiny">
+                  {invoiceDraft.paymentAdvanceNote
+                    .replace(/\{payDays\}/g, String(invoiceDraft.payDays))
+                    .replace(/\{feePct\}/g, String(invoiceDraft.feePct))}
+                </p>
+                <p className="tiny">
+                  {invoiceDraft.feeRemark
+                    .replace(/\{payDays\}/g, String(invoiceDraft.payDays))
+                    .replace(/\{feePct\}/g, String(invoiceDraft.feePct))}
+                </p>
+                <p className="tiny">{invoiceDraft.paymentNotice}</p>
+              </div>
+            </div>
             {(
               [
                 ['navy', 'Primary'],
@@ -825,11 +961,11 @@ export function Super() {
                 </label>
               ))}
             </fieldset>
-            <button className="btn btn-primary" type="submit">
+            <button className="btn btn-primary btn-sm" type="submit">
               Save site
             </button>
             <button
-              className="btn btn-ghost"
+              className="btn btn-ghost btn-sm"
               type="button"
               onClick={() =>
                 setDraft({
@@ -861,7 +997,7 @@ export function Super() {
                 />
               </label>
             ))}
-            <button className="btn btn-primary" type="submit">
+            <button className="btn btn-primary btn-sm" type="submit">
               Save text
             </button>
           </form>
@@ -954,7 +1090,7 @@ export function Super() {
                 </label>
               ))}
             </fieldset>
-            <button className="btn btn-primary" type="submit">
+            <button className="btn btn-primary btn-sm" type="submit">
               Save functions
             </button>
           </form>
@@ -1108,11 +1244,11 @@ export function Super() {
                 )
               })}
             </div>
-            <button type="button" className="btn btn-primary" onClick={() => setAddTypeOpen(true)}>
+            <button type="button" className="btn btn-primary btn-sm" onClick={() => setAddTypeOpen(true)}>
               Add auction type
             </button>
           </div>
-            <button className="btn btn-primary" type="submit">Save types</button>
+            <button className="btn btn-primary btn-sm" type="submit">Save types</button>
           </form>
           {settingsMsg ? <p className="ok">{settingsMsg}</p> : null}
         </section>
