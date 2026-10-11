@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { PublicShell } from '../components/PublicShell'
 import { groupLotsByType, isSealedLot, listPath } from '../lib/auctionLists'
 import { usd } from '../lib/format'
 import { lotThumb, photoFallback } from '../lib/photos'
+import { DEFAULT_SETTINGS } from '../data'
 import { useNow, useStore } from '../store'
 import type { Lot } from '../types'
 
@@ -17,32 +18,8 @@ function closesLabel(endsAt: number, now: number) {
   return `Closes in ${Math.floor(h / 24)}d`
 }
 
-const HEROES = [
-  {
-    kicker: 'Live wholesale auctions',
-    title: 'Source excess inventory. Bid by the piece.',
-    body: 'Buy returned, overstock, and open-box lots directly from Equarios — phones, tablets, and more.',
-    cta: 'Shop all listings',
-    to: '/auctions',
-    tone: 'hero-a',
-  },
-  {
-    kicker: 'Buy Now marketplace',
-    title: 'No bidding. Just buying.',
-    body: 'Fixed wholesale prices with cart checkout. New marketplace lots drop alongside live auctions.',
-    cta: 'Shop Buy Now',
-    to: '/marketplace',
-    tone: 'hero-b',
-  },
-  {
-    kicker: 'Pay after you win',
-    title: 'Invoices, receipts, dual approval.',
-    body: 'Pay your invoice, upload the receipt, and wait for admin plus super admin to accept.',
-    cta: 'Create a buyer account',
-    to: '/register',
-    tone: 'hero-c',
-  },
-]
+const HERO_PHOTO =
+  'https://images.unsplash.com/photo-1556656793-08538906a9f8?auto=format&fit=crop&w=2000&q=72'
 
 function DealCard({
   lot,
@@ -71,7 +48,8 @@ function DealCard({
       </div>
       <div className="deal-card-body">
         <strong>
-          {lot.qty} {lot.qty === 1 ? 'Unit' : 'Units'} of {lot.manufacturer} {lot.model} {lot.capacity} · Grade {lot.grade}
+          {lot.qty} {lot.qty === 1 ? 'Unit' : 'Units'} of {lot.manufacturer} {lot.model} {lot.capacity} · Grade{' '}
+          {lot.grade}
         </strong>
         <span>{closesLabel(lot.endsAt, now)}</span>
         {showPrice ? (
@@ -86,14 +64,29 @@ function DealCard({
   )
 }
 
+/** Wholesale hub — B2B workspace (auctions, marketplace, account). */
 export function Home() {
   const { lots, user, settings } = useStore()
   const now = useNow()
   const navigate = useNavigate()
   const [params] = useSearchParams()
   const q = (params.get('q') || '').trim().toLowerCase()
-  const [slide, setSlide] = useState(0)
-  const hero = HEROES[slide]
+  const pages = {
+    ...DEFAULT_SETTINGS.pages,
+    ...settings.pages,
+    wholesaleHeroes: settings.pages?.wholesaleHeroes?.length
+      ? settings.pages.wholesaleHeroes
+      : DEFAULT_SETTINGS.pages.wholesaleHeroes,
+    wholesaleHowSteps: settings.pages?.wholesaleHowSteps?.length
+      ? settings.pages.wholesaleHowSteps
+      : DEFAULT_SETTINGS.pages.wholesaleHowSteps,
+    wholesaleTrust: settings.pages?.wholesaleTrust?.length
+      ? settings.pages.wholesaleTrust
+      : DEFAULT_SETTINGS.pages.wholesaleTrust,
+  }
+  const hero = pages.wholesaleHeroes[0]
+  const brand = settings.brandName || 'eQuarios'
+
   const dealGroups = useMemo(() => {
     const rows = lots
       .filter((l) => l.channel === 'auction' && l.endsAt > now)
@@ -123,7 +116,7 @@ export function Home() {
 
   function go(path: string) {
     if (path === '/register') {
-      navigate(user ? '/account' : '/register')
+      navigate(user ? '/account' : '/register', { state: { from: '/auctions' } })
       return
     }
     if (user) navigate(path)
@@ -131,63 +124,57 @@ export function Home() {
   }
 
   return (
-    <PublicShell>
-      <section className={`pub-hero ${hero.tone}`}>
-        <button type="button" className="hero-arrow" aria-label="Previous slide" onClick={() => setSlide((s) => (s + HEROES.length - 1) % HEROES.length)}>
-          ‹
-        </button>
-        <div className="pub-hero-copy">
-          <p className="kicker">{hero.kicker}</p>
-          <h1>{hero.title}</h1>
-          <p>{hero.body}</p>
-          <button type="button" className="pub-btn pub-btn-fill" onClick={() => go(hero.to)}>
-            {hero.cta}
-          </button>
+    <PublicShell mode="wholesale">
+      <section className="land-hero wholesale-hero" aria-label={`${brand} wholesale`}>
+        <div className="land-hero-media" aria-hidden>
+          <div className="land-hero-photo" style={{ backgroundImage: `url(${HERO_PHOTO})` }} />
+          <div className="land-hero-veil is-wholesale" />
+          <div className="land-hero-grain" />
         </div>
-        <button type="button" className="hero-arrow" aria-label="Next slide" onClick={() => setSlide((s) => (s + 1) % HEROES.length)}>
-          ›
-        </button>
+        <div className="land-hero-copy">
+          <p className="land-hero-brand">{brand}</p>
+          <h1>{hero.title}</h1>
+          <p className="land-hero-lead">{hero.body}</p>
+          <div className="land-hero-cta">
+            <button type="button" className="pub-btn pub-btn-fill" onClick={() => go(hero.to)}>
+              {hero.cta}
+            </button>
+            <button type="button" className="land-hero-secondary" onClick={() => go('/register')}>
+              Apply as buyer →
+            </button>
+          </div>
+        </div>
       </section>
 
       <section className="how-strip">
-        <h2>How Equarios works</h2>
+        <h2>{pages.wholesaleHowTitle}</h2>
         <ol>
-          <li>
-            <strong>1. Register</strong>
-            <span>Use a work email. Super admin reviews your company.</span>
-          </li>
-          <li>
-            <strong>2. Get approved</strong>
-            <span>After accept, sign in to see prices, bid, and buy.</span>
-          </li>
-          <li>
-            <strong>3. Bid or Buy Now</strong>
-            <span>Live auctions fill by last bid per account. Marketplace is cart checkout.</span>
-          </li>
-          <li>
-            <strong>4. Pay the invoice</strong>
-            <span>Upload a receipt. Admin and super admin both accept before it is paid.</span>
-          </li>
+          {pages.wholesaleHowSteps.map((step, i) => (
+            <li key={step.title}>
+              <span className="how-step-n" aria-hidden>
+                {String(i + 1).padStart(2, '0')}
+              </span>
+              <strong>{step.title}</strong>
+              <span>{step.body}</span>
+            </li>
+          ))}
         </ol>
       </section>
 
-      <section className="trust-strip">
-        <p>
-          <strong>Verified buyers only.</strong> Prices stay hidden until your account is accepted.
-        </p>
-        <p>
-          <strong>Dual approval pay.</strong> Admin and Super Admin both accept before an invoice is paid.
-        </p>
-        <p>
-          <strong>7-day invoice window.</strong> Pay in advance from the issue date. Unpaid lots can be reopened to other buyers.
-        </p>
+      <section className="trust-strip" aria-label="Trust">
+        {pages.wholesaleTrust.map((item) => (
+          <p key={item.title}>
+            <strong>{item.title}</strong>
+            {item.body}
+          </p>
+        ))}
       </section>
 
       <section className="pub-section">
         <div className="pub-section-head">
-          <h2>{q ? `Results for “${params.get('q')}”` : 'Best Deals'}</h2>
+          <h2>{q ? `Results for “${params.get('q')}”` : pages.wholesaleDealsTitle}</h2>
           <button type="button" className="linkish" onClick={() => go('/auctions')}>
-            View All
+            View all
           </button>
         </div>
         {dealGroups.length ? (
@@ -199,63 +186,79 @@ export function Home() {
                   View {group.label}
                 </button>
               </div>
-              <div className="deal-row">
+              <div className="deal-grid">
                 {group.lots.map((lot) => (
                   <DealCard
                     key={lot.id}
                     lot={lot}
-                    showPrice={!!user}
+                    showPrice={Boolean(user)}
                     hideHigh={isSealedLot(lot, settings)}
-                    onOpen={() => go(`/auctions#${lot.auctionType || 'live'}`)}
+                    onOpen={() => go(listPath(lot.auctionType || group.value))}
                   />
                 ))}
               </div>
             </div>
           ))
         ) : (
-          <p className="muted">No matching auction lots on this page. Sign in to search the full catalog.</p>
+          <p className="muted">{pages.wholesaleEmptyDeals}</p>
         )}
       </section>
 
-      <section className="pub-section">
-        <div className="pub-section-head">
-          <h2>Shop by brand</h2>
-        </div>
-        <div className="brand-pills">
-          {makers.map((m) => (
-            <button key={m} type="button" onClick={() => go(`/auctions?q=${encodeURIComponent(m)}`)}>
-              {m}
+      {settings.showMarketplace ? (
+        <section className="pub-section">
+          <div className="pub-section-head">
+            <h2>{settings.marketplaceLabel}</h2>
+            <button type="button" className="linkish" onClick={() => go('/marketplace')}>
+              View all
             </button>
-          ))}
-        </div>
-      </section>
+          </div>
+          <div className="deal-grid">
+            {market.map((lot) => (
+              <DealCard
+                key={lot.id}
+                lot={lot}
+                showPrice={Boolean(user)}
+                onOpen={() => go('/marketplace')}
+              />
+            ))}
+          </div>
+          {!market.length ? <p className="muted">{pages.wholesaleEmptyMarket}</p> : null}
+        </section>
+      ) : null}
 
-      <section className="pub-section">
-        <div className="pub-section-head">
-          <h2>Buy Now · {settings.marketplaceLabel}</h2>
-          <button type="button" className="linkish" onClick={() => go('/marketplace')}>
-            View All
-          </button>
-        </div>
-        <div className="deal-row">
-          {market.map((lot) => (
-            <DealCard key={lot.id} lot={lot} showPrice={!!user} onOpen={() => go('/marketplace')} />
-          ))}
-        </div>
-      </section>
+      {makers.length ? (
+        <section className="pub-section">
+          <div className="pub-section-head">
+            <h2>{pages.wholesaleBrandsTitle}</h2>
+          </div>
+          <div className="brand-row">
+            {makers.map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => go(`/auctions?q=${encodeURIComponent(m)}`)}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <section className="pub-split">
         <div>
-          <h2>Equarios: the place to find inventory for resale</h2>
+          <h2>Buying on {brand}</h2>
           <p className="muted">
-            Buy direct through official wholesale auctions. Source phones, tablets, and electronics across grades, capacities, and lot sizes.
+            Official wholesale auctions and marketplace for verified companies — phones, tablets, and
+            electronics by grade and lot size.
           </p>
           <Link to="/buyers">How buying works →</Link>
         </div>
         <div>
-          <h2>Selling through Equarios</h2>
+          <h2>Selling through {brand}</h2>
           <p className="muted">
-            Move returned and excess stock to verified B2B buyers. Listing duration can be as short as one minute for live demo lots.
+            Move returned and excess stock to approved B2B buyers. Catalog and clocks run from the ops
+            desk.
           </p>
           <Link to="/sellers">For sellers →</Link>
         </div>

@@ -12,18 +12,26 @@ export function Complaint() {
   }
 
   return (
-    <form className="card account-card" onSubmit={onSubmit}>
+    <div className="complaint-page">
       <p className="muted tiny mypage-intro">
-        Tell ops about a lot, invoice, or shipping issue. Super admin reviews these in this demo.
+        Lot, invoice, or shipping issue — staff review from Admin.
       </p>
-      <label>
-        Details
-        <textarea rows={6} value={text} onChange={(e) => setText(e.target.value)} required />
-      </label>
-      {sent ? <p className="ok">Complaint submitted.</p> : null}
-      <button type="submit" className="btn btn-primary">
-        Submit
-      </button>
-    </form>
+      <form className="complaint-form" onSubmit={onSubmit}>
+        <label>
+          Details
+          <textarea
+            rows={6}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="Lot ID, invoice #, what went wrong…"
+            required
+          />
+        </label>
+        {sent ? <p className="ok tiny">Complaint submitted.</p> : null}
+        <button type="submit" className="btn btn-primary btn-sm">
+          Submit
+        </button>
+      </form>
+    </div>
   )
 }

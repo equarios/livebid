@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { ConfirmBidDialog } from './ConfirmBidDialog'
 import { ConfirmDialog } from './ConfirmDialog'
 import { FavHeart } from './FavHeart'
-import { fillCopy, usd } from '../lib/format'
+import { fillCopy, usd, usdCents } from '../lib/format'
 import { isSealedLot } from '../lib/auctionLists'
 import { feePctForLot, quoteMoney } from '../lib/invoices'
 import { checkBidPrice, checkOrderQty, lotMoq, minBidPrice, moqLabel } from '../lib/moq'
@@ -154,10 +154,10 @@ export function InlineBid({
         </div>
         {liveQuote ? (
           <div className="muted tiny bid-cost-hint">
-            Goods {usd(liveQuote.goods)}
+            Goods {usdCents(liveQuote.goods)}
             {liveQuote.feePct > 0
-              ? ` · Fee ${liveQuote.feePct}% ${usd(liveQuote.fee)} · Est. ${usd(liveQuote.total)}`
-              : ` · Est. ${usd(liveQuote.total)}`}
+              ? ` · Fee ${liveQuote.feePct}% ${usdCents(liveQuote.fee)} · Est. ${usdCents(liveQuote.total)}`
+              : ` · Est. ${usdCents(liveQuote.total)}`}
           </div>
         ) : null}
         {showTools ? (

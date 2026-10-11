@@ -8,6 +8,7 @@ import {
   hashPassword,
   requireUser,
   setSessionCookie,
+  toSessionUser,
   userFromToken,
   verifyPassword,
   type AuthedEnv,
@@ -18,6 +19,30 @@ import { notify, notifyStaff } from '../notify'
 import { sendMail } from '../mail'
 
 export const authRoutes = new Hono<AuthedEnv>()
+
+function exposeCodes() {
+  return process.env.MAIL_EXPOSE_CODES === '1' || !process.env.RESEND_API_KEY
+}
+
+function suggestAccountId(email: string, firstName: string, lastName: string) {
+  const local = email.split('@')[0]?.replace(/[^a-z0-9]/gi, '').slice(0, 8).toUpperCase()
+  if (local) return `LB-${local}`
+  const name = `${firstName}${lastName}`.replace(/[^a-z0-9]/gi, '').slice(0, 8).toUpperCase()
+  return name ? `LB-${name}` : `LB-${Date.now().toString(36).toUpperCase()}`
+}
+
+async function issueEmailCode(accountId: string, email: string) {
+  const code = String(1000 + Math.floor(Math.random() * 9000))
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000)
+  await prisma.emailVerify.deleteMany({ where: { accountId } })
+  await prisma.emailVerify.create({ data: { accountId, code, expiresAt } })
+  await sendMail({
+    to: email,
+    subject: '[Equarios] Verify your email',
+    text: `Your verification code is ${code}. It expires in 24 hours.\n\nEnter it on the sign-up page to activate your account.`,
+  })
+  return code
+}
 
 authRoutes.get('/me', async (c) => {
   const user = await userFromToken(getCookie(c, COOKIE))
@@ -34,7 +59,7 @@ authRoutes.post('/login', async (c) => {
   const ident = body.data.ident.trim()
   const found = await prisma.account.findFirst({
     where: {
-      OR: [{ accountId: ident }, { email: ident }],
+      OR: [{ accountId: ident.toUpperCase() }, { email: ident }],
     },
   })
 
@@ -42,70 +67,185 @@ authRoutes.post('/login', async (c) => {
     return c.json({ error: 'Invalid account or password.' }, 401)
   }
   if (found.status === 'disabled') return c.json({ error: 'Account disabled.' }, 403)
-  if (found.status === 'pending') return c.json({ error: 'Account pending approval.' }, 403)
+  if (found.status === 'pending') {
+    return c.json({ error: 'Account pending approval. Contact support if this persists.' }, 403)
+  }
+  if (!found.emailVerified) {
+    const code = await issueEmailCode(found.accountId, found.email)
+    return c.json(
+      {
+        error: 'Verify your email before signing in.',
+        needsVerify: true,
+        accountId: found.accountId,
+        email: found.email,
+        ...(exposeCodes() ? { code } : {}),
+      },
+      403,
+    )
+  }
 
   const session = await createSession(found.accountId)
   setSessionCookie(c, session.token, session.expiresAt)
-  return c.json({
-    user: {
-      accountId: found.accountId,
-      company: found.company,
-      email: found.email,
-      role: found.role,
-      status: found.status,
-    },
-  })
+  return c.json({ user: toSessionUser(found) })
 })
 
 authRoutes.post('/register', async (c) => {
   const body = z
     .object({
-      accountId: z.string().min(3).max(40),
-      password: z.string().min(4),
-      company: z.string().min(1),
+      firstName: z.string().min(1).max(80),
+      lastName: z.string().min(1).max(80),
       email: z.string().email(),
+      emailConfirm: z.string().email(),
+      password: z.string().min(6),
+      passwordConfirm: z.string().min(6),
+      company: z.string().optional(),
+      accountId: z.string().min(3).max(40).optional(),
       address: z.string().optional(),
+      phone: z.string().optional(),
     })
     .safeParse(await c.req.json().catch(() => ({})))
-  if (!body.success) return c.json({ error: 'Invalid registration.' }, 400)
+  if (!body.success) return c.json({ error: 'Fill all required fields. Password min 6 characters.' }, 400)
 
-  const id = body.data.accountId.trim().toUpperCase()
+  const email = body.data.email.trim().toLowerCase()
+  const emailConfirm = body.data.emailConfirm.trim().toLowerCase()
+  if (email !== emailConfirm) return c.json({ error: 'Email addresses do not match.' }, 400)
+  if (body.data.password !== body.data.passwordConfirm) {
+    return c.json({ error: 'Passwords do not match.' }, 400)
+  }
+
+  const firstName = body.data.firstName.trim()
+  const lastName = body.data.lastName.trim()
+  let id = (body.data.accountId || suggestAccountId(email, firstName, lastName)).trim().toUpperCase()
   const exists = await prisma.account.findFirst({
-    where: {
-      OR: [{ accountId: id }, { email: body.data.email.trim() }],
-    },
+    where: { OR: [{ accountId: id }, { email }] },
   })
-  if (exists) return c.json({ error: 'Account ID or email already taken.' }, 409)
+  if (exists?.email === email) return c.json({ error: 'Email already registered. Sign in instead.' }, 409)
+  if (exists) {
+    id = `${id}-${Math.floor(Math.random() * 90 + 10)}`
+  }
+
+  const company =
+    body.data.company?.trim() ||
+    [firstName, lastName].filter(Boolean).join(' ') ||
+    id
 
   const created = await prisma.account.create({
     data: {
       accountId: id,
       passwordHash: hashPassword(body.data.password),
-      company: body.data.company.trim(),
-      email: body.data.email.trim(),
+      company,
+      email,
+      firstName,
+      lastName,
       address: body.data.address?.trim() || null,
+      phone: body.data.phone?.trim() || null,
       role: 'member',
-      status: 'pending',
+      status: 'active',
+      emailVerified: false,
+      wholesaleStatus: 'none',
     },
   })
+
+  const code = await issueEmailCode(id, email)
 
   await notify({
     id: `N-AUTH-WELCOME-${id}`,
     accountId: id,
     kind: 'auth',
     title: 'Welcome to Equarios',
-    body: 'Your account is pending Super approval. We will email you when it is active.',
-    href: '/login',
+    body: 'Verify your email, then shop the store. Apply for wholesale from My Page when ready.',
+    href: '/register',
   })
   await notifyStaff(
     'auth',
-    'New signup pending approval',
+    'New retail signup',
     `${id} · ${created.company} · ${created.email}`,
-    '/super',
+    '/super?section=accounts',
     `N-AUTH-SIGNUP-${id}`,
   )
 
-  return c.json({ account: mapAccount(created), message: 'Registered. Wait for Super approval.' }, 201)
+  return c.json(
+    {
+      account: mapAccount(created),
+      needsVerify: true,
+      message: 'Check your email for a verification code.',
+      ...(exposeCodes() ? { code, email } : {}),
+    },
+    201,
+  )
+})
+
+authRoutes.post('/verify-email', async (c) => {
+  const body = z
+    .object({
+      ident: z.string().min(1),
+      code: z.string().min(4),
+    })
+    .safeParse(await c.req.json().catch(() => ({})))
+  if (!body.success) return c.json({ error: 'Account and code required.' }, 400)
+
+  const ident = body.data.ident.trim()
+  const found = await prisma.account.findFirst({
+    where: { OR: [{ accountId: ident.toUpperCase() }, { email: ident.toLowerCase() }] },
+  })
+  if (!found) return c.json({ error: 'Invalid account or code.' }, 400)
+  if (found.emailVerified) {
+    const session = await createSession(found.accountId)
+    setSessionCookie(c, session.token, session.expiresAt)
+    return c.json({ user: toSessionUser(found), message: 'Already verified.' })
+  }
+
+  const row = await prisma.emailVerify.findFirst({
+    where: { accountId: found.accountId },
+    orderBy: { createdAt: 'desc' },
+  })
+  if (!row || row.code !== body.data.code.trim()) {
+    return c.json({ error: 'That verification code does not match.' }, 400)
+  }
+  if (row.expiresAt.getTime() < Date.now()) {
+    return c.json({ error: 'That code expired. Request a new one.' }, 400)
+  }
+
+  const updated = await prisma.account.update({
+    where: { accountId: found.accountId },
+    data: { emailVerified: true },
+  })
+  await prisma.emailVerify.deleteMany({ where: { accountId: found.accountId } })
+
+  const session = await createSession(updated.accountId)
+  setSessionCookie(c, session.token, session.expiresAt)
+
+  await notify({
+    id: `N-AUTH-VERIFIED-${updated.accountId}-${Date.now()}`,
+    accountId: updated.accountId,
+    kind: 'auth',
+    title: 'Email verified',
+    body: 'Your account is ready. Shop the store, or apply for wholesale from My Page.',
+    href: '/account',
+  })
+
+  return c.json({ user: toSessionUser(updated), message: 'Email verified.' })
+})
+
+authRoutes.post('/verify-email/resend', async (c) => {
+  const body = z
+    .object({ ident: z.string().min(1) })
+    .safeParse(await c.req.json().catch(() => ({})))
+  if (!body.success) return c.json({ error: 'Account ID or email required.' }, 400)
+
+  const ident = body.data.ident.trim()
+  const found = await prisma.account.findFirst({
+    where: { OR: [{ accountId: ident.toUpperCase() }, { email: ident.toLowerCase() }] },
+  })
+  if (!found || found.status === 'disabled' || found.emailVerified) {
+    return c.json({ ok: true, message: 'If that account needs verification, a new code was sent.' })
+  }
+  const code = await issueEmailCode(found.accountId, found.email)
+  return c.json({
+    ok: true,
+    message: 'If that account needs verification, a new code was sent.',
+    ...(exposeCodes() ? { code, email: found.email } : {}),
+  })
 })
 
 authRoutes.post('/password-reset/request', async (c) => {
@@ -136,11 +276,10 @@ authRoutes.post('/password-reset/request', async (c) => {
     text: `Your reset code is ${code}. It expires in 30 minutes.\n\nIf you did not request this, ignore this email.`,
   })
 
-  const expose = process.env.MAIL_EXPOSE_CODES === '1' || !process.env.RESEND_API_KEY
   return c.json({
     ok: true,
     message: 'If that account exists, a reset code was sent.',
-    ...(expose ? { code, email: found.email } : {}),
+    ...(exposeCodes() ? { code, email: found.email } : {}),
   })
 })
 
@@ -202,6 +341,41 @@ authRoutes.post('/logout', requireUser, async (c) => {
 authRoutes.get('/accounts', requireUser, requireStaffGate, async (c) => {
   const rows = await prisma.account.findMany({ orderBy: { accountId: 'asc' } })
   return c.json({ accounts: rows.map(mapAccount) })
+})
+
+authRoutes.patch('/accounts/:id', requireUser, requireStaffGate, async (c) => {
+  const id = c.req.param('id').toUpperCase()
+  const body = z
+    .object({
+      status: z.enum(['pending', 'active', 'disabled']).optional(),
+      role: z.enum(['member', 'admin', 'superadmin']).optional(),
+      wholesaleStatus: z
+        .enum(['none', 'submitted', 'needs_docs', 'under_review', 'approved', 'rejected'])
+        .optional(),
+      emailVerified: z.boolean().optional(),
+      company: z.string().optional(),
+      email: z.string().email().optional(),
+      address: z.string().optional(),
+      phone: z.string().optional(),
+    })
+    .safeParse(await c.req.json().catch(() => ({})))
+  if (!body.success) return c.json({ error: 'Invalid update.' }, 400)
+  const found = await prisma.account.findUnique({ where: { accountId: id } })
+  if (!found) return c.json({ error: 'Account not found.' }, 404)
+  const updated = await prisma.account.update({
+    where: { accountId: id },
+    data: {
+      ...(body.data.status != null ? { status: body.data.status } : {}),
+      ...(body.data.role != null ? { role: body.data.role } : {}),
+      ...(body.data.wholesaleStatus != null ? { wholesaleStatus: body.data.wholesaleStatus } : {}),
+      ...(body.data.emailVerified != null ? { emailVerified: body.data.emailVerified } : {}),
+      ...(body.data.company != null ? { company: body.data.company.trim() } : {}),
+      ...(body.data.email != null ? { email: body.data.email.trim() } : {}),
+      ...(body.data.address != null ? { address: body.data.address.trim() || null } : {}),
+      ...(body.data.phone != null ? { phone: body.data.phone.trim() || null } : {}),
+    },
+  })
+  return c.json({ account: mapAccount(updated) })
 })
 
 async function requireStaffGate(c: any, next: any) {

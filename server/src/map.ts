@@ -1,10 +1,15 @@
 import type { Account, Bid, Invoice, Lot, MarketOffer, CartOrder, CartItem, WatchItem, Notice, InventorySku } from '@prisma/client'
 
+function migrateAuctionType(value?: string | null) {
+  if (value === 'sealed' || value === 'hybrid') return 'offline'
+  return value || undefined
+}
+
 export function mapLot(lot: Lot) {
   return {
     id: lot.id,
     channel: lot.channel as 'auction' | 'marketplace',
-    auctionType: lot.auctionType || undefined,
+    auctionType: migrateAuctionType(lot.auctionType),
     manufacturer: lot.manufacturer,
     model: lot.model,
     modelNumber: lot.modelNumber,
@@ -33,11 +38,15 @@ export function mapAccount(a: Account) {
     accountId: a.accountId,
     company: a.company,
     email: a.email,
+    firstName: a.firstName || undefined,
+    lastName: a.lastName || undefined,
     address: a.address ?? undefined,
     phone: a.phone ?? undefined,
     buyerNumber: a.buyerNumber ?? undefined,
     role: a.role,
     status: a.status,
+    emailVerified: a.emailVerified,
+    wholesaleStatus: a.wholesaleStatus,
     // never send passwordHash to clients
   }
 }

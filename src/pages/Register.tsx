@@ -1,118 +1,184 @@
 import { useState, type FormEvent } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { AuthFrame } from '../components/AuthFrame'
+import { canUseWholesaleDesk, publicHome, wholesaleHome } from '../lib/channelAccess'
 import { useStore } from '../store'
 
 export function Register() {
-  const { user, register, settings } = useStore()
+  const { user, register, verifyEmail, resendVerifyEmail, settings, isStaff } = useStore()
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
   const [email, setEmail] = useState('')
-  const [company, setCompany] = useState('')
-  const [accountId, setAccountId] = useState('')
+  const [emailConfirm, setEmailConfirm] = useState('')
   const [password, setPassword] = useState('')
+  const [passwordConfirm, setPasswordConfirm] = useState('')
   const [updates, setUpdates] = useState(true)
-  const [step, setStep] = useState<'email' | 'profile'>('email')
+  const [step, setStep] = useState<'form' | 'verify'>('form')
+  const [ident, setIdent] = useState('')
+  const [code, setCode] = useState('')
+  const [issuedCode, setIssuedCode] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [done, setDone] = useState(false)
 
-  if (user) return <Navigate to="/auctions" replace />
-  if (!settings.features.register && !done) return <Navigate to="/login" replace />
+  if (user) {
+    const dest = canUseWholesaleDesk(user, isStaff) ? wholesaleHome(settings) : publicHome(settings)
+    return <Navigate to={dest === '/' ? '/account' : dest} replace />
+  }
+  if (!settings.features.register && step === 'form') return <Navigate to="/login" replace />
 
-  function onEmail(e: FormEvent) {
+  async function onRegister(e: FormEvent) {
     e.preventDefault()
-    if (!email.trim() || !email.includes('@')) {
-      setError('Enter a valid work email.')
+    setError(null)
+    if (email.trim().toLowerCase() !== emailConfirm.trim().toLowerCase()) {
+      setError('Email addresses do not match.')
       return
     }
-    setError(null)
-    if (!accountId) {
-      const local = email.split('@')[0].replace(/[^a-z0-9]/gi, '').slice(0, 8).toUpperCase()
-      setAccountId(local ? `LB-${local}` : '')
+    if (password !== passwordConfirm) {
+      setError('Passwords do not match.')
+      return
     }
-    setStep('profile')
+    const result = await register({
+      firstName,
+      lastName,
+      email,
+      emailConfirm,
+      password,
+      passwordConfirm,
+    })
+    if (typeof result === 'string') {
+      setError(result)
+      return
+    }
+    setIdent(result.accountId || email)
+    setIssuedCode(result.code || null)
+    setStep('verify')
   }
 
-  async function onProfile(e: FormEvent) {
+  async function onVerify(e: FormEvent) {
     e.preventDefault()
-    const err = await register(accountId, company, email, password)
+    setError(null)
+    const err = await verifyEmail(ident, code)
     if (err) setError(err)
-    else setDone(true)
+  }
+
+  async function onResend() {
+    setError(null)
+    const result = await resendVerifyEmail(ident || email)
+    if ('error' in result) {
+      setError(result.error)
+      return
+    }
+    if (result.code) setIssuedCode(result.code)
   }
 
   return (
     <AuthFrame>
-      {done ? (
+      {step === 'verify' ? (
         <>
-          <h1>Application received</h1>
-          <p>{settings.copy.pendingApproval}</p>
-          <ol className="reg-steps">
-            <li className="is-done">Application submitted</li>
-            <li className="is-current">Waiting for Super Admin approval</li>
-            <li>Sign in with your account ID, then bid or buy</li>
-          </ol>
-          <p className="muted tiny">
-            Prices stay hidden until your account is accepted. Demo: Super → Accounts → Accept.
+          <h1>Verify your email</h1>
+          <p className="muted">
+            We sent a code to <strong>{email || ident}</strong>. Enter it to activate your account and open My
+            Page.
+          </p>
+          {issuedCode ? (
+            <p className="ok tiny">
+              Local/dev code: <strong>{issuedCode}</strong>
+            </p>
+          ) : null}
+          <form onSubmit={onVerify}>
+            <label>
+              Verification code
+              <input value={code} onChange={(e) => setCode(e.target.value)} autoComplete="one-time-code" />
+            </label>
+            {error ? <p className="error">{error}</p> : null}
+            <button className="btn-bstock" type="submit">
+              Verify and continue
+            </button>
+          </form>
+          <p>
+            <button type="button" className="linkish" onClick={() => void onResend()}>
+              Resend code
+            </button>
           </p>
           <p className="auth-foot">
             <Link to="/login">Sign In</Link>
           </p>
         </>
-      ) : step === 'email' ? (
+      ) : (
         <>
-          <h1>Welcome to {settings.brandName}! Let&apos;s get started.</h1>
-          <form onSubmit={onEmail}>
-            <p>First, we&apos;ll need your email address.</p>
+          <h1>Create your Equarios account</h1>
+          <p className="muted">
+            Shop the consumer store right after email verification. Apply for wholesale later from My Page —
+            no invite code required.
+          </p>
+          <form onSubmit={onRegister}>
+            <div className="auth-row">
+              <label>
+                First name
+                <input value={firstName} onChange={(e) => setFirstName(e.target.value)} required autoComplete="given-name" />
+              </label>
+              <label>
+                Last name
+                <input value={lastName} onChange={(e) => setLastName(e.target.value)} required autoComplete="family-name" />
+              </label>
+            </div>
             <label>
-              <span className="sr-only">Email Address</span>
+              Email
               <input
                 type="email"
-                placeholder="Email Address"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                required
+                autoComplete="email"
+              />
+            </label>
+            <label>
+              Confirm email
+              <input
+                type="email"
+                value={emailConfirm}
+                onChange={(e) => setEmailConfirm(e.target.value)}
+                required
+                autoComplete="email"
+              />
+            </label>
+            <label>
+              Password
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                minLength={6}
+                autoComplete="new-password"
+              />
+            </label>
+            <label>
+              Confirm password
+              <input
+                type="password"
+                value={passwordConfirm}
+                onChange={(e) => setPasswordConfirm(e.target.value)}
+                required
+                minLength={6}
+                autoComplete="new-password"
               />
             </label>
             <label className="check-inline">
               <input type="checkbox" checked={updates} onChange={(e) => setUpdates(e.target.checked)} />
-              Email me updates on exclusive inventory offerings, special promotions, and new storefront launches.
+              Email me updates on inventory and promotions.
             </label>
             {error ? <p className="error">{error}</p> : null}
             <p className="tiny muted">
-              By clicking &quot;Agree and Start&quot;, you acknowledge you have read and agree to the Equarios buyer terms.
+              By creating an account you agree to Equarios buyer terms. Wholesale access is a separate
+              application after signup.
             </p>
             <button className="btn-bstock" type="submit">
-              Agree and Start
+              {settings.copy.signUpButton}
             </button>
           </form>
           <p className="auth-foot">
             Already have an account? <Link to="/login">Sign In</Link>
           </p>
-        </>
-      ) : (
-        <>
-          <h1>Tell us about your business</h1>
-          <form onSubmit={onProfile}>
-            <p className="muted">{settings.copy.signUpIntro}</p>
-            <label>
-              Company name
-              <input value={company} onChange={(e) => setCompany(e.target.value)} />
-            </label>
-            <label>
-              Desired account ID
-              <input value={accountId} onChange={(e) => setAccountId(e.target.value)} />
-            </label>
-            <label>
-              Password
-              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
-            </label>
-            {error ? <p className="error">{error}</p> : null}
-            <button className="btn-bstock" type="submit">
-              {settings.copy.signUpButton}
-            </button>
-            <p>
-              <button type="button" className="linkish" onClick={() => { setStep('email'); setError(null) }}>
-                Use a different email
-              </button>
-            </p>
-          </form>
         </>
       )}
     </AuthFrame>

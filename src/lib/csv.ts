@@ -209,6 +209,42 @@ export function downloadCsv(filename: string, header: string[], lines: Array<Arr
   URL.revokeObjectURL(url)
 }
 
+export type CsvImeiRow = {
+  imei: string
+  unlockCode: string
+  model?: string
+  box?: string
+  line: number
+}
+
+/** Admin upload: imei + unlockCode required; model/box optional. */
+export function parseImeiCsv(text: string): { rows: CsvImeiRow[]; error?: string } {
+  const table = parseCsv(text)
+  if (!table.length) return { rows: [], error: 'That file is empty.' }
+  const head = table[0].map(headerKey)
+  const imeiIx = head.findIndex((h) => ['imei', 'imeinumber', 'serial', 'deviceimei'].includes(h))
+  const codeIx = head.findIndex((h) =>
+    ['unlockcode', 'unlock', 'code', 'nck', 'networkcode', 'simunlock'].includes(h),
+  )
+  const modelIx = head.findIndex((h) => ['model', 'devicemodel', 'sku'].includes(h))
+  const boxIx = head.findIndex((h) => ['box', 'boxid', 'carton', 'cartonid'].includes(h))
+  if (imeiIx < 0 || codeIx < 0) {
+    return { rows: [], error: 'Header must include imei and unlockCode (or unlock / code).' }
+  }
+  const rows: CsvImeiRow[] = []
+  table.slice(1).forEach((cols, i) => {
+    const imei = (cols[imeiIx] || '').replace(/[\s-]/g, '').trim()
+    const unlockCode = (cols[codeIx] || '').trim()
+    if (!imei && !unlockCode) return
+    const row: CsvImeiRow = { imei, unlockCode, line: i + 2 }
+    if (modelIx >= 0 && cols[modelIx]?.trim()) row.model = cols[modelIx].trim()
+    if (boxIx >= 0 && cols[boxIx]?.trim()) row.box = cols[boxIx].trim()
+    rows.push(row)
+  })
+  if (!rows.length) return { rows: [], error: 'No data rows found.' }
+  return { rows }
+}
+
 export function stockLeft(qty: number, inCart: number) {
   return Math.max(0, qty - inCart)
 }

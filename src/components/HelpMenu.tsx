@@ -4,10 +4,12 @@ import { NavLink, useLocation } from 'react-router-dom'
 export function HelpMenu({
   onNavigate,
   onOpen,
+  onClose,
   closeWhen,
 }: {
   onNavigate?: () => void
   onOpen?: () => void
+  onClose?: () => void
   /** When true, force the help panel closed (e.g. notifications opened). */
   closeWhen?: boolean
 }) {
@@ -20,29 +22,35 @@ export function HelpMenu({
   }, [closeWhen])
 
   return (
-    <div className={`help-menu ${open ? 'open' : ''}`}>
+    <div className={`help-menu gd-util ${open ? 'open' : ''}`}>
       <button
         type="button"
-        className={`notice-bell help-bell ${helpOn ? 'active' : ''}`}
+        className={`gd-util-btn ${helpOn || open ? 'active' : ''}`}
         aria-label="Help"
         aria-expanded={open}
         title="Help"
         onClick={(e) => {
           e.stopPropagation()
-          setOpen((v) => {
-            const next = !v
-            if (next) onOpen?.()
-            return next
-          })
+          if (open) {
+            setOpen(false)
+            onClose?.()
+          } else {
+            setOpen(true)
+            onOpen?.()
+          }
         }}
       >
-        ?
+        Help
+        <span className="gd-chevron" aria-hidden>
+          ▾
+        </span>
       </button>
       {open ? (
         <div
-          className="help-menu-panel"
+          className="help-menu-panel gd-util-panel"
           onClick={() => {
             setOpen(false)
+            onClose?.()
             onNavigate?.()
           }}
         >

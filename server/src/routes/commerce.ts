@@ -1,9 +1,10 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { requireStaff, requireUser, type AuthedEnv } from '../auth'
+import { requireStaff, requireUser, requireWholesale, type AuthedEnv } from '../auth'
 import { feeForMarketplace, withFee } from '../feeConfig'
 import { myPcs } from '../allocate'
 import { prisma } from '../db'
+import { mapLotRow } from '../lotDto'
 import {
   mapBid,
   mapCartItem,
@@ -13,35 +14,69 @@ import {
   mapWatch,
   mapNotice,
 } from '../map'
+import { cacheSet } from '../cache'
+import { getIdempotentJson, setIdempotentJson } from '../idempotency'
+import { trackBid } from '../metrics'
 import { notify, notifyStaff } from '../notify'
+import { rateLimitOrRetryAfter } from '../rateLimit'
+import { broadcastLotTick } from '../realtime'
 
 export const commerceRoutes = new Hono<AuthedEnv>()
+
+const BOOT_LOT_CAP = 800
+const BOOT_BID_CAP = 4000
+const PAGE_MAX = 200
+
+function clampLimit(raw: string | undefined, fallback: number) {
+  const n = Number(raw)
+  if (!Number.isFinite(n) || n < 1) return fallback
+  return Math.min(PAGE_MAX, Math.floor(n))
+}
+
+/** Active desk lots: open auctions + marketplace listings. */
+function activeLotWhere(now: bigint) {
+  return {
+    OR: [{ channel: 'marketplace' as const }, { channel: 'auction' as const, endsAt: { gt: now } }],
+  }
+}
 
 commerceRoutes.get('/bootstrap', requireUser, async (c) => {
   const user = c.get('user')
   const staff = user.role === 'admin' || user.role === 'superadmin'
-  const [lots, bids, cartItems, cartOrders, offers, invoices, watch, notices, accounts, inventory] =
+  const wholesaleOk = staff || user.wholesaleStatus === 'approved'
+  const now = BigInt(Date.now())
+
+  const [lots, lotsTotal, cartItems, cartOrders, offers, invoices, watch, notices, accounts, inventory] =
     await Promise.all([
-      prisma.lot.findMany({ orderBy: { id: 'asc' } }),
-      prisma.bid.findMany({ orderBy: { at: 'desc' } }),
+      wholesaleOk
+        ? prisma.lot.findMany({
+            where: activeLotWhere(now),
+            orderBy: [{ endsAt: 'asc' }, { id: 'asc' }],
+            take: BOOT_LOT_CAP,
+          })
+        : Promise.resolve([]),
+      wholesaleOk ? prisma.lot.count({ where: activeLotWhere(now) }) : Promise.resolve(0),
       prisma.cartItem.findMany({ where: { accountId: user.accountId } }),
       staff
-        ? prisma.cartOrder.findMany({ orderBy: { createdAt: 'desc' } })
+        ? prisma.cartOrder.findMany({ orderBy: { createdAt: 'desc' }, take: 200 })
         : prisma.cartOrder.findMany({
             where: { accountId: user.accountId },
             orderBy: { createdAt: 'desc' },
+            take: 100,
           }),
       staff
-        ? prisma.marketOffer.findMany({ orderBy: { createdAt: 'desc' } })
+        ? prisma.marketOffer.findMany({ orderBy: { createdAt: 'desc' }, take: 200 })
         : prisma.marketOffer.findMany({
             where: { accountId: user.accountId },
             orderBy: { createdAt: 'desc' },
+            take: 100,
           }),
       staff
-        ? prisma.invoice.findMany({ orderBy: { createdAt: 'desc' } })
+        ? prisma.invoice.findMany({ orderBy: { createdAt: 'desc' }, take: 200 })
         : prisma.invoice.findMany({
             where: { accountId: user.accountId },
             orderBy: { createdAt: 'desc' },
+            take: 100,
           }),
       prisma.watchItem.findMany({ where: { accountId: user.accountId } }),
       prisma.notice.findMany({
@@ -49,36 +84,31 @@ commerceRoutes.get('/bootstrap', requireUser, async (c) => {
         orderBy: { at: 'desc' },
         take: 100,
       }),
-      staff ? prisma.account.findMany({ orderBy: { accountId: 'asc' } }) : Promise.resolve([]),
-      staff ? prisma.inventorySku.findMany({ orderBy: { id: 'asc' } }) : Promise.resolve([]),
+      staff ? prisma.account.findMany({ orderBy: { accountId: 'asc' }, take: 500 }) : Promise.resolve([]),
+      staff ? prisma.inventorySku.findMany({ orderBy: { id: 'asc' }, take: 2000 }) : Promise.resolve([]),
     ])
 
+  const lotIds = lots.map((l) => l.id)
+  const [bids, bidsTotal] = wholesaleOk
+    ? await Promise.all([
+        lotIds.length
+          ? prisma.bid.findMany({
+              where: { lotId: { in: lotIds } },
+              orderBy: { at: 'desc' },
+              take: BOOT_BID_CAP,
+            })
+          : Promise.resolve([]),
+        lotIds.length
+          ? prisma.bid.count({ where: { lotId: { in: lotIds } } })
+          : Promise.resolve(0),
+      ])
+    : [[], 0]
+
+  const lotsNextCursor =
+    lots.length === BOOT_LOT_CAP && lotsTotal > lots.length ? lots[lots.length - 1]?.id : null
+
   return c.json({
-    lots: lots.map((l) => ({
-      id: l.id,
-      channel: l.channel,
-      auctionType: l.auctionType || undefined,
-      manufacturer: l.manufacturer,
-      model: l.model,
-      modelNumber: l.modelNumber,
-      capacity: l.capacity,
-      color: l.color,
-      grade: l.grade,
-      battery: l.battery,
-      qty: l.qty,
-      moq: l.moq ?? undefined,
-      startPrice: l.startPrice,
-      currentPrice: l.currentPrice,
-      buyNowPrice: l.buyNowPrice ?? undefined,
-      bidCount: l.bidCount,
-      endsAt: Number(l.endsAt),
-      description: l.description,
-      accent: l.accent,
-      operator: l.operator ?? undefined,
-      simLocked: l.simLocked ?? undefined,
-      activationLocked: l.activationLocked ?? undefined,
-      origin: l.origin ?? undefined,
-    })),
+    lots: lots.map(mapLotRow),
     bids: bids.map(mapBid),
     cart: cartItems.map(mapCartItem),
     cartOrders: cartOrders.map(mapCartOrder),
@@ -90,11 +120,15 @@ commerceRoutes.get('/bootstrap', requireUser, async (c) => {
       accountId: a.accountId,
       company: a.company,
       email: a.email,
+      firstName: a.firstName || undefined,
+      lastName: a.lastName || undefined,
       address: a.address ?? undefined,
       phone: a.phone ?? undefined,
       buyerNumber: a.buyerNumber ?? undefined,
       role: a.role,
       status: a.status,
+      emailVerified: a.emailVerified,
+      wholesaleStatus: a.wholesaleStatus,
       password: '', // client shape compat; never real hash
     })),
     inventory: inventory.map((s) => ({
@@ -114,91 +148,247 @@ commerceRoutes.get('/bootstrap', requireUser, async (c) => {
       defaultMoq: s.defaultMoq ?? undefined,
       lastPrice: s.lastPrice ?? undefined,
     })),
+    meta: {
+      lotsTotal,
+      lotsReturned: lots.length,
+      lotsHasMore: lotsTotal > lots.length,
+      lotsNextCursor,
+      bidsTotal,
+      bidsReturned: bids.length,
+      bidsHasMore: bidsTotal > bids.length,
+    },
   })
 })
 
-commerceRoutes.post('/bids', requireUser, async (c) => {
+/** Paginated active lots (cursor = last lot id). */
+commerceRoutes.get('/lots', requireUser, requireWholesale, async (c) => {
+  const limit = clampLimit(c.req.query('limit'), 100)
+  const cursor = c.req.query('cursor')?.trim() || null
+  const now = BigInt(Date.now())
+  const rows = await prisma.lot.findMany({
+    where: activeLotWhere(now),
+    orderBy: [{ endsAt: 'asc' }, { id: 'asc' }],
+    take: limit + 1,
+    ...(cursor
+      ? {
+          cursor: { id: cursor },
+          skip: 1,
+        }
+      : {}),
+  })
+  const hasMore = rows.length > limit
+  const page = hasMore ? rows.slice(0, limit) : rows
+  return c.json({
+    lots: page.map(mapLotRow),
+    nextCursor: hasMore ? page[page.length - 1]?.id ?? null : null,
+  })
+})
+
+/** Paginated bids for one lot or recent desk-wide. */
+commerceRoutes.get('/bids', requireUser, requireWholesale, async (c) => {
+  const limit = clampLimit(c.req.query('limit'), 100)
+  const cursor = c.req.query('cursor')?.trim() || null
+  const lotId = c.req.query('lotId')?.trim()
+  const rows = await prisma.bid.findMany({
+    where: lotId ? { lotId } : undefined,
+    orderBy: [{ at: 'desc' }, { id: 'desc' }],
+    take: limit + 1,
+    ...(cursor
+      ? {
+          cursor: { id: cursor },
+          skip: 1,
+        }
+      : {}),
+  })
+  const hasMore = rows.length > limit
+  const page = hasMore ? rows.slice(0, limit) : rows
+  return c.json({
+    bids: page.map(mapBid),
+    nextCursor: hasMore ? page[page.length - 1]?.id ?? null : null,
+  })
+})
+
+commerceRoutes.post('/bids', requireUser, requireWholesale, async (c) => {
   const user = c.get('user')
   const body = z
     .object({
       lotId: z.string(),
       amount: z.number().positive(),
       qty: z.number().int().positive(),
+      idempotencyKey: z.string().min(8).max(80).optional(),
     })
     .safeParse(await c.req.json().catch(() => ({})))
   if (!body.success) return c.json({ error: 'Invalid bid.' }, 400)
 
-  const lot = await prisma.lot.findUnique({ where: { id: body.data.lotId } })
-  if (!lot || lot.channel !== 'auction') return c.json({ error: 'Lot not found.' }, 404)
-  if (Number(lot.endsAt) <= Date.now()) return c.json({ error: 'Auction closed.' }, 400)
-  if (body.data.qty > lot.qty) return c.json({ error: 'Qty exceeds available.' }, 400)
-  if (lot.moq && body.data.qty < lot.moq) return c.json({ error: `MOQ is ${lot.moq}.` }, 400)
-  if (body.data.amount < lot.currentPrice) {
-    return c.json({ error: `Bid must be at least ${lot.currentPrice}.` }, 400)
+  const idemKey =
+    body.data.idempotencyKey?.trim() ||
+    c.req.header('Idempotency-Key')?.trim() ||
+    ''
+  if (idemKey) {
+    const cached = await getIdempotentJson<{ bid: unknown; lot?: unknown }>('bid', `${user.accountId}:${idemKey}`)
+    if (cached) return c.json(cached)
   }
 
-  const priorBids = await prisma.bid.findMany({ where: { lotId: lot.id } })
-  const priorRows = priorBids.map((b) => ({
-    lotId: b.lotId,
-    accountId: b.accountId,
-    amount: b.amount,
-    qty: b.qty,
-    at: Number(b.at),
-  }))
-  const priorFill = new Map<string, number>()
-  for (const accountId of new Set(priorRows.map((b) => b.accountId))) {
-    priorFill.set(accountId, myPcs({ id: lot.id, qty: lot.qty }, priorRows, accountId))
+  const retryAfter = await rateLimitOrRetryAfter(`bid:${user.accountId}`, 40, 60)
+  if (retryAfter != null) {
+    trackBid(false)
+    c.header('Retry-After', String(retryAfter))
+    return c.json({ error: 'Too many bids. Slow down and try again.' }, 429)
   }
 
-  const at = BigInt(Date.now())
-  const [bid] = await prisma.$transaction([
-    prisma.bid.create({
-      data: {
-        lotId: lot.id,
-        accountId: user.accountId,
-        amount: body.data.amount,
-        qty: body.data.qty,
-        at,
-      },
-    }),
-    prisma.lot.update({
-      where: { id: lot.id },
-      data: {
-        currentPrice: Math.max(lot.currentPrice, body.data.amount),
-        bidCount: { increment: 1 },
-      },
-    }),
-  ])
+  type BidRow = {
+    lotId: string
+    accountId: string
+    amount: number
+    qty: number
+    at: number
+  }
+  type LotMeta = {
+    id: string
+    qty: number
+    manufacturer: string
+    model: string
+    auctionType: string | null
+    currentPrice: number
+    bidCount: number
+  }
 
+  let priorFill = new Map<string, number>()
+  let priorRows: BidRow[] = []
+
+  let result: { bid: Awaited<ReturnType<typeof prisma.bid.create>>; lotMeta: LotMeta }
+  try {
+    result = await prisma.$transaction(async (tx) => {
+      const lot = await tx.lot.findUnique({ where: { id: body.data.lotId } })
+      if (!lot || lot.channel !== 'auction') throw new Error('LOT_NOT_FOUND')
+      if (Number(lot.endsAt) <= Date.now()) throw new Error('AUCTION_CLOSED')
+      if (body.data.qty > lot.qty) throw new Error('QTY')
+      if (lot.moq && body.data.qty < lot.moq) throw new Error(`MOQ:${lot.moq}`)
+      if (body.data.amount < lot.currentPrice) throw new Error(`MIN:${lot.currentPrice}`)
+
+      const priorBids = await tx.bid.findMany({ where: { lotId: lot.id } })
+      priorRows = priorBids.map((b) => ({
+        lotId: b.lotId,
+        accountId: b.accountId,
+        amount: b.amount,
+        qty: b.qty,
+        at: Number(b.at),
+      }))
+      priorFill = new Map<string, number>()
+      for (const accountId of new Set(priorRows.map((b) => b.accountId))) {
+        priorFill.set(accountId, myPcs({ id: lot.id, qty: lot.qty }, priorRows, accountId))
+      }
+
+      const at = BigInt(Date.now())
+      const created = await tx.bid.create({
+        data: {
+          lotId: lot.id,
+          accountId: user.accountId,
+          amount: body.data.amount,
+          qty: body.data.qty,
+          at,
+        },
+      })
+      const nextPrice = Math.max(lot.currentPrice, body.data.amount)
+      const updated = await tx.lot.update({
+        where: { id: lot.id },
+        data: {
+          currentPrice: nextPrice,
+          bidCount: { increment: 1 },
+        },
+      })
+      return {
+        bid: created,
+        lotMeta: {
+          id: lot.id,
+          qty: lot.qty,
+          manufacturer: lot.manufacturer,
+          model: lot.model,
+          auctionType: lot.auctionType,
+          currentPrice: updated.currentPrice,
+          bidCount: updated.bidCount,
+        },
+      }
+    })
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : ''
+    if (
+      msg === 'LOT_NOT_FOUND' ||
+      msg === 'AUCTION_CLOSED' ||
+      msg === 'QTY' ||
+      msg.startsWith('MOQ:') ||
+      msg.startsWith('MIN:')
+    ) {
+      trackBid(false)
+    }
+    if (msg === 'LOT_NOT_FOUND') return c.json({ error: 'Lot not found.' }, 404)
+    if (msg === 'AUCTION_CLOSED') return c.json({ error: 'Auction closed.' }, 400)
+    if (msg === 'QTY') return c.json({ error: 'Qty exceeds available.' }, 400)
+    if (msg.startsWith('MOQ:')) return c.json({ error: `MOQ is ${msg.slice(4)}.` }, 400)
+    if (msg.startsWith('MIN:')) return c.json({ error: `Bid must be at least ${msg.slice(4)}.` }, 400)
+    throw e
+  }
+
+  const { bid, lotMeta } = result
+  const mappedBid = mapBid(bid)
+  const at = Number(bid.at)
   const afterBids = [
     ...priorRows,
     {
-      lotId: lot.id,
+      lotId: lotMeta.id,
       accountId: user.accountId,
       amount: body.data.amount,
       qty: body.data.qty,
-      at: Number(at),
+      at,
     },
   ]
   for (const [accountId, before] of priorFill) {
     if (accountId === user.accountId) continue
     if (before <= 0) continue
-    const after = myPcs({ id: lot.id, qty: lot.qty }, afterBids, accountId)
+    const after = myPcs({ id: lotMeta.id, qty: lotMeta.qty }, afterBids, accountId)
     if (after > 0) continue
     await notify({
-      id: `N-OUTBID-${lot.id}-${accountId}-${Number(at)}`,
+      id: `N-OUTBID-${lotMeta.id}-${accountId}-${at}`,
       accountId,
       kind: 'outbid',
       title: 'You were outbid',
-      body: `${lot.manufacturer} ${lot.model} — raise price or qty to get units`,
-      href: `/auctions#${lot.auctionType || 'live'}`,
+      body: `${lotMeta.manufacturer} ${lotMeta.model} — raise price or qty to get units`,
+      href: `/auctions#${lotMeta.auctionType || 'live'}`,
     })
   }
 
-  return c.json({ bid: mapBid(bid) })
+  void cacheSet(
+    `lot:hot:${lotMeta.id}`,
+    JSON.stringify({
+      currentPrice: lotMeta.currentPrice,
+      bidCount: lotMeta.bidCount,
+      at: Date.now(),
+    }),
+    120,
+  )
+
+  broadcastLotTick({
+    type: 'lot.tick',
+    lotId: lotMeta.id,
+    currentPrice: lotMeta.currentPrice,
+    bidCount: lotMeta.bidCount,
+    bid: mappedBid,
+  })
+
+  const payload = {
+    bid: mappedBid,
+    lot: {
+      id: lotMeta.id,
+      currentPrice: lotMeta.currentPrice,
+      bidCount: lotMeta.bidCount,
+    },
+  }
+  if (idemKey) await setIdempotentJson('bid', `${user.accountId}:${idemKey}`, payload)
+  trackBid(true)
+  return c.json(payload)
 })
 
-commerceRoutes.post('/cart', requireUser, async (c) => {
+commerceRoutes.post('/cart', requireUser, requireWholesale, async (c) => {
   const user = c.get('user')
   const body = z
     .object({ lotId: z.string(), qty: z.number().int().positive() })
@@ -219,7 +409,7 @@ commerceRoutes.post('/cart', requireUser, async (c) => {
   return c.json({ item: mapCartItem(item) })
 })
 
-commerceRoutes.delete('/cart/:lotId', requireUser, async (c) => {
+commerceRoutes.delete('/cart/:lotId', requireUser, requireWholesale, async (c) => {
   const user = c.get('user')
   await prisma.cartItem.deleteMany({
     where: { accountId: user.accountId, lotId: c.req.param('lotId') },
@@ -227,7 +417,7 @@ commerceRoutes.delete('/cart/:lotId', requireUser, async (c) => {
   return c.json({ ok: true })
 })
 
-commerceRoutes.post('/cart/checkout', requireUser, async (c) => {
+commerceRoutes.post('/cart/checkout', requireUser, requireWholesale, async (c) => {
   const user = c.get('user')
   const items = await prisma.cartItem.findMany({ where: { accountId: user.accountId } })
   if (!items.length) return c.json({ error: 'Cart is empty.' }, 400)
@@ -390,7 +580,7 @@ commerceRoutes.post('/cart-orders/:id/confirm', requireUser, async (c) => {
   return c.json({ invoice: mapInvoice(result) })
 })
 
-commerceRoutes.post('/offers', requireUser, async (c) => {
+commerceRoutes.post('/offers', requireUser, requireWholesale, async (c) => {
   const user = c.get('user')
   const body = z
     .object({
@@ -551,7 +741,7 @@ commerceRoutes.post('/offers/:id/confirm', requireUser, async (c) => {
   }
 })
 
-commerceRoutes.post('/watch/:lotId', requireUser, async (c) => {
+commerceRoutes.post('/watch/:lotId', requireUser, requireWholesale, async (c) => {
   const user = c.get('user')
   const lotId = c.req.param('lotId') || ''
   if (!lotId) return c.json({ error: 'Lot required.' }, 400)

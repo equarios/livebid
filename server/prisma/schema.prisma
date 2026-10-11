@@ -12,11 +12,17 @@ model Account {
   passwordHash String
   company      String
   email        String
+  firstName    String   @default("")
+  lastName     String   @default("")
   address      String?
   phone        String?
   buyerNumber  String?
   role         String   @default("member")
-  status       String   @default("pending")
+  /// active | disabled | pending (legacy blocked login)
+  status       String   @default("active")
+  emailVerified Boolean @default(false)
+  /// none | submitted | needs_docs | under_review | approved | rejected
+  wholesaleStatus String @default("none")
   /// JSON: which events also send email (in-app notices always created)
   emailPrefsJson String @default("{\"win\":true,\"offer\":true,\"cart\":true,\"invoice\":true,\"payment\":true,\"shipping\":true,\"auth\":true,\"outbid\":false,\"closing\":false,\"fill\":false}")
   createdAt    DateTime @default(now())
@@ -29,6 +35,198 @@ model Account {
   watchlist    WatchItem[]
   notices      Notice[]
   passwordResets PasswordReset[]
+  emailVerifies EmailVerify[]
+  imeiPacks    ImeiPack[]
+  storeOrders  StoreOrder[]
+  wholesaleApp WholesaleApplication?
+  documents    AccountDocument[]
+  communityListings CommunityListing[]
+  communityInterests CommunityInterest[]
+}
+
+/// Member Market — verified users post goods; staff moderate / feature.
+model CommunityListing {
+  id           String   @id @default(cuid())
+  accountId    String
+  title        String
+  description  String   @default("")
+  category     String   @default("Phones")
+  manufacturer String   @default("")
+  model        String   @default("")
+  capacity     String   @default("")
+  grade        String   @default("")
+  color        String   @default("")
+  qty          Int      @default(1)
+  /// null = make offer / ask
+  price        Float?
+  currency     String   @default("USD")
+  imageUrl     String?
+  /// draft | pending | live | paused | rejected | closed
+  status       String   @default("pending")
+  featured     Boolean  @default(false)
+  staffNote    String   @default("")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  publishedAt  DateTime?
+  account      Account  @relation(fields: [accountId], references: [accountId], onDelete: Cascade)
+  interests    CommunityInterest[]
+
+  @@index([status, featured])
+  @@index([accountId])
+  @@index([category])
+}
+
+model CommunityInterest {
+  id        String   @id @default(cuid())
+  listingId String
+  accountId String
+  message   String
+  qtyWanted Int?
+  /// open | contacted | closed
+  status    String   @default("open")
+  createdAt DateTime @default(now())
+  listing   CommunityListing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  account   Account  @relation(fields: [accountId], references: [accountId], onDelete: Cascade)
+
+  @@index([listingId])
+  @@index([accountId])
+}
+
+model EmailVerify {
+  id        String   @id @default(cuid())
+  accountId String
+  code      String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  account   Account  @relation(fields: [accountId], references: [accountId], onDelete: Cascade)
+
+  @@index([accountId])
+}
+
+/// Multi-step wholesale buyer application (Jotform-style welcome pack).
+model WholesaleApplication {
+  id           String   @id @default(cuid())
+  accountId    String   @unique
+  /// draft | submitted | needs_docs | under_review | approved | rejected
+  status       String   @default("draft")
+  /// JSON blob for wizard sections
+  payloadJson  String   @default("{}")
+  staffNote    String   @default("")
+  submittedAt  DateTime?
+  reviewedAt   DateTime?
+  reviewedBy   String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  account      Account  @relation(fields: [accountId], references: [accountId], onDelete: Cascade)
+}
+
+model AccountDocument {
+  id          String   @id @default(cuid())
+  accountId   String
+  /// client_upload | staff_send
+  direction   String   @default("client_upload")
+  /// application | tax | resale | id | other | staff_form
+  category    String   @default("other")
+  title       String
+  fileName    String
+  mimeType    String   @default("application/octet-stream")
+  /// small demo files stored as base64
+  dataBase64  String
+  note        String   @default("")
+  createdBy   String
+  createdAt   DateTime @default(now())
+  account     Account  @relation(fields: [accountId], references: [accountId], onDelete: Cascade)
+
+  @@index([accountId])
+}
+
+/// Retail consumer catalog (separate from wholesale auction / marketplace lots).
+model StoreProduct {
+  id          String   @id @default(cuid())
+  title       String
+  slug        String   @unique
+  description String   @default("")
+  price       Float
+  compareAt   Float?
+  stock       Int      @default(0)
+  category    String   @default("Phones")
+  /// Cover / legacy single image.
+  imageUrl    String?
+  /// Ordered gallery URLs (JSON string[]). First is cover; synced to imageUrl.
+  images      Json     @default("[]")
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  lines       StoreOrderLine[]
+
+  @@index([active, category])
+}
+
+model StoreOrder {
+  id            String   @id
+  accountId     String?
+  email         String
+  name          String
+  phone         String?
+  address       String
+  status        String   @default("pending_payment")
+  paymentMethod String
+  paymentRef    String?
+  subtotal      Float
+  shippingFee   Float    @default(0)
+  total         Float
+  note          String?
+  createdAt     DateTime @default(now())
+  paidAt        DateTime?
+  shippedAt     DateTime?
+  account       Account? @relation(fields: [accountId], references: [accountId], onDelete: SetNull)
+  lines         StoreOrderLine[]
+
+  @@index([accountId])
+  @@index([email])
+  @@index([status])
+}
+
+model StoreOrderLine {
+  id        String  @id @default(cuid())
+  orderId   String
+  productId String?
+  title     String
+  unitPrice Float
+  qty       Int
+  order     StoreOrder    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product   StoreProduct? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@index([productId])
+}
+
+model ImeiPack {
+  id        String   @id @default(cuid())
+  title     String
+  accountId String?
+  invoiceId String?
+  note      String?
+  createdBy String
+  createdAt DateTime @default(now())
+  account   Account? @relation(fields: [accountId], references: [accountId], onDelete: SetNull)
+  devices   ImeiDevice[]
+
+  @@index([accountId])
+  @@index([invoiceId])
+}
+
+model ImeiDevice {
+  id         String  @id @default(cuid())
+  packId     String
+  imei       String
+  unlockCode String
+  model      String?
+  box        String?
+  pack       ImeiPack @relation(fields: [packId], references: [id], onDelete: Cascade)
+
+  @@unique([packId, imei])
+  @@index([imei])
 }
 
 model PasswordReset {
@@ -49,6 +247,9 @@ model Session {
   account   Account  @relation(fields: [accountId], references: [accountId], onDelete: Cascade)
   expiresAt DateTime
   createdAt DateTime @default(now())
+
+  @@index([accountId])
+  @@index([expiresAt])
 }
 
 model Lot {
@@ -78,6 +279,10 @@ model Lot {
   bids             Bid[]
   cartItems        CartItem[]
   offers           MarketOffer[]
+
+  @@index([channel, endsAt])
+  @@index([auctionType])
+  @@index([endsAt])
 }
 
 model InventorySku {
@@ -110,6 +315,8 @@ model Bid {
 
   @@index([lotId])
   @@index([accountId])
+  @@index([lotId, at])
+  @@index([at])
 }
 
 model CartItem {
@@ -191,9 +398,61 @@ model Notice {
   account   Account @relation(fields: [accountId], references: [accountId], onDelete: Cascade)
 
   @@index([accountId])
+  @@index([accountId, at])
 }
 
 model AppMeta {
   key   String @id
   value String
+}
+
+/// Marketing / CRM contacts (separate from login accounts). Synced to Brevo lists.
+model MarketingClient {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  firstName     String   @default("")
+  lastName      String   @default("")
+  company       String   @default("")
+  phone         String   @default("")
+  /// comma-separated tags
+  tags          String   @default("")
+  /// subscribed | unsubscribed | bounced | complained
+  status        String   @default("subscribed")
+  consentAt     DateTime?
+  source        String   @default("manual")
+  accountId     String?
+  brevoId       String?
+  lastSyncedAt  DateTime?
+  note          String   @default("")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([status])
+  @@index([tags])
+}
+
+/// Outbound marketing campaigns sent via Brevo.
+model EmailCampaign {
+  id              String   @id @default(cuid())
+  name            String
+  subject         String
+  previewText     String   @default("")
+  htmlBody        String
+  textBody        String   @default("")
+  /// all_subscribed | tag:<name> | status:subscribed
+  audience        String   @default("all_subscribed")
+  /// draft | syncing | ready | sending | sent | failed | simulated
+  status          String   @default("draft")
+  brevoCampaignId String?
+  brevoListId     String?
+  errorMessage    String   @default("")
+  /// JSON snapshot of Brevo stats
+  statsJson       String   @default("{}")
+  recipientCount  Int      @default(0)
+  createdBy       String
+  sentAt          DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([status])
 }

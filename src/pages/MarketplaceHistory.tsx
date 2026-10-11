@@ -6,7 +6,7 @@ import { InvoicePreview } from '../components/InvoicePreview'
 import { ItemLink } from '../components/ItemLink'
 import { OfferDesk } from '../components/OfferDesk'
 import { downloadCsv } from '../lib/csv'
-import { formatDateTime, usd, usdAmt } from '../lib/format'
+import { formatDateTime, usd, usdAmt, usdCents } from '../lib/format'
 import {
   catalogFeePct,
   invoicePill,
@@ -108,17 +108,13 @@ export function MarketplaceHistory() {
 
   return (
     <div className="market-history-page">
-      <section id="cart" className="cart-panel card">
+      <section id="cart" className="cart-panel">
         <div className="cart-panel-head">
           <h2>
             {settings.copy.cartTitle}
             {cartRows.length ? <em>{cartRows.length}</em> : null}
           </h2>
         </div>
-        <p className="muted tiny">
-          Add items on Marketplace, then send for admin availability review. After accept, confirm to
-          create an invoice.
-        </p>
         {!cartRows.length ? (
           <p className="muted">{settings.copy.emptyCart}</p>
         ) : (
@@ -184,10 +180,10 @@ export function MarketplaceHistory() {
             </div>
             <div className="cart-foot">
               <div className="cart-foot-sum">
-                <strong>Est. total {usd(cartQuote.total)}</strong>
+                <strong>Est. total {usdCents(cartQuote.total)}</strong>
                 {cartQuote.feePct > 0 ? (
                   <span className="muted tiny">
-                    Goods {usd(cartQuote.goods)} · Fee {cartQuote.feePct}% {usd(cartQuote.fee)}
+                    Goods {usdCents(cartQuote.goods)} · Fee {cartQuote.feePct}% {usdCents(cartQuote.fee)}
                   </span>
                 ) : null}
               </div>
@@ -230,23 +226,23 @@ export function MarketplaceHistory() {
             </div>
             <div>
               <dt>Goods</dt>
-              <dd>{usd(cartQuote.goods)}</dd>
+              <dd>{usdCents(cartQuote.goods)}</dd>
             </div>
             {cartQuote.feePct > 0 ? (
               <div>
                 <dt>Fee {cartQuote.feePct}%</dt>
-                <dd>{usd(cartQuote.fee)}</dd>
+                <dd>{usdCents(cartQuote.fee)}</dd>
               </div>
             ) : null}
             <div>
               <dt>Est. total</dt>
-              <dd>{usd(cartQuote.total)}</dd>
+              <dd>{usdCents(cartQuote.total)}</dd>
             </div>
           </div>
         </ConfirmDialog>
       ) : null}
 
-      <section id="offers" className="cart-panel card">
+      <section id="offers" className="cart-panel">
         <div className="cart-panel-head">
           <h2>
             Offers
@@ -256,7 +252,7 @@ export function MarketplaceHistory() {
         <OfferDesk staff={isStaff} />
       </section>
 
-      <section id="orders" className="cart-panel card">
+      <section id="orders" className="cart-panel">
         <div className="cart-panel-head market-history-head">
           <h2>
             Orders

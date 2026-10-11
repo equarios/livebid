@@ -1,8 +1,12 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { CartDesk } from '../components/CartDesk'
+import { ImeiDesk } from '../components/ImeiDesk'
 import { InventoryDesk } from '../components/InventoryDesk'
 import { InvoiceDesk } from '../components/InvoiceDesk'
+import { StoreDesk } from '../components/StoreDesk'
+import { ClientsDesk } from '../components/ClientsDesk'
+import { WholesaleReviewDesk } from '../components/WholesaleReviewDesk'
 import { ItemLink } from '../components/ItemLink'
 import { OfferDesk } from '../components/OfferDesk'
 import { OpsShell, type OpsSection } from '../components/OpsShell'
@@ -15,7 +19,16 @@ import { opsQueueCounts } from '../lib/opsQueues'
 import { useNow, useStore } from '../store'
 import type { AuctionType, Channel, Grade, Lot } from '../types'
 
-const ADMIN_SECTIONS = new Set(['today', 'catalog', 'commerce', 'money'])
+const ADMIN_SECTIONS = new Set([
+  'today',
+  'catalog',
+  'commerce',
+  'money',
+  'imei',
+  'store',
+  'buyers',
+  'clients',
+])
 const CATALOG_DESKS = new Set(['inventory', 'lots'])
 const COMMERCE_DESKS = new Set(['carts', 'offers', 'bids'])
 
@@ -122,7 +135,13 @@ export function Admin() {
   const sectionParam = params.get('section') || ''
   const deskParam = params.get('desk') || ''
   const defaultSection = queues.commerce || queues.money ? 'today' : 'catalog'
-  const section = ADMIN_SECTIONS.has(sectionParam) ? sectionParam : defaultSection
+  // Legacy Catalog → IMEI sub-desk → top-level IMEI section
+  const section =
+    sectionParam === 'catalog' && deskParam === 'imei'
+      ? 'imei'
+      : ADMIN_SECTIONS.has(sectionParam)
+        ? sectionParam
+        : defaultSection
   const desk =
     section === 'catalog'
       ? CATALOG_DESKS.has(deskParam)
@@ -277,6 +296,10 @@ export function Admin() {
         ],
       },
       { id: 'money', label: 'Money', count: queues.money || undefined },
+      { id: 'imei', label: 'IMEI' },
+      { id: 'store', label: 'Store' },
+      { id: 'buyers', label: 'Buyers' },
+      { id: 'clients', label: 'Clients' },
     ],
     [queues, waitingSuper, live.length],
   )
@@ -304,7 +327,7 @@ export function Admin() {
   return (
     <OpsShell
       title="Admin"
-      blurb="Do the work: catalog, commerce reviews, and first payment stamp. Super handles final confirms and site settings."
+      blurb="Catalog, commerce reviews, buyers, clients email, and first payment stamps. Super handles final confirms and site settings."
       sections={sections}
       section={section}
       desk={desk}
@@ -381,6 +404,10 @@ export function Admin() {
       ) : null}
 
       {section === 'catalog' && desk === 'inventory' ? <InventoryDesk /> : null}
+      {section === 'imei' ? <ImeiDesk /> : null}
+      {section === 'store' ? <StoreDesk /> : null}
+      {section === 'buyers' ? <WholesaleReviewDesk /> : null}
+      {section === 'clients' ? <ClientsDesk /> : null}
 
       {section === 'catalog' && desk === 'lots' ? (
         <>

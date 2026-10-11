@@ -9,8 +9,36 @@ export type SessionUser = {
   accountId: string
   company: string
   email: string
+  firstName: string
+  lastName: string
   role: 'superadmin' | 'admin' | 'member'
   status: 'pending' | 'active' | 'disabled'
+  emailVerified: boolean
+  wholesaleStatus: 'none' | 'submitted' | 'needs_docs' | 'under_review' | 'approved' | 'rejected'
+}
+
+export function toSessionUser(a: {
+  accountId: string
+  company: string
+  email: string
+  firstName?: string | null
+  lastName?: string | null
+  role: string
+  status: string
+  emailVerified?: boolean | null
+  wholesaleStatus?: string | null
+}): SessionUser {
+  return {
+    accountId: a.accountId,
+    company: a.company,
+    email: a.email,
+    firstName: a.firstName || '',
+    lastName: a.lastName || '',
+    role: a.role as SessionUser['role'],
+    status: a.status as SessionUser['status'],
+    emailVerified: Boolean(a.emailVerified),
+    wholesaleStatus: (a.wholesaleStatus || 'none') as SessionUser['wholesaleStatus'],
+  }
 }
 
 export function hashPassword(password: string, salt = randomBytes(16).toString('hex')) {
@@ -49,13 +77,7 @@ export async function userFromToken(token: string | undefined): Promise<SessionU
   }
   const a = session.account
   if (a.status === 'disabled') return null
-  return {
-    accountId: a.accountId,
-    company: a.company,
-    email: a.email,
-    role: a.role as SessionUser['role'],
-    status: a.status as SessionUser['status'],
-  }
+  return toSessionUser(a)
 }
 
 export function setSessionCookie(c: Context, token: string, expiresAt: Date) {
@@ -86,6 +108,19 @@ export async function requireStaff(c: Context<AuthedEnv>, next: Next) {
   const user = c.get('user')
   if (user.role !== 'admin' && user.role !== 'superadmin') {
     return c.json({ error: 'Staff only.' }, 403)
+  }
+  await next()
+}
+
+/** Wholesale auctions / marketplace — staff or approved buyers. */
+export async function requireWholesale(c: Context<AuthedEnv>, next: Next) {
+  const user = c.get('user')
+  if (user.role === 'admin' || user.role === 'superadmin') {
+    await next()
+    return
+  }
+  if (user.wholesaleStatus !== 'approved') {
+    return c.json({ error: 'Wholesale approval required. Apply from My Page.' }, 403)
   }
   await next()
 }

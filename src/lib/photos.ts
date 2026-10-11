@@ -21,9 +21,9 @@ const SETS: Record<string, string[]> = {
     'photo-1511707171634-5f897ff02aa9',
   ],
   'iphone 13': [
-    'photo-1632661674596-79ae5b9262e8',
     'photo-1601784551446-20c9e07cdbdb',
     'photo-1580910051074-3eb694886505',
+    'photo-1511707171634-5f897ff02aa9',
   ],
   'iphone 12': [
     'photo-1605236453806-6ff0755d8b7a',

@@ -60,7 +60,8 @@ export function writeFees(next: FeeConfig) {
 
 export function feeForAuctionType(slug: string) {
   const f = readFees()
-  const key = slug || 'live'
+  let key = slug || 'live'
+  if (key === 'sealed' || key === 'hybrid') key = 'offline'
   if (Object.prototype.hasOwnProperty.call(f.auctionTypeFees, key)) {
     return clampPct(f.auctionTypeFees[key], 0)
   }

@@ -92,7 +92,7 @@ export function invoiceDocHtml(
     addr: string,
     extras?: { email?: string; phone?: string; attn?: string; buyerNo?: string },
   ) =>
-    `<div class="inv-party">
+    `<div class="inv-party inv-panel">
       <div class="inv-party-lab">${esc(label)}</div>
       <div class="inv-party-name">${esc(name || '—')}</div>
       ${extras?.attn?.trim() ? `<div class="inv-party-attn">Attn: ${esc(extras.attn.trim())}</div>` : ''}
@@ -124,18 +124,21 @@ export function invoiceDocHtml(
     -webkit-font-smoothing: antialiased;
   }
   .inv-doc { width: 100%; max-width: 186mm; margin: 0 auto; color: #1a2330; }
+  .inv-panel {
+    padding: 10px 12px;
+    border: 1px solid #d5dbe3;
+    border-radius: 4px;
+    background: #f7f9fb;
+    min-width: 0;
+  }
   .inv-top {
     display: grid;
-    grid-template-columns: minmax(0, 1.4fr) minmax(168px, 0.85fr);
-    gap: 16px 24px;
-    align-items: start;
-    padding-bottom: 14px;
-    border-bottom: 2px solid #1a2330;
-    margin-bottom: 14px;
+    grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+    gap: 12px;
+    align-items: stretch;
+    margin-bottom: 12px;
   }
   .inv-brand {
-    min-width: 0;
-    max-width: 100%;
     display: flex;
     flex-direction: column;
     align-items: stretch;
@@ -182,10 +185,10 @@ export function invoiceDocHtml(
   }
   .inv-cbit { white-space: nowrap; }
   .inv-clab { color: #7a8490; font-weight: 600; margin-right: 3px; }
-  .inv-meta { min-width: 0; width: 100%; }
+  .inv-meta { width: 100%; }
   .inv-title {
-    font-size: 22px; font-weight: 750; letter-spacing: 0.06em;
-    text-transform: uppercase; margin: 0 0 10px; text-align: right;
+    font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em;
+    text-transform: uppercase; color: #6a7380; margin: 0 0 8px;
   }
   .inv-meta-grid {
     display: grid;
@@ -204,14 +207,7 @@ export function invoiceDocHtml(
     margin: 14px 0 0;
     align-items: stretch;
   }
-  .inv-pay, .inv-terms {
-    padding: 10px 12px;
-    border: 1px solid #d5dbe3;
-    border-radius: 4px;
-    background: #f7f9fb;
-    min-width: 0;
-  }
-  .inv-pay-lab, .inv-terms-lab {
+  .inv-pay-lab, .inv-terms-lab, .inv-party-lab {
     font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em;
     text-transform: uppercase; color: #6a7380; margin: 0 0 6px;
   }
@@ -293,15 +289,9 @@ export function invoiceDocHtml(
   .inv-parties {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    gap: 16px 20px;
+    gap: 12px;
     margin: 0 0 14px;
-    padding: 12px 0;
-    border-bottom: 1px solid #d5dbe3;
-  }
-  .inv-party { min-width: 0; }
-  .inv-party-lab {
-    font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em;
-    text-transform: uppercase; color: #6a7380; margin-bottom: 4px;
+    align-items: stretch;
   }
   .inv-party-name { font-weight: 700; font-size: 12px; white-space: normal; }
   .inv-party-attn { margin-top: 2px; font-size: 10px; color: #44505e; }
@@ -347,13 +337,10 @@ export function invoiceDocHtml(
     .noprint { display: none !important; }
     body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   }
-  @media (max-width: 640px) {
-    .inv-top, .inv-parties, .inv-pay-row { grid-template-columns: 1fr; }
-    .inv-title { text-align: left; }
-  }
+  /* A4 sheet — never collapse on host viewport (preview modal can be <640px). */
 </style></head><body><div class="inv-doc">
   <div class="inv-top">
-    <div class="inv-brand">
+    <div class="inv-brand inv-panel">
       ${logo ? `<img class="inv-logo" src="${esc(logo)}" alt="${esc(profile.legalName)}">` : ''}
       <div class="inv-issuer">${esc(profile.legalName)}</div>
       <div class="inv-addr">${nl(profile.address)}</div>
@@ -363,7 +350,7 @@ export function invoiceDocHtml(
         { label: 'Web', value: profile.website },
       ])}
     </div>
-    <div class="inv-meta">
+    <div class="inv-meta inv-panel">
       <div class="inv-title">Invoice</div>
       <div class="inv-meta-grid">
         <span class="k">Date</span><span class="v">${slashDate(issued)}</span>
@@ -434,7 +421,7 @@ export function invoiceDocHtml(
   }
 
   <div class="inv-pay-row">
-    <div class="inv-pay">
+    <div class="inv-pay inv-panel">
       <div class="inv-pay-lab">Bank details</div>
       <p class="inv-pay-lead">${esc(profile.paymentLead)}</p>
       <div class="inv-pay-grid">
@@ -448,7 +435,7 @@ export function invoiceDocHtml(
       </div>
       <p class="inv-pay-note">${esc(profile.bankFeesNote)}</p>
     </div>
-    <div class="inv-terms">
+    <div class="inv-terms inv-panel">
       <div class="inv-terms-lab">Payment terms</div>
       <p class="inv-terms-body">${esc(fillInvoiceTemplate(profile.paymentAdvanceNote, tplVars))}</p>
       ${
@@ -487,6 +474,20 @@ export function invoicePreviewParts(html: string) {
   return { style, body }
 }
 
+function downloadInvoiceHtml(html: string, fileName: string) {
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = fileName.endsWith('.html') ? fileName : `${fileName}.html`
+  a.rel = 'noopener'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 30_000)
+}
+
+/** Open invoice HTML in a new tab; optionally trigger the browser print / Save-as-PDF dialog. */
 export function openInvoiceDocument(
   inv: Invoice,
   lots: Lot[] | Lot | undefined,
@@ -495,18 +496,59 @@ export function openInvoiceDocument(
   print = false,
 ) {
   const list = Array.isArray(lots) ? lots : lots ? [lots] : []
-  const win = window.open('', '_blank', 'noopener,noreferrer,width=920,height=1100')
-  if (!win) return
-  win.document.write(invoiceDocHtml(inv, list, buyer, settings))
-  win.document.close()
-  win.focus()
+  const html = invoiceDocHtml(inv, list, buyer, settings)
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+
+  // Do not pass "noopener" in windowFeatures — browsers then return null and Open/Print no-op.
+  const win = window.open(url, '_blank', 'width=920,height=1100')
+  if (!win) {
+    downloadInvoiceHtml(html, inv.id)
+    window.setTimeout(() => URL.revokeObjectURL(url), 30_000)
+    window.alert(
+      print
+        ? 'Pop-up blocked. Invoice downloaded as HTML — open the file and use Print / Save as PDF.'
+        : 'Pop-up blocked. Invoice downloaded as HTML instead.',
+    )
+    return
+  }
+
+  try {
+    win.opener = null
+  } catch {
+    /* ignore */
+  }
+
   if (print) {
-    setTimeout(() => {
+    const tryPrint = () => {
       try {
+        win.focus()
         win.print()
       } catch {
         /* ignore */
       }
-    }, 250)
+    }
+    // Blob document needs a short load before print UI is available.
+    window.setTimeout(tryPrint, 400)
+    window.setTimeout(tryPrint, 1200)
+  } else {
+    try {
+      win.focus()
+    } catch {
+      /* ignore */
+    }
   }
+
+  window.setTimeout(() => URL.revokeObjectURL(url), 120_000)
+}
+
+/** Download invoice HTML (backup when print dialog is unavailable). */
+export function saveInvoiceDocument(
+  inv: Invoice,
+  lots: Lot[] | Lot | undefined,
+  buyer: Account | undefined,
+  settings: SiteSettings,
+) {
+  const list = Array.isArray(lots) ? lots : lots ? [lots] : []
+  downloadInvoiceHtml(invoiceDocHtml(inv, list, buyer, settings), inv.id)
 }

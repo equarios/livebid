@@ -1,6 +1,8 @@
-import { prisma } from './db'
 import { allocate } from './allocate'
+import { cacheDel, cacheSetNx } from './cache'
+import { prisma } from './db'
 import { feeForAuctionType, withFee } from './feeConfig'
+import { trackCare } from './metrics'
 import { notify, notifyStaff } from './notify'
 
 const ENDING_SOON_MS = 60 * 60 * 1000 // 1 hour default
@@ -22,8 +24,12 @@ function kdpInvoiceId(nowTs: number, accountId: string, slug: string) {
 /** Create win invoices + notices for newly closed auctions. */
 export async function settleClosedAuctions() {
   const now = Date.now()
-  const lots = await prisma.lot.findMany({ where: { channel: 'auction' } })
-  const closed = lots.filter((l) => Number(l.endsAt) <= now)
+  const nowBig = BigInt(now)
+  const closed = await prisma.lot.findMany({
+    where: { channel: 'auction', endsAt: { lte: nowBig } },
+    orderBy: { endsAt: 'asc' },
+    take: 500,
+  })
   if (!closed.length) return
 
   const bids = await prisma.bid.findMany({
@@ -61,7 +67,8 @@ export async function settleClosedAuctions() {
       })
       if (existing) continue
 
-      const slug = lot.auctionType || 'live'
+      const raw = lot.auctionType || 'live'
+      const slug = raw === 'sealed' || raw === 'hybrid' ? 'offline' : raw
       const key = `${slice.accountId}::${slug}`
       const row = groups.get(key) || { accountId: slice.accountId, slug, lines: [], models: [] }
       row.lines.push({ lotId: lot.id, qty: slice.qty, unitPrice: slice.unitPrice })
@@ -121,12 +128,12 @@ export async function settleClosedAuctions() {
 export async function notifyClosingSoon() {
   const now = Date.now()
   const horizon = now + ENDING_SOON_MS
-  const lots = await prisma.lot.findMany({
-    where: { channel: 'auction' },
-  })
-  const soon = lots.filter((l) => {
-    const ends = Number(l.endsAt)
-    return ends > now && ends <= horizon
+  const soon = await prisma.lot.findMany({
+    where: {
+      channel: 'auction',
+      endsAt: { gt: BigInt(now), lte: BigInt(horizon) },
+    },
+    take: 500,
   })
   if (!soon.length) return
 
@@ -145,11 +152,18 @@ export async function notifyClosingSoon() {
   }
 }
 
+/** Settle + closing-soon. Uses a short lock so API + worker never double-run. */
 export async function runCareJobs() {
+  const locked = await cacheSetNx('lock:care', String(Date.now()), 25)
+  if (!locked) return
   try {
     await settleClosedAuctions()
     await notifyClosingSoon()
+    trackCare(true)
   } catch (err) {
+    trackCare(false)
     console.error('Care jobs failed', err)
+  } finally {
+    await cacheDel('lock:care').catch(() => undefined)
   }
 }

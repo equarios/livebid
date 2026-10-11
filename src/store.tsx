@@ -26,7 +26,8 @@ import {
   settleInvoice,
   settleInvoiceIssue,
 } from './lib/invoices'
-import { api, isApiAvailable, type ApiUser } from './lib/api'
+import { api, isApiAvailable, resetApiProbe, type ApiUser } from './lib/api'
+import { onLotTick, startRealtime, stopRealtime } from './lib/realtime'
 import { buyerCareNotices, settleClosedAuctions } from './lib/settle'
 import { checkBidPrice, checkOrderQty, lotMoq } from './lib/moq'
 import type {
@@ -79,8 +80,26 @@ type Store = {
   isSuperAdmin: boolean
   isStaff: boolean
   apiMode: boolean
-  login: (accountId: string, password: string) => Promise<string | null>
-  register: (accountId: string, company: string, email: string, password: string) => Promise<string | null>
+  /** False until first session probe finishes (avoids Guard bounce to /login). */
+  authReady: boolean
+  login: (
+    accountId: string,
+    password: string,
+  ) => Promise<
+    | string
+    | null
+    | { needsVerify: true; accountId: string; email: string; code?: string }
+  >
+  register: (
+    input: import('./types').RegisterInput,
+  ) => Promise<
+    | string
+    | { needsVerify: true; code?: string; accountId: string; email: string }
+  >
+  verifyEmail: (ident: string, code: string) => Promise<string | null>
+  resendVerifyEmail: (
+    ident: string,
+  ) => Promise<{ error: string } | { code?: string; email?: string; message?: string }>
   requestPasswordReset: (
     ident: string,
   ) => Promise<{ error: string } | { code?: string; email?: string; message?: string }>
@@ -163,8 +182,12 @@ function sessionUser(account: Account): User {
     accountId: account.accountId,
     company: account.company,
     email: account.email,
+    firstName: account.firstName,
+    lastName: account.lastName,
     role: account.role,
     status: account.status,
+    emailVerified: account.emailVerified !== false,
+    wholesaleStatus: account.wholesaleStatus ?? (account.status === 'active' ? 'approved' : 'none'),
   }
 }
 
@@ -227,17 +250,26 @@ function mergeTheme(partial?: Partial<ThemeSettings> | null): ThemeSettings {
 }
 
 function mergeBrand(partial?: Partial<SiteSettings> | null) {
-  const legacyName = !partial?.brandName || partial.brandName === 'LiveBid'
+  const raw = (partial?.brandName || '').trim()
+  const legacyName = !raw || raw === 'LiveBid' || raw === 'Equarios'
   return {
-    brandName: (legacyName ? DEFAULT_SETTINGS.brandName : partial?.brandName || DEFAULT_SETTINGS.brandName).trim(),
+    brandName: (legacyName ? DEFAULT_SETTINGS.brandName : raw).trim(),
     brandMark:
       legacyName || !partial?.brandMark || partial.brandMark === 'LB'
         ? DEFAULT_SETTINGS.brandMark
         : partial.brandMark,
-    brandLogo:
-      !partial?.brandLogo?.trim() || partial.brandLogo.includes('equarios-logo.jpg')
-        ? DEFAULT_SETTINGS.brandLogo
-        : partial.brandLogo.trim(),
+    brandLogo: (() => {
+      const logo = partial?.brandLogo?.trim() || ''
+      if (
+        !logo ||
+        logo.includes('equarios-logo.jpg') ||
+        logo === '/equarios-logo.png' ||
+        logo.startsWith('/equarios-logo.png?')
+      ) {
+        return DEFAULT_SETTINGS.brandLogo
+      }
+      return logo
+    })(),
     tagline:
       !partial?.tagline || partial.tagline === 'Wholesale auctions and marketplace'
         ? DEFAULT_SETTINGS.tagline
@@ -332,6 +364,92 @@ function mergeSettings(partial?: Partial<SiteSettings> | null): SiteSettings {
     })(),
     icons: { ...DEFAULT_SETTINGS.icons, ...partial?.icons },
     invoice: { ...DEFAULT_SETTINGS.invoice, ...partial?.invoice },
+    contact: {
+      ...DEFAULT_SETTINGS.contact,
+      ...(partial?.contact && typeof partial.contact === 'object' ? partial.contact : {}),
+      social: {
+        ...DEFAULT_SETTINGS.contact.social,
+        ...(partial?.contact?.social && typeof partial.contact.social === 'object'
+          ? partial.contact.social
+          : {}),
+      },
+    },
+    pages: (() => {
+      const p = partial?.pages
+      const base = DEFAULT_SETTINGS.pages
+      if (!p || typeof p !== 'object') {
+        return {
+          ...base,
+          storeHeroes: [...base.storeHeroes],
+          wholesaleHeroes: [...base.wholesaleHeroes],
+          wholesaleHowSteps: [...base.wholesaleHowSteps],
+          wholesaleTrust: [...base.wholesaleTrust],
+        }
+      }
+      const mergePage = (
+        def: typeof base.buyers,
+        next?: Partial<typeof base.buyers> | null,
+      ) => ({
+        ...def,
+        ...(next && typeof next === 'object' ? next : {}),
+      })
+      const mergeCards = <T extends { title: string; body: string }>(
+        def: T[],
+        next: unknown,
+        pad: T,
+      ): T[] => {
+        if (!Array.isArray(next) || !next.length) return [...def]
+        return next.map((row, i) => ({
+          ...((def[i] || pad) as T),
+          ...(row && typeof row === 'object' ? row : {}),
+        }))
+      }
+      const storeHeroes =
+        Array.isArray(p.storeHeroes) && p.storeHeroes.length
+          ? p.storeHeroes.map((h, i) => ({
+              ...base.storeHeroes[i % base.storeHeroes.length],
+              ...(h && typeof h === 'object' ? h : {}),
+            }))
+          : [...base.storeHeroes]
+      const wholesaleHeroes =
+        Array.isArray(p.wholesaleHeroes) && p.wholesaleHeroes.length
+          ? p.wholesaleHeroes.map((h, i) => ({
+              ...base.wholesaleHeroes[i % base.wholesaleHeroes.length],
+              ...(h && typeof h === 'object' ? h : {}),
+            }))
+          : [...base.wholesaleHeroes]
+      const interval = Math.max(5, Math.floor(Number(p.heroIntervalSec) || base.heroIntervalSec))
+      return {
+        footerCopyright: (p.footerCopyright || base.footerCopyright).trim() || base.footerCopyright,
+        authBrand: (() => {
+          const a = (p.authBrand || base.authBrand).trim() || base.authBrand
+          return a === 'Equarios' ? base.authBrand : a
+        })(),
+        authTitle: (p.authTitle || base.authTitle).trim() || base.authTitle,
+        authLead: (p.authLead || base.authLead).trim() || base.authLead,
+        heroIntervalSec: interval,
+        storeHeroes,
+        wholesaleHeroes,
+        wholesaleHowTitle:
+          (p.wholesaleHowTitle || base.wholesaleHowTitle).trim() || base.wholesaleHowTitle,
+        wholesaleHowSteps: mergeCards(base.wholesaleHowSteps, p.wholesaleHowSteps, {
+          title: '',
+          body: '',
+        }),
+        wholesaleTrust: mergeCards(base.wholesaleTrust, p.wholesaleTrust, { title: '', body: '' }),
+        wholesaleDealsTitle:
+          (p.wholesaleDealsTitle || base.wholesaleDealsTitle).trim() || base.wholesaleDealsTitle,
+        wholesaleBrandsTitle:
+          (p.wholesaleBrandsTitle || base.wholesaleBrandsTitle).trim() || base.wholesaleBrandsTitle,
+        wholesaleEmptyDeals:
+          (p.wholesaleEmptyDeals || base.wholesaleEmptyDeals).trim() || base.wholesaleEmptyDeals,
+        wholesaleEmptyMarket:
+          (p.wholesaleEmptyMarket || base.wholesaleEmptyMarket).trim() || base.wholesaleEmptyMarket,
+        buyers: mergePage(base.buyers, p.buyers),
+        sellers: mergePage(base.sellers, p.sellers),
+        support: mergePage(base.support, p.support),
+      }
+    })(),
     marketplaceFeePct: (() => {
       const m = partial?.marketplaceFeePct
       if (m === 0) return 0
@@ -658,6 +776,7 @@ function applySettleCare(prev: Persisted, accountId?: string | null): Persisted 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [apiMode, setApiMode] = useState(false)
+  const [authReady, setAuthReady] = useState(false)
   const [emailPrefs, setEmailPrefs] = useState<EmailPrefs | null>(null)
   const [data, setData] = useState<Persisted>(loadData)
   const [now, setNow] = useState(Date.now())
@@ -689,76 +808,112 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const applyBootstrap = useCallback(async (sessionUser?: ApiUser | User | null) => {
     const boot = await api.bootstrap()
-    setData((prev) => ({
-      ...prev,
-      lots: (boot.lots as Lot[]) || [],
-      bids: (boot.bids as Bid[]) || [],
-      cart: (boot.cart as CartItem[]) || [],
-      cartOrders: (boot.cartOrders as CartOrder[]) || [],
-      offers: (boot.offers as MarketOffer[]) || [],
-      invoices: (boot.invoices as Invoice[]) || [],
-      watchlist: (boot.watchlist as string[]) || [],
-      notices: (boot.notices as Notice[]) || prev.notices,
-      accounts: (boot.accounts as Account[])?.length
-        ? (boot.accounts as Account[])
-        : prev.accounts,
-      inventory: (boot.inventory as InventorySku[])?.length
-        ? (boot.inventory as InventorySku[])
-        : prev.inventory,
-      // keep settings from client defaults / local until settings API exists
-      settings: prev.settings,
-      listingDrops: prev.listingDrops,
-    }))
+    let lots = ((boot.lots as Lot[]) || []).slice()
+    let bids = ((boot.bids as Bid[]) || []).slice()
+
+    // Phase 1: pull remaining active-lot pages if bootstrap was capped.
+    let cursor = boot.meta?.lotsNextCursor || null
+    let guard = 0
+    while (cursor && boot.meta?.lotsHasMore && guard < 40) {
+      guard += 1
+      const page = await api.lotsPage({ cursor, limit: 200 })
+      const more = (page.lots as Lot[]) || []
+      if (!more.length) break
+      lots = lots.concat(more)
+      cursor = page.nextCursor
+      if (!cursor) break
+    }
+
+    setData((prev) => {
+      const rawLots = lots.map((l) => ({
+        ...l,
+        auctionType: migrateLotAuctionType(l.auctionType),
+      }))
+      const settings = mergeSettings(prev.settings)
+      const clocked = ensureAuctionClocks(settings, rawLots)
+      return {
+        ...prev,
+        lots: clocked.lots,
+        bids,
+        cart: (boot.cart as CartItem[]) || [],
+        cartOrders: (boot.cartOrders as CartOrder[]) || [],
+        offers: (boot.offers as MarketOffer[]) || [],
+        invoices: (boot.invoices as Invoice[]) || [],
+        watchlist: (boot.watchlist as string[]) || [],
+        notices: (boot.notices as Notice[]) || prev.notices,
+        accounts: (boot.accounts as Account[])?.length
+          ? (boot.accounts as Account[])
+          : prev.accounts,
+        inventory: (boot.inventory as InventorySku[])?.length
+          ? (boot.inventory as InventorySku[])
+          : prev.inventory,
+        // keep settings from client defaults / local until settings API exists
+        settings: clocked.settings,
+        listingDrops: prev.listingDrops,
+      }
+    })
     if (sessionUser) setUser(sessionUser as User)
   }, [])
 
   useEffect(() => {
     let cancelled = false
+    // Re-probe each boot — a prior failed/hanging check must not stick forever.
+    resetApiProbe()
+    const safety = window.setTimeout(() => {
+      if (!cancelled) setAuthReady(true)
+    }, 3500)
     ;(async () => {
-      const ok = await isApiAvailable()
-      if (cancelled) return
-      if (!ok) {
-        // Offline / no server: fall back to legacy localStorage session (demo only).
-        try {
-          const raw = localStorage.getItem(AUTH_KEY)
-          if (raw) {
-            const parsed = JSON.parse(raw) as User
-            setUser({
-              ...parsed,
-              role:
-                parsed.accountId === SUPER_USER.accountId
-                  ? 'superadmin'
-                  : parsed.role === 'superadmin'
-                    ? 'member'
-                    : parsed.role || 'member',
-              status: parsed.status || 'active',
-            })
-          }
-        } catch {
-          /* ignore */
-        }
-        setData((prev) => {
-          const stamp = Date.now()
-          const stale = prev.settings.auctionTypes.some((t) => !t.closesAt || t.closesAt <= stamp)
-          if (!stale) return prev
-          const next = ensureAuctionClocks(prev.settings, prev.lots, stamp)
-          return { ...prev, settings: next.settings, lots: next.lots }
-        })
-        return
-      }
-      setApiMode(true)
-      localStorage.removeItem(AUTH_KEY)
       try {
-        const { user: session } = await api.me()
+        const ok = await isApiAvailable()
         if (cancelled) return
-        if (session) await applyBootstrap(session)
-        else setUser(null)
+        if (!ok) {
+          // Offline / no server: fall back to legacy localStorage session (demo only).
+          try {
+            const raw = localStorage.getItem(AUTH_KEY)
+            if (raw) {
+              const parsed = JSON.parse(raw) as User
+              setUser({
+                ...parsed,
+                role:
+                  parsed.accountId === SUPER_USER.accountId
+                    ? 'superadmin'
+                    : parsed.role === 'superadmin'
+                      ? 'member'
+                      : parsed.role || 'member',
+                status: parsed.status || 'active',
+              })
+            }
+          } catch {
+            /* ignore */
+          }
+          setData((prev) => {
+            const stamp = Date.now()
+            const settings = mergeSettings(prev.settings)
+            const next = ensureAuctionClocks(settings, prev.lots, stamp)
+            return { ...prev, settings: next.settings, lots: next.lots }
+          })
+          return
+        }
+        setApiMode(true)
+        localStorage.removeItem(AUTH_KEY)
+        try {
+          const { user: session } = await api.me()
+          if (cancelled) return
+          if (session) await applyBootstrap(session)
+          else setUser(null)
+        } catch {
+          if (!cancelled) setUser(null)
+        }
       } catch {
         if (!cancelled) setUser(null)
+      } finally {
+        window.clearTimeout(safety)
+        if (!cancelled) setAuthReady(true)
       }
     })()
     return () => {
       cancelled = true
+      window.clearTimeout(safety)
     }
   }, [applyBootstrap])
 
@@ -887,6 +1042,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         await applyBootstrap(session)
         return null
       } catch (e) {
+        if (e && typeof e === 'object' && 'needsVerify' in e && (e as { needsVerify?: boolean }).needsVerify) {
+          const err = e as { message?: string; accountId?: string; email?: string; code?: string }
+          return {
+            needsVerify: true as const,
+            accountId: err.accountId || accountId.trim(),
+            email: err.email || accountId.trim(),
+            code: err.code,
+          }
+        }
         return e instanceof Error ? e.message : data.settings.copy.warnLogin
       }
     }
@@ -905,21 +1069,37 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [applyBootstrap, data.accounts, data.settings.copy])
 
   const register = useCallback(
-    async (accountId: string, company: string, email: string, password: string) => {
+    async (input: import('./types').RegisterInput) => {
       if (apiModeRef.current || (await isApiAvailable())) {
         setApiMode(true)
         try {
-          await api.register({ accountId, company, email, password })
-          return null
+          const res = await api.register(input)
+          return {
+            needsVerify: true as const,
+            code: res.code,
+            accountId: res.account.accountId,
+            email: res.email || input.email.trim(),
+          }
         } catch (e) {
           return e instanceof Error ? e.message : data.settings.copy.warnRegister
         }
       }
-      if (!accountId.trim() || !company.trim() || !email.trim() || password.length < 6) {
+      if (
+        !input.firstName.trim() ||
+        !input.lastName.trim() ||
+        !input.email.trim() ||
+        input.password.length < 6 ||
+        input.email !== input.emailConfirm ||
+        input.password !== input.passwordConfirm
+      ) {
         return data.settings.copy.warnRegister
       }
-      const id = accountId.trim().toUpperCase()
-      if (data.accounts.some((a) => a.accountId === id)) {
+      const email = input.email.trim().toLowerCase()
+      const id =
+        (input.accountId || `LB-${email.split('@')[0].replace(/[^a-z0-9]/gi, '').slice(0, 8)}`)
+          .trim()
+          .toUpperCase()
+      if (data.accounts.some((a) => a.accountId === id || a.email.toLowerCase() === email)) {
         return data.settings.copy.warnAccountTaken
       }
       setData((prev) => ({
@@ -928,17 +1108,64 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           ...prev.accounts,
           {
             accountId: id,
-            password,
-            company: company.trim(),
-            email: email.trim(),
+            password: input.password,
+            company: input.company?.trim() || `${input.firstName} ${input.lastName}`.trim(),
+            email,
+            firstName: input.firstName.trim(),
+            lastName: input.lastName.trim(),
             role: 'member',
-            status: 'pending',
+            status: 'active',
+            emailVerified: true,
+            wholesaleStatus: 'none',
           },
         ],
       }))
-      return null
+      return { needsVerify: true as const, accountId: id, email, code: '0000' }
     },
     [data.accounts, data.settings.copy],
+  )
+
+  const verifyEmail = useCallback(
+    async (ident: string, code: string) => {
+      if (apiModeRef.current || (await isApiAvailable())) {
+        setApiMode(true)
+        try {
+          const { user: session } = await api.verifyEmail(ident, code)
+          await applyBootstrap(session)
+          return null
+        } catch (e) {
+          return e instanceof Error ? e.message : 'Verification failed.'
+        }
+      }
+      if (code.trim() !== '0000') return 'That verification code does not match.'
+      const key = ident.trim()
+      const found = data.accounts.find(
+        (a) =>
+          a.accountId === key.toUpperCase() || a.email.toLowerCase() === key.toLowerCase(),
+      )
+      if (!found) return 'Invalid account or code.'
+      const next = sessionUser({ ...found, emailVerified: true })
+      setUser(next)
+      localStorage.setItem(AUTH_KEY, JSON.stringify(next))
+      return null
+    },
+    [applyBootstrap, data.accounts],
+  )
+
+  const resendVerifyEmail = useCallback(
+    async (ident: string) => {
+      if (apiModeRef.current || (await isApiAvailable())) {
+        setApiMode(true)
+        try {
+          const res = await api.resendVerifyEmail(ident)
+          return { code: res.code, email: res.email, message: res.message }
+        } catch (e) {
+          return { error: e instanceof Error ? e.message : 'Could not resend code.' }
+        }
+      }
+      return { code: '0000', message: 'Offline demo code is 0000.' }
+    },
+    [],
   )
 
   const RESET_KEY = 'equarios-reset'
@@ -1096,8 +1323,25 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     async (lotId: string, amount: number, qty: number) => {
       if (apiModeRef.current) {
         try {
-          await api.placeBid(lotId, amount, qty)
-          await applyBootstrap()
+          const res = await api.placeBid(lotId, amount, qty)
+          setData((prev) => {
+            const bid = res.bid
+            const lots = res.lot
+              ? prev.lots.map((l) =>
+                  l.id === res.lot!.id
+                    ? {
+                        ...l,
+                        currentPrice: res.lot!.currentPrice,
+                        bidCount: res.lot!.bidCount,
+                      }
+                    : l,
+                )
+              : prev.lots
+            const bids = bid
+              ? [...prev.bids.filter((b) => !(b.lotId === bid.lotId && b.at === bid.at && b.accountId === bid.accountId)), bid]
+              : prev.bids
+            return { ...prev, lots, bids }
+          })
           return null
         } catch (e) {
           return e instanceof Error ? e.message : data.settings.copy.warnNoBid
@@ -1141,7 +1385,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       )
       return null
     },
-    [applyBootstrap, data.lots, data.bids, data.settings, user],
+    [data.lots, data.bids, data.settings, user],
   )
 
   const placeBids = useCallback(
@@ -1983,13 +2227,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (user?.role !== 'superadmin') return 'Only super admin can manage accounts.'
       const id = accountId.toUpperCase()
       if (id === SUPER_USER.accountId) return 'The super admin account stays active.'
+      if (apiModeRef.current) {
+        void api.patchAccount(id, { status }).then(() => applyBootstrap(user)).catch(() => {})
+      }
       setData((prev) => ({
         ...prev,
         accounts: prev.accounts.map((a) => (a.accountId === id ? { ...a, status } : a)),
       }))
       return null
     },
-    [user],
+    [user, applyBootstrap],
   )
 
   const applyTypeClock = (prev: Persisted, slug: string | undefined, minutes: number) => {
@@ -2311,15 +2558,43 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [user])
 
   useEffect(() => {
-    if (!apiMode || !user) return
+    if (!apiMode || !user) {
+      stopRealtime()
+      return
+    }
     void loadEmailPrefs()
-    const t = setInterval(() => void refreshNotices(), 20_000)
-    return () => clearInterval(t)
+    startRealtime()
+    const off = onLotTick((tick) => {
+      setData((prev) => {
+        const lots = prev.lots.map((l) =>
+          l.id === tick.lotId
+            ? { ...l, currentPrice: tick.currentPrice, bidCount: tick.bidCount }
+            : l,
+        )
+        let bids = prev.bids
+        if (tick.bid) {
+          const b = tick.bid
+          const exists = bids.some(
+            (row) => row.lotId === b.lotId && row.accountId === b.accountId && row.at === b.at,
+          )
+          if (!exists) bids = [...bids, b]
+        }
+        return { ...prev, lots, bids }
+      })
+    })
+    // Soft poll notices; lot ticks come over WebSocket when connected.
+    const t = setInterval(() => void refreshNotices(), 60_000)
+    return () => {
+      off()
+      stopRealtime()
+      clearInterval(t)
+    }
   }, [apiMode, user, loadEmailPrefs, refreshNotices])
 
   const value = useMemo(
     () => ({
       apiMode,
+      authReady,
       user,
       lots: data.lots,
       bids: data.bids,
@@ -2337,6 +2612,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       isStaff: user?.role === 'admin' || user?.role === 'superadmin',
       login,
       register,
+      verifyEmail,
+      resendVerifyEmail,
       requestPasswordReset,
       resetPassword,
       refreshNotices,
@@ -2387,11 +2664,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }),
     [
       apiMode,
+      authReady,
       user,
       data,
       emailPrefs,
       login,
       register,
+      verifyEmail,
+      resendVerifyEmail,
       requestPasswordReset,
       resetPassword,
       refreshNotices,

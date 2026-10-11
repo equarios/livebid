@@ -18,7 +18,6 @@ const PREF_ROWS: Array<{ key: keyof EmailPrefs; label: string; hint: string }> =
 export function Account() {
   const {
     user,
-    settings,
     accounts,
     apiMode,
     emailPrefs,
@@ -48,89 +47,94 @@ export function Account() {
     setMsg(err || (apiMode ? 'Saved.' : 'Saved for this session (start API for persistence).'))
   }
 
+  const roleLabel =
+    user?.role === 'superadmin'
+      ? 'Super admin'
+      : user?.role === 'admin'
+        ? 'Admin'
+        : 'Client'
+
   return (
     <div className="account-settings-page">
-      <p className="muted tiny mypage-intro">{settings.copy.accountIntro}</p>
-      <div className="card account-card">
-        <dl className="specs">
-          <div>
-            <dt>Account ID</dt>
-            <dd>{user?.accountId}</dd>
-          </div>
-          <div>
-            <dt>Company</dt>
-            <dd>{user?.company}</dd>
-          </div>
-          <div>
-            <dt>Email</dt>
-            <dd>{user?.email}</dd>
-          </div>
-          <div>
-            <dt>Ship / bill to</dt>
-            <dd style={{ whiteSpace: 'pre-wrap' }}>
-              {address || 'Set by Super admin'}
-            </dd>
-          </div>
-          <div>
-            <dt>Role</dt>
-            <dd>
-              {user?.role === 'superadmin'
-                ? 'Super admin'
-                : user?.role === 'admin'
-                  ? 'Admin'
-                  : 'Client'}
-            </dd>
-          </div>
-          <div>
-            <dt>Status</dt>
-            <dd>{user?.status || 'active'}</dd>
-          </div>
-          <div>
-            <dt>Currency</dt>
-            <dd>USD</dd>
-          </div>
-          <div>
-            <dt>Courier</dt>
-            <dd>DHL · UPS · FedEx (demo)</dd>
-          </div>
-          <div>
-            <dt>Time zone</dt>
-            <dd>Asia/Tokyo (JST)</dd>
-          </div>
-        </dl>
+      <div className="mypage-meta">
+        <span className="mypage-meta-label">{user?.company || user?.accountId}</span>
+        <em>{roleLabel}</em>
+        <em>{user?.status || 'active'}</em>
       </div>
+      <div className="account-settings-grid">
+        <section className="account-desk-block">
+          <h3>Profile</h3>
+          <dl className="specs account-specs">
+            <div>
+              <dt>Account ID</dt>
+              <dd>{user?.accountId}</dd>
+            </div>
+            <div>
+              <dt>Company</dt>
+              <dd>{user?.company}</dd>
+            </div>
+            <div>
+              <dt>Email</dt>
+              <dd>{user?.email}</dd>
+            </div>
+            <div>
+              <dt>Ship / bill to</dt>
+              <dd className="account-address">{address || 'Set by Super admin'}</dd>
+            </div>
+            <div>
+              <dt>Role</dt>
+              <dd>{roleLabel}</dd>
+            </div>
+            <div>
+              <dt>Status</dt>
+              <dd>{user?.status || 'active'}</dd>
+            </div>
+            <div>
+              <dt>Currency</dt>
+              <dd>USD</dd>
+            </div>
+            <div>
+              <dt>Courier</dt>
+              <dd>DHL · UPS · FedEx</dd>
+            </div>
+            <div>
+              <dt>Time zone</dt>
+              <dd>Asia/Tokyo (JST)</dd>
+            </div>
+          </dl>
+        </section>
 
-      <div className="card account-card" style={{ marginTop: '1rem' }}>
-        <h2 style={{ fontSize: '1.05rem', margin: '0 0 0.35rem' }}>Email notifications</h2>
-        <p className="muted tiny" style={{ marginTop: 0 }}>
-          In-app bell notices always fire. Email is optional — off by default for noisy events like
-          outbid / closing soon. Without a mail provider key, the server logs email to the console.
-        </p>
-        {prefs ? (
-          <ul className="pref-list" style={{ listStyle: 'none', padding: 0, margin: '0.75rem 0 0' }}>
-            {PREF_ROWS.map((row) => (
-              <li key={row.key} style={{ marginBottom: '0.55rem' }}>
-                <label className="check-inline" style={{ alignItems: 'flex-start', gap: '0.5rem' }}>
-                  <input
-                    type="checkbox"
-                    checked={prefs[row.key]}
-                    disabled={saving}
-                    onChange={() => void toggle(row.key)}
-                  />
-                  <span>
-                    <strong>{row.label}</strong>
-                    <span className="muted tiny" style={{ display: 'block' }}>
-                      {row.hint}
+        <section className="account-desk-block">
+          <h3>Email notifications</h3>
+          <p className="muted tiny">
+            In-app bell notices always fire. Email is optional — noisy events stay off by default.
+          </p>
+          {prefs ? (
+            <ul className="pref-list">
+              {PREF_ROWS.map((row) => (
+                <li key={row.key}>
+                  <label className="check-inline pref-row">
+                    <input
+                      type="checkbox"
+                      checked={prefs[row.key]}
+                      disabled={saving}
+                      onChange={() => void toggle(row.key)}
+                    />
+                    <span>
+                      <strong>{row.label}</strong>
+                      <span className="muted tiny">{row.hint}</span>
                     </span>
-                  </span>
-                </label>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="muted tiny">Loading preferences…</p>
-        )}
-        {msg ? <p className={msg === 'Saved.' || msg.startsWith('Saved') ? 'ok' : 'error'}>{msg}</p> : null}
+                  </label>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="muted tiny">Loading preferences…</p>
+          )}
+          {msg ? (
+            <p className={msg === 'Saved.' || msg.startsWith('Saved') ? 'ok' : 'error'}>{msg}</p>
+          ) : null}
+        </section>
       </div>
     </div>
   )

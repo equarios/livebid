@@ -292,11 +292,11 @@ export function groupLotsByType(lots: Lot[], settings?: SiteSettings, sort = 'cl
   const sorted = sortLots(lots, sort, order)
   const groups: { value: string; label: string; lots: Lot[] }[] = []
   for (const t of settings?.auctionTypes || []) {
-    const chunk = sorted.filter((l) => (l.auctionType || 'live') === t.value)
+    const chunk = sorted.filter((l) => lotAuctionSlug(l) === t.value)
     if (chunk.length) groups.push({ value: t.value, label: t.label, lots: chunk })
   }
   const known = new Set(order)
-  const leftover = sorted.filter((l) => !known.has(l.auctionType || 'live'))
+  const leftover = sorted.filter((l) => !known.has(lotAuctionSlug(l)))
   if (leftover.length) groups.push({ value: 'other', label: 'Other', lots: leftover })
   return groups
 }
@@ -309,7 +309,7 @@ export function typeCounts(lots: Lot[], settings?: SiteSettings, now = Date.now(
     closed: auction.filter((l) => l.endsAt <= now).length,
   }
   for (const t of settings?.auctionTypes || []) {
-    counts[t.value] = auction.filter((l) => (l.auctionType || 'live') === t.value).length
+    counts[t.value] = auction.filter((l) => lotAuctionSlug(l) === t.value).length
   }
   return counts
 }

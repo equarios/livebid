@@ -91,17 +91,8 @@ export function OpsToday({ role, queues, liveLots, inventoryCount, onGo }: Props
             section: 'people',
             title: 'Accounts pending',
             count: queues.pendingAccounts,
-            hint: 'Approve or disable client signups',
+            hint: 'Approve buyers and manage people',
             tone: queues.pendingAccounts ? 'open' : 'muted',
-          },
-          {
-            id: 'settings',
-            section: 'settings',
-            desk: 'site',
-            title: 'Site settings',
-            count: 0,
-            hint: 'Brand, auction types, copy, feature flags',
-            tone: 'muted',
           },
         ]
 
@@ -114,7 +105,9 @@ export function OpsToday({ role, queues, liveLots, inventoryCount, onGo }: Props
         <p className="muted tiny">
           {waiting.length
             ? `${waiting.length} queue${waiting.length === 1 ? '' : 's'} need attention.`
-            : 'Nothing waiting. Jump into a desk when you need it.'}
+            : role === 'admin'
+              ? 'Nothing waiting. Use the nav for IMEI, store, buyers, and tools.'
+              : 'Nothing waiting. Use the nav for people, clients, and settings — IMEI is under Admin.'}
         </p>
       </header>
       <div className="ops-today-grid">

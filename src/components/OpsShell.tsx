@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react'
+import { useStore } from '../store'
 import { AuctionTypeHead } from './AuctionTypeHead'
+import { DeskIntro } from './DeskIntro'
 
 export type OpsDesk = {
   id: string
@@ -37,22 +39,27 @@ export function OpsShell({
   actions,
   children,
 }: Props) {
+  const { settings } = useStore()
   const current = sections.find((s) => s.id === section) || sections[0]
   const desks = current?.desks || []
   const activeDesk = desks.some((d) => d.id === desk) ? desk : desks[0]?.id
 
   return (
-    <div className="staff-page is-command-bar ops-page">
-      <section className="auction-type-block is-solo">
+    <div className="staff-page is-command-bar ops-page desk-page">
+      <DeskIntro
+        brand={settings.brandName || 'Equarios'}
+        title={title}
+        body={blurb || 'Staff operations desk.'}
+      />
+      <section className="auction-type-block is-solo ops-desk">
         <AuctionTypeHead>
           <div className="auction-command">
-            <h2>{title}</h2>
             <nav className="ops-nav" aria-label={`${title} sections`}>
               {sections.map((s) => (
                 <button
                   key={s.id}
                   type="button"
-                  className={`btn btn-ghost ${current?.id === s.id ? 'on' : ''}`}
+                  className={`ops-nav-btn ${current?.id === s.id ? 'on' : ''}`}
                   onClick={() => onSection(s.id)}
                 >
                   {s.label}
@@ -60,11 +67,9 @@ export function OpsShell({
                 </button>
               ))}
             </nav>
-            {actions}
+            {actions ? <div className="ops-nav-actions">{actions}</div> : null}
           </div>
         </AuctionTypeHead>
-
-        {blurb ? <p className="muted tiny ops-blurb">{blurb}</p> : null}
 
         {desks.length > 1 ? (
           <div className="ops-subnav" role="tablist" aria-label="Desk">
@@ -74,7 +79,7 @@ export function OpsShell({
                 type="button"
                 role="tab"
                 aria-selected={activeDesk === d.id}
-                className={`btn btn-ghost btn-sm ${activeDesk === d.id ? 'on' : ''}`}
+                className={`ops-subnav-btn ${activeDesk === d.id ? 'on' : ''}`}
                 onClick={() => onDesk?.(d.id)}
               >
                 {d.label}

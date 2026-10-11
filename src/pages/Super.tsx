@@ -1,16 +1,34 @@
 import { useEffect, useLayoutEffect, useMemo, useState, type FormEvent } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Navigate, useSearchParams } from 'react-router-dom'
 import { InvoiceDesk } from '../components/InvoiceDesk'
 import { ListingReview } from '../components/ListingReview'
 import { ModalShell } from '../components/ModalShell'
 import { OpsShell, type OpsSection } from '../components/OpsShell'
 import { OpsToday } from '../components/OpsToday'
+import { StoreDesk } from '../components/StoreDesk'
+import { ClientsDesk } from '../components/ClientsDesk'
+import { WholesaleReviewDesk } from '../components/WholesaleReviewDesk'
 import { TimeLeft } from '../components/TimeLeft'
 import { DEFAULT_SETTINGS } from '../data'
+import { api } from '../lib/api'
 import { RESERVED_LIST_SLUGS, slugAuctionType } from '../lib/auctionLists'
 import { opsQueueCounts } from '../lib/opsQueues'
 import { useNow, useStore } from '../store'
-import type { Account, AccountRole, AccountStatus, AuctionFillMode, AuctionTypeDef, FeatureFlags, SiteSettings } from '../types'
+import type {
+  Account,
+  AccountRole,
+  AccountStatus,
+  AuctionFillMode,
+  AuctionTypeDef,
+  FeatureFlags,
+  ContentCard,
+  MarketingPageCopy,
+  SiteContact,
+  SitePages,
+  SiteSettings,
+  StoreHeroSlide,
+  WholesaleHeroSlide,
+} from '../types'
 
 const ROLE_LABEL: Record<AccountRole, string> = {
   superadmin: 'Super admin',
@@ -20,6 +38,7 @@ const ROLE_LABEL: Record<AccountRole, string> = {
 
 const COPY_LABEL: Record<keyof typeof DEFAULT_SETTINGS.copy, string> = {
   navAuctions: 'Nav · Auctions',
+  navStore: 'Nav · Store',
   navFavourites: 'Nav · Favourites',
   navInvoices: 'Nav · Invoices',
   navAccount: 'Nav · Account',
@@ -247,11 +266,65 @@ function AddAuctionTypeDialog({
   )
 }
 
-type SuperSection = 'today' | 'catalog' | 'money' | 'people' | 'settings'
-type SuperSettingsDesk = 'site' | 'types' | 'copy' | 'features'
+type SuperSection = 'today' | 'catalog' | 'money' | 'store' | 'people' | 'settings'
+type SuperSettingsDesk =
+  | 'guide'
+  | 'site'
+  | 'contact'
+  | 'pages'
+  | 'appearance'
+  | 'types'
+  | 'copy'
+  | 'features'
 
-const SUPER_SECTIONS = new Set<SuperSection>(['today', 'catalog', 'money', 'people', 'settings'])
-const SETTINGS_DESKS = new Set<SuperSettingsDesk>(['site', 'types', 'copy', 'features'])
+const SUPER_SECTIONS = new Set<SuperSection>([
+  'today',
+  'catalog',
+  'money',
+  'store',
+  'people',
+  'settings',
+])
+const SETTINGS_DESKS = new Set<SuperSettingsDesk>([
+  'guide',
+  'site',
+  'contact',
+  'pages',
+  'appearance',
+  'types',
+  'copy',
+  'features',
+])
+
+function mergePagesDraft(partial?: Partial<SitePages> | null): SitePages {
+  const p = partial || {}
+  return {
+    ...DEFAULT_SETTINGS.pages,
+    ...p,
+    storeHeroes: p.storeHeroes?.length ? p.storeHeroes : [...DEFAULT_SETTINGS.pages.storeHeroes],
+    wholesaleHeroes: p.wholesaleHeroes?.length
+      ? p.wholesaleHeroes
+      : [...DEFAULT_SETTINGS.pages.wholesaleHeroes],
+    wholesaleHowSteps: p.wholesaleHowSteps?.length
+      ? p.wholesaleHowSteps
+      : [...DEFAULT_SETTINGS.pages.wholesaleHowSteps],
+    wholesaleTrust: p.wholesaleTrust?.length
+      ? p.wholesaleTrust
+      : [...DEFAULT_SETTINGS.pages.wholesaleTrust],
+    buyers: { ...DEFAULT_SETTINGS.pages.buyers, ...p.buyers },
+    sellers: { ...DEFAULT_SETTINGS.pages.sellers, ...p.sellers },
+    support: { ...DEFAULT_SETTINGS.pages.support, ...p.support },
+  }
+}
+
+const SOCIAL_LABELS: Record<keyof SiteContact['social'], string> = {
+  facebook: 'Facebook URL',
+  x: 'X (Twitter) URL',
+  instagram: 'Instagram URL',
+  whatsapp: 'WhatsApp URL',
+  linkedin: 'LinkedIn URL',
+  google: 'Google URL',
+}
 
 function legacyTabToNav(tab: string | null): { section: SuperSection; desk?: SuperSettingsDesk } | null {
   if (!tab) return null
@@ -282,15 +355,107 @@ export function Super() {
   const [draft, setDraft] = useState<SiteSettings>(() => ({
     ...settings,
     invoice: { ...DEFAULT_SETTINGS.invoice, ...settings.invoice },
+    contact: {
+      ...DEFAULT_SETTINGS.contact,
+      ...settings.contact,
+      social: {
+        ...DEFAULT_SETTINGS.contact.social,
+        ...(settings.contact?.social || {}),
+      },
+    },
+    pages: mergePagesDraft(settings.pages),
   }))
   const [settingsMsg, setSettingsMsg] = useState<string | null>(null)
   const invoiceDraft = { ...DEFAULT_SETTINGS.invoice, ...draft.invoice }
+  const contactDraft: SiteContact = {
+    ...DEFAULT_SETTINGS.contact,
+    ...draft.contact,
+    social: {
+      ...DEFAULT_SETTINGS.contact.social,
+      ...(draft.contact?.social || {}),
+    },
+  }
+  const pagesDraft = mergePagesDraft(draft.pages)
 
   function patchInvoice(patch: Partial<SiteSettings['invoice']>) {
     setDraft((prev) => ({
       ...prev,
       invoice: { ...DEFAULT_SETTINGS.invoice, ...prev.invoice, ...patch },
     }))
+  }
+
+  function patchContact(patch: Partial<SiteContact>) {
+    setDraft((prev) => {
+      const base = {
+        ...DEFAULT_SETTINGS.contact,
+        ...prev.contact,
+        social: {
+          ...DEFAULT_SETTINGS.contact.social,
+          ...(prev.contact?.social || {}),
+        },
+      }
+      return {
+        ...prev,
+        contact: {
+          ...base,
+          ...patch,
+          social: patch.social ? { ...base.social, ...patch.social } : base.social,
+        },
+      }
+    })
+  }
+
+  function patchPages(patch: Partial<SitePages>) {
+    setDraft((prev) => ({
+      ...prev,
+      pages: { ...mergePagesDraft(prev.pages), ...patch },
+    }))
+  }
+
+  function patchMarketingPage(key: 'buyers' | 'sellers' | 'support', patch: Partial<MarketingPageCopy>) {
+    setDraft((prev) => {
+      const base = mergePagesDraft(prev.pages)
+      return {
+        ...prev,
+        pages: { ...base, [key]: { ...base[key], ...patch } },
+      }
+    })
+  }
+
+  function patchHero(index: number, patch: Partial<StoreHeroSlide>) {
+    setDraft((prev) => {
+      const base = mergePagesDraft(prev.pages)
+      const heroes = [...base.storeHeroes]
+      while (heroes.length <= index) heroes.push({ kicker: '', title: '', body: '', cta: '' })
+      heroes[index] = { ...heroes[index], ...patch }
+      return { ...prev, pages: { ...base, storeHeroes: heroes } }
+    })
+  }
+
+  function patchWholesaleHero(index: number, patch: Partial<WholesaleHeroSlide>) {
+    setDraft((prev) => {
+      const base = mergePagesDraft(prev.pages)
+      const heroes = [...base.wholesaleHeroes]
+      while (heroes.length <= index) {
+        heroes.push({ kicker: '', title: '', body: '', cta: '', to: '/auctions' })
+      }
+      heroes[index] = { ...heroes[index], ...patch }
+      return { ...prev, pages: { ...base, wholesaleHeroes: heroes } }
+    })
+  }
+
+  function patchContentCard(
+    key: 'wholesaleHowSteps' | 'wholesaleTrust',
+    index: number,
+    patch: Partial<ContentCard>,
+  ) {
+    setDraft((prev) => {
+      const base = mergePagesDraft(prev.pages)
+      const rows = [...base[key]]
+      while (rows.length <= index) rows.push({ title: '', body: '' })
+      rows[index] = { ...rows[index], ...patch }
+      return { ...prev, pages: { ...base, [key]: rows } }
+    })
   }
   const [addTypeOpen, setAddTypeOpen] = useState(false)
   const [accountMsg, setAccountMsg] = useState<string | null>(null)
@@ -318,7 +483,7 @@ export function Super() {
     : defaultSection
   const desk: SuperSettingsDesk = SETTINGS_DESKS.has(deskParam as SuperSettingsDesk)
     ? (deskParam as SuperSettingsDesk)
-    : 'site'
+    : 'guide'
 
   function go(nextSection: string, nextDesk?: string) {
     const next = new URLSearchParams()
@@ -432,15 +597,114 @@ export function Super() {
       setSettingsMsg('Keep at least one auction type.')
       return
     }
+    const brandName = draft.brandName.trim()
+    const prevBrand = settings.brandName
     saveSettings({
       ...draft,
-      brandName: draft.brandName.trim(),
+      brandName,
       brandMark: draft.brandMark.trim() || 'EQ',
-      brandLogo: draft.brandLogo.trim() || '/equarios-logo.png',
+      brandLogo: draft.brandLogo.trim() || DEFAULT_SETTINGS.brandLogo,
       tagline: draft.tagline.trim(),
       marketplaceLabel: draft.marketplaceLabel.trim() || 'Marketplace',
+      storeLabel: (draft.storeLabel || 'Store').trim() || 'Store',
+      showStore: draft.showStore !== false,
+      showCommunity: draft.showCommunity !== false,
       grades,
       invoice: { ...DEFAULT_SETTINGS.invoice, ...draft.invoice },
+      contact: (() => {
+        const c = {
+          ...DEFAULT_SETTINGS.contact,
+          ...draft.contact,
+          social: { ...DEFAULT_SETTINGS.contact.social, ...draft.contact?.social },
+        }
+        const trim = (s: string) => s.trim()
+        return {
+          ...c,
+          legalName: trim(c.legalName),
+          verifiedMember: trim(c.verifiedMember),
+          webLabel: trim(c.webLabel),
+          webUrl: trim(c.webUrl),
+          emailBusiness: trim(c.emailBusiness),
+          emailEnquiry: trim(c.emailEnquiry),
+          phone: trim(c.phone).replace(/\s+/g, ''),
+          phoneDisplay: trim(c.phoneDisplay),
+          wechatId: trim(c.wechatId),
+          linkedinHandle: trim(c.linkedinHandle),
+          linkedinUrl: trim(c.linkedinUrl),
+          whatsapp: trim(c.whatsapp).replace(/\s+/g, ''),
+          whatsappDisplay: trim(c.whatsappDisplay),
+          duns: trim(c.duns),
+          social: {
+            facebook: trim(c.social.facebook),
+            x: trim(c.social.x),
+            instagram: trim(c.social.instagram),
+            whatsapp: trim(c.social.whatsapp),
+            linkedin: trim(c.social.linkedin),
+            google: trim(c.social.google),
+          },
+        }
+      })(),
+      pages: (() => {
+        const p = mergePagesDraft(draft.pages)
+        let authBrand = p.authBrand.trim() || DEFAULT_SETTINGS.pages.authBrand
+        if (
+          authBrand === prevBrand ||
+          authBrand === 'Equarios' ||
+          authBrand === DEFAULT_SETTINGS.pages.authBrand
+        ) {
+          authBrand = brandName
+        }
+        const trimPage = (page: MarketingPageCopy): MarketingPageCopy => ({
+          kicker: page.kicker.trim(),
+          title: page.title.trim(),
+          lead: page.lead.trim(),
+          body: page.body.trim(),
+          primaryCta: page.primaryCta.trim(),
+          secondaryCta: page.secondaryCta.trim(),
+        })
+        const trimCard = (c: ContentCard): ContentCard => ({
+          title: c.title.trim(),
+          body: c.body.trim(),
+        })
+        return {
+          footerCopyright: p.footerCopyright.trim() || DEFAULT_SETTINGS.pages.footerCopyright,
+          authBrand,
+          authTitle: p.authTitle.trim() || DEFAULT_SETTINGS.pages.authTitle,
+          authLead: p.authLead.trim() || DEFAULT_SETTINGS.pages.authLead,
+          heroIntervalSec: Math.max(5, Math.floor(Number(p.heroIntervalSec) || 30)),
+          storeHeroes: p.storeHeroes
+            .map((h) => ({
+              kicker: (h.kicker || '').trim(),
+              title: (h.title || '').trim(),
+              body: (h.body || '').trim(),
+              cta: (h.cta || '').trim(),
+            }))
+            .filter((h) => h.title || h.body || h.kicker),
+          wholesaleHeroes: p.wholesaleHeroes
+            .map((h) => ({
+              kicker: (h.kicker || '').trim(),
+              title: (h.title || '').trim(),
+              body: (h.body || '').trim(),
+              cta: (h.cta || '').trim(),
+              to: (h.to || '/auctions').trim() || '/auctions',
+            }))
+            .filter((h) => h.title || h.body || h.kicker),
+          wholesaleHowTitle: p.wholesaleHowTitle.trim() || DEFAULT_SETTINGS.pages.wholesaleHowTitle,
+          wholesaleHowSteps: p.wholesaleHowSteps.map(trimCard).filter((c) => c.title || c.body),
+          wholesaleTrust: p.wholesaleTrust.map(trimCard).filter((c) => c.title || c.body),
+          wholesaleDealsTitle:
+            p.wholesaleDealsTitle.trim() || DEFAULT_SETTINGS.pages.wholesaleDealsTitle,
+          wholesaleBrandsTitle:
+            p.wholesaleBrandsTitle.trim() || DEFAULT_SETTINGS.pages.wholesaleBrandsTitle,
+          wholesaleEmptyDeals:
+            p.wholesaleEmptyDeals.trim() || DEFAULT_SETTINGS.pages.wholesaleEmptyDeals,
+          wholesaleEmptyMarket:
+            p.wholesaleEmptyMarket.trim() || DEFAULT_SETTINGS.pages.wholesaleEmptyMarket,
+          buyers: trimPage(p.buyers),
+          sellers: trimPage(p.sellers),
+          support: trimPage(p.support),
+        }
+      })(),
       auctionTypes: clocks === 'keep' ? settings.auctionTypes : draft.auctionTypes,
       defaultMoq: Math.max(0, Math.floor(Number(draft.defaultMoq) || 0)),
       reopenMinutes: Math.max(1, Math.floor(Number(draft.reopenMinutes ?? (draft.reopenHours || 4) * 60) || 1)),
@@ -465,12 +729,18 @@ export function Super() {
         count: queues.catalogWaitItems || undefined,
       },
       { id: 'money', label: 'Money', count: queues.money || undefined },
+      { id: 'store', label: 'Store' },
       { id: 'people', label: 'People', count: queues.pendingAccounts || undefined },
+      { id: 'clients', label: 'Clients' },
       {
         id: 'settings',
         label: 'Settings',
         desks: [
+          { id: 'guide', label: 'Guide' },
           { id: 'site', label: 'Site' },
+          { id: 'contact', label: 'Footer' },
+          { id: 'pages', label: 'Pages' },
+          { id: 'appearance', label: 'Look' },
           { id: 'types', label: 'Auction types' },
           { id: 'copy', label: 'Text' },
           { id: 'features', label: 'Functions' },
@@ -487,10 +757,15 @@ export function Super() {
       </button>
     ) : null
 
+  // IMEI desk lives on Admin only — keep old Super links working
+  if (sectionParam === 'imei' || params.get('tab') === 'imei') {
+    return <Navigate to="/admin?section=imei" replace />
+  }
+
   return (
     <OpsShell
       title="Super admin"
-      blurb="Approve catalogs, issue invoices, manage people, and configure the site. Admin handles day-to-day listing and first stamps."
+      blurb="Approve catalogs, issue invoices, manage people, and edit site-wide text, look, and features under Settings → Guide. Day-to-day listing and IMEI live under Admin."
       sections={sections}
       section={section}
       desk={desk}
@@ -592,6 +867,9 @@ export function Super() {
         {accountMsg ? <p className={accountMsg.includes('Only') || accountMsg.includes('cannot') || accountMsg.includes('Fill') || accountMsg.includes('Password') ? 'error' : 'ok'}>{accountMsg}</p> : null}
       </section> : null}
 
+      {section === 'people' ? <WholesaleReviewDesk /> : null}
+      {section === 'clients' ? <ClientsDesk /> : null}
+
       {section === 'people' ? <section className="table-wrap card admin-section">
         <h2>All accounts</h2>
         <table className="auction-table">
@@ -600,6 +878,7 @@ export function Super() {
               <th>Account</th>
               <th>Role</th>
               <th>Status</th>
+              <th>Wholesale</th>
               <th>Company</th>
               <th>Buyer #</th>
               <th>Email</th>
@@ -616,6 +895,7 @@ export function Super() {
                     {a.status}
                   </span>
                 </td>
+                <td className="tiny">{(a.wholesaleStatus || '—').replace(/_/g, ' ')}</td>
                 <td>{a.company}</td>
                 <td className="mono tiny">{a.buyerNumber || '—'}</td>
                 <td>{a.email}</td>
@@ -655,6 +935,8 @@ export function Super() {
 
       {section === 'catalog' ? <ListingReview /> : null}
 
+      {section === 'store' ? <StoreDesk /> : null}
+
       {section === 'money' ? (
         <section className="card admin-section pay-queue-card invoice-super-panel">
           <InvoiceDesk canAdmin canSuper allowCreate />
@@ -672,6 +954,10 @@ export function Super() {
                 onChange={(e) => setDraft({ ...draft, brandName: e.target.value })}
               />
             </label>
+            <p className="muted tiny admin-span" style={{ marginTop: -8 }}>
+              Site title &amp; hero text use this. Upload a PNG with a transparent background for the mark —
+              flat white/black boxes are stripped automatically.
+            </p>
             <label>
               Brand mark
               <input
@@ -679,13 +965,72 @@ export function Super() {
                 onChange={(e) => setDraft({ ...draft, brandMark: e.target.value })}
               />
             </label>
-            <label className="admin-span">
-              Brand logo
-              <input
-                value={draft.brandLogo}
-                onChange={(e) => setDraft({ ...draft, brandLogo: e.target.value })}
-              />
-            </label>
+            <div className="admin-span brand-logo-field">
+              <span className="label-text">Brand logo</span>
+              <div className="brand-logo-upload-row">
+                <div className="brand-logo-preview" aria-hidden>
+                  {draft.brandLogo ? (
+                    <img src={draft.brandLogo} alt="" />
+                  ) : (
+                    <span className="muted tiny">No logo</span>
+                  )}
+                </div>
+                <div className="brand-logo-upload-actions">
+                  <label className="btn btn-ghost brand-logo-file">
+                    Upload logo
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/gif"
+                      hidden
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0]
+                        e.target.value = ''
+                        if (!file) return
+                        setSettingsMsg(null)
+                        try {
+                          const { url } = await api.uploadBrandLogo(file)
+                          const next = { ...draft, brandLogo: url }
+                          setDraft(next)
+                          saveSettings({
+                            ...next,
+                            brandName: next.brandName.trim() || DEFAULT_SETTINGS.brandName,
+                            brandMark: next.brandMark.trim() || 'EQ',
+                            brandLogo: url,
+                          })
+                          setSettingsMsg('Logo applied everywhere.')
+                        } catch (err) {
+                          setSettingsMsg(err instanceof Error ? err.message : 'Logo upload failed.')
+                        }
+                      }}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    onClick={() => {
+                      const next = { ...draft, brandLogo: DEFAULT_SETTINGS.brandLogo }
+                      setDraft(next)
+                      saveSettings({
+                        ...next,
+                        brandName: next.brandName.trim() || DEFAULT_SETTINGS.brandName,
+                        brandMark: next.brandMark.trim() || 'EQ',
+                        brandLogo: DEFAULT_SETTINGS.brandLogo,
+                      })
+                      setSettingsMsg('Default logo restored.')
+                    }}
+                  >
+                    Use default
+                  </button>
+                </div>
+              </div>
+              <label className="brand-logo-path">
+                Path
+                <input
+                  value={draft.brandLogo}
+                  onChange={(e) => setDraft({ ...draft, brandLogo: e.target.value })}
+                />
+              </label>
+            </div>
             <label>
               Tagline
               <input
@@ -698,6 +1043,13 @@ export function Super() {
               <input
                 value={draft.marketplaceLabel}
                 onChange={(e) => setDraft({ ...draft, marketplaceLabel: e.target.value })}
+              />
+            </label>
+            <label>
+              Store label
+              <input
+                value={draft.storeLabel || 'Store'}
+                onChange={(e) => setDraft({ ...draft, storeLabel: e.target.value })}
               />
             </label>
             <label>
@@ -975,50 +1327,6 @@ export function Super() {
                 <p className="tiny">{invoiceDraft.paymentNotice}</p>
               </div>
             </div>
-            {(
-              [
-                ['navy', 'Primary'],
-                ['navy2', 'Primary dark'],
-                ['ink', 'Text'],
-                ['muted', 'Muted text'],
-                ['line', 'Lines'],
-                ['bg', 'Background'],
-                ['card', 'Cards'],
-                ['win', 'Win / paid'],
-                ['lose', 'Error / unpaid'],
-                ['live', 'Brand teal / live'],
-              ] as const
-            ).map(([key, label]) => (
-              <label key={key}>
-                {label}
-                <input
-                  type="color"
-                  value={draft.theme[key]}
-                  onChange={(e) => setDraft({ ...draft, theme: { ...draft.theme, [key]: e.target.value } })}
-                />
-              </label>
-            ))}
-            <label>
-              Font
-              <input
-                value={draft.theme.font}
-                onChange={(e) => setDraft({ ...draft, theme: { ...draft.theme, font: e.target.value } })}
-              />
-            </label>
-            <label>
-              Corner radius
-              <input
-                value={draft.theme.radius}
-                onChange={(e) => setDraft({ ...draft, theme: { ...draft.theme, radius: e.target.value } })}
-              />
-            </label>
-            <label>
-              Favourite icon
-              <input
-                value={draft.icons.favourite}
-                onChange={(e) => setDraft({ ...draft, icons: { favourite: e.target.value } })}
-              />
-            </label>
             <fieldset className="admin-toggles">
               <legend>Pages</legend>
               <label>
@@ -1036,6 +1344,22 @@ export function Super() {
                   onChange={(e) => setDraft({ ...draft, showMarketplace: e.target.checked })}
                 />
                 Marketplace
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={draft.showStore ?? true}
+                  onChange={(e) => setDraft({ ...draft, showStore: e.target.checked })}
+                />
+                Retail store
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={draft.showCommunity ?? true}
+                  onChange={(e) => setDraft({ ...draft, showCommunity: e.target.checked })}
+                />
+                Community (My Page)
               </label>
               <label>
                 <input
@@ -1067,6 +1391,65 @@ export function Super() {
             <button className="btn btn-primary btn-sm" type="submit">
               Save site
             </button>
+          </form>
+          {settingsMsg ? <p className="ok">{settingsMsg}</p> : null}
+        </section>
+      ) : null}
+
+      {section === 'settings' && desk === 'appearance' ? (
+        <section className="card admin-section">
+          <h2>Look &amp; theme</h2>
+          <p className="muted tiny" style={{ marginTop: 0 }}>
+            Colors, type, and corner radius applied site-wide via CSS variables.
+          </p>
+          <form className="admin-form" onSubmit={(e) => onSaveSettings(e, 'keep')}>
+            {(
+              [
+                ['navy', 'Primary'],
+                ['navy2', 'Primary dark'],
+                ['ink', 'Text'],
+                ['muted', 'Muted text'],
+                ['line', 'Lines'],
+                ['bg', 'Background'],
+                ['card', 'Cards'],
+                ['win', 'Win / paid'],
+                ['lose', 'Error / unpaid'],
+                ['live', 'Brand teal / live'],
+              ] as const
+            ).map(([key, label]) => (
+              <label key={key}>
+                {label}
+                <input
+                  type="color"
+                  value={draft.theme[key]}
+                  onChange={(e) => setDraft({ ...draft, theme: { ...draft.theme, [key]: e.target.value } })}
+                />
+              </label>
+            ))}
+            <label className="admin-span">
+              Font stack
+              <input
+                value={draft.theme.font}
+                onChange={(e) => setDraft({ ...draft, theme: { ...draft.theme, font: e.target.value } })}
+              />
+            </label>
+            <label>
+              Corner radius
+              <input
+                value={draft.theme.radius}
+                onChange={(e) => setDraft({ ...draft, theme: { ...draft.theme, radius: e.target.value } })}
+              />
+            </label>
+            <label>
+              Favourite icon
+              <input
+                value={draft.icons.favourite}
+                onChange={(e) => setDraft({ ...draft, icons: { favourite: e.target.value } })}
+              />
+            </label>
+            <button className="btn btn-primary btn-sm" type="submit">
+              Save look
+            </button>
             <button
               className="btn btn-ghost btn-sm"
               type="button"
@@ -1078,7 +1461,551 @@ export function Super() {
                 })
               }
             >
-              Reset colors
+              Reset to defaults
+            </button>
+          </form>
+          {settingsMsg ? <p className="ok">{settingsMsg}</p> : null}
+        </section>
+      ) : null}
+
+      {section === 'settings' && desk === 'guide' ? (
+        <section className="card admin-section">
+          <h2>Edit the whole app from here</h2>
+          <p className="muted tiny" style={{ marginTop: 0 }}>
+            Super Settings controls public text, look, features, and commerce rules. Open a desk below (or use
+            the Settings sub-nav).
+          </p>
+          <div className="admin-form">
+            <div className="invoice-profile-panel admin-span">
+              <h3>Where to edit what</h3>
+              <ul className="pub-help-list" style={{ margin: 0 }}>
+                <li>
+                  <strong>Site</strong> — brand name, logo, tagline, channel toggles, grades, clocks, invoice
+                  letterhead
+                </li>
+                <li>
+                  <strong>Footer</strong> — Verified, email, mobile, WeChat, D-U-N-S, social links
+                </li>
+                <li>
+                  <strong>Pages</strong> — store &amp; wholesale heroes, how/trust strips, login aside, buyers /
+                  sellers / support, copyright, hero auto-slide seconds
+                </li>
+                <li>
+                  <strong>Look</strong> — colors, font, corner radius (live CSS theme)
+                </li>
+                <li>
+                  <strong>Auction types</strong> — list names, fees, close minutes
+                </li>
+                <li>
+                  <strong>Text</strong> — every button, nav label, warning, and confirmation popup string
+                </li>
+                <li>
+                  <strong>Functions</strong> — turn bidding, cart, register, bots, notices, etc. on/off
+                </li>
+                <li>
+                  <strong>Store</strong> (main Super nav) — retail products, multi photos, orders
+                </li>
+              </ul>
+            </div>
+            <p className="muted tiny admin-span">
+              Tip: change copy → Save on that desk → hard-refresh the public page. Desk ops (Admin catalog /
+              money) stay under Admin; Super owns site-wide brand and rules.
+            </p>
+            <button type="button" className="btn btn-primary btn-sm" onClick={() => go('settings', 'pages')}>
+              Open Pages editor
+            </button>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => go('settings', 'copy')}>
+              Open Text editor
+            </button>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => go('settings', 'appearance')}>
+              Open Look editor
+            </button>
+          </div>
+        </section>
+      ) : null}
+
+      {section === 'settings' && desk === 'pages' ? (
+        <section className="card admin-section">
+          <h2>Pages &amp; marketing copy</h2>
+          <p className="muted tiny" style={{ marginTop: 0 }}>
+            Store + wholesale heroes, hub strips, login aside, buyers / sellers / support. Body tips: use{' '}
+            <code>Title|Detail</code> for steps, or <code>- item</code> for bullets.
+          </p>
+          <form className="admin-form" onSubmit={(e) => onSaveSettings(e, 'keep')}>
+            <label>
+              Hero auto-slide (seconds)
+              <input
+                type="number"
+                min={5}
+                value={pagesDraft.heroIntervalSec}
+                onChange={(e) => patchPages({ heroIntervalSec: Number(e.target.value) || 30 })}
+              />
+            </label>
+            <label className="admin-span">
+              Footer copyright
+              <input
+                value={pagesDraft.footerCopyright}
+                onChange={(e) => patchPages({ footerCopyright: e.target.value })}
+              />
+            </label>
+
+            <div className="invoice-profile-panel admin-span">
+              <h3>Login / register aside</h3>
+              <div className="admin-form invoice-profile-fields">
+                <label>
+                  Brand line
+                  <input
+                    value={pagesDraft.authBrand}
+                    onChange={(e) => patchPages({ authBrand: e.target.value })}
+                  />
+                </label>
+                <label className="admin-span">
+                  Title
+                  <input
+                    value={pagesDraft.authTitle}
+                    onChange={(e) => patchPages({ authTitle: e.target.value })}
+                  />
+                </label>
+                <label className="admin-span">
+                  Lead
+                  <textarea
+                    rows={3}
+                    value={pagesDraft.authLead}
+                    onChange={(e) => patchPages({ authLead: e.target.value })}
+                  />
+                </label>
+              </div>
+            </div>
+
+            <div className="invoice-profile-panel admin-span">
+              <h3>Store hero slides</h3>
+              {pagesDraft.storeHeroes.map((hero, i) => (
+                <div key={i} className="admin-form invoice-profile-fields" style={{ marginBottom: 12 }}>
+                  <p className="tiny muted admin-span" style={{ margin: 0 }}>
+                    Slide {i + 1}
+                  </p>
+                  <label>
+                    Kicker
+                    <input value={hero.kicker} onChange={(e) => patchHero(i, { kicker: e.target.value })} />
+                  </label>
+                  <label>
+                    CTA
+                    <input value={hero.cta} onChange={(e) => patchHero(i, { cta: e.target.value })} />
+                  </label>
+                  <label className="admin-span">
+                    Title
+                    <input value={hero.title} onChange={(e) => patchHero(i, { title: e.target.value })} />
+                  </label>
+                  <label className="admin-span">
+                    Body
+                    <textarea
+                      rows={2}
+                      value={hero.body}
+                      onChange={(e) => patchHero(i, { body: e.target.value })}
+                    />
+                  </label>
+                </div>
+              ))}
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() =>
+                  patchPages({
+                    storeHeroes: [
+                      ...pagesDraft.storeHeroes,
+                      { kicker: '', title: '', body: '', cta: 'Shop' },
+                    ],
+                  })
+                }
+              >
+                Add slide
+              </button>
+              {pagesDraft.storeHeroes.length > 1 ? (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() =>
+                    patchPages({ storeHeroes: pagesDraft.storeHeroes.slice(0, -1) })
+                  }
+                >
+                  Remove last slide
+                </button>
+              ) : null}
+            </div>
+
+            <div className="invoice-profile-panel admin-span">
+              <h3>Wholesale hero slides</h3>
+              {pagesDraft.wholesaleHeroes.map((hero, i) => (
+                <div key={i} className="admin-form invoice-profile-fields" style={{ marginBottom: 12 }}>
+                  <p className="tiny muted admin-span" style={{ margin: 0 }}>
+                    Slide {i + 1}
+                  </p>
+                  <label>
+                    Kicker
+                    <input
+                      value={hero.kicker}
+                      onChange={(e) => patchWholesaleHero(i, { kicker: e.target.value })}
+                    />
+                  </label>
+                  <label>
+                    CTA
+                    <input
+                      value={hero.cta}
+                      onChange={(e) => patchWholesaleHero(i, { cta: e.target.value })}
+                    />
+                  </label>
+                  <label>
+                    Link path
+                    <input
+                      value={hero.to}
+                      onChange={(e) => patchWholesaleHero(i, { to: e.target.value })}
+                      placeholder="/auctions"
+                    />
+                  </label>
+                  <label className="admin-span">
+                    Title
+                    <input
+                      value={hero.title}
+                      onChange={(e) => patchWholesaleHero(i, { title: e.target.value })}
+                    />
+                  </label>
+                  <label className="admin-span">
+                    Body
+                    <textarea
+                      rows={2}
+                      value={hero.body}
+                      onChange={(e) => patchWholesaleHero(i, { body: e.target.value })}
+                    />
+                  </label>
+                </div>
+              ))}
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() =>
+                  patchPages({
+                    wholesaleHeroes: [
+                      ...pagesDraft.wholesaleHeroes,
+                      { kicker: '', title: '', body: '', cta: 'Enter', to: '/auctions' },
+                    ],
+                  })
+                }
+              >
+                Add wholesale slide
+              </button>
+              {pagesDraft.wholesaleHeroes.length > 1 ? (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() =>
+                    patchPages({ wholesaleHeroes: pagesDraft.wholesaleHeroes.slice(0, -1) })
+                  }
+                >
+                  Remove last slide
+                </button>
+              ) : null}
+            </div>
+
+            <div className="invoice-profile-panel admin-span">
+              <h3>Wholesale hub strips</h3>
+              <label className="admin-span">
+                How-it-works title
+                <input
+                  value={pagesDraft.wholesaleHowTitle}
+                  onChange={(e) => patchPages({ wholesaleHowTitle: e.target.value })}
+                />
+              </label>
+              {pagesDraft.wholesaleHowSteps.map((step, i) => (
+                <div key={`how-${i}`} className="admin-form invoice-profile-fields">
+                  <label>
+                    Step {i + 1} title
+                    <input
+                      value={step.title}
+                      onChange={(e) => patchContentCard('wholesaleHowSteps', i, { title: e.target.value })}
+                    />
+                  </label>
+                  <label className="admin-span">
+                    Step body
+                    <input
+                      value={step.body}
+                      onChange={(e) => patchContentCard('wholesaleHowSteps', i, { body: e.target.value })}
+                    />
+                  </label>
+                </div>
+              ))}
+              {pagesDraft.wholesaleTrust.map((item, i) => (
+                <div key={`trust-${i}`} className="admin-form invoice-profile-fields">
+                  <label>
+                    Trust {i + 1} title
+                    <input
+                      value={item.title}
+                      onChange={(e) => patchContentCard('wholesaleTrust', i, { title: e.target.value })}
+                    />
+                  </label>
+                  <label className="admin-span">
+                    Trust body
+                    <input
+                      value={item.body}
+                      onChange={(e) => patchContentCard('wholesaleTrust', i, { body: e.target.value })}
+                    />
+                  </label>
+                </div>
+              ))}
+              <label>
+                Deals section title
+                <input
+                  value={pagesDraft.wholesaleDealsTitle}
+                  onChange={(e) => patchPages({ wholesaleDealsTitle: e.target.value })}
+                />
+              </label>
+              <label>
+                Brands section title
+                <input
+                  value={pagesDraft.wholesaleBrandsTitle}
+                  onChange={(e) => patchPages({ wholesaleBrandsTitle: e.target.value })}
+                />
+              </label>
+              <label className="admin-span">
+                Empty deals message
+                <input
+                  value={pagesDraft.wholesaleEmptyDeals}
+                  onChange={(e) => patchPages({ wholesaleEmptyDeals: e.target.value })}
+                />
+              </label>
+              <label className="admin-span">
+                Empty marketplace message
+                <input
+                  value={pagesDraft.wholesaleEmptyMarket}
+                  onChange={(e) => patchPages({ wholesaleEmptyMarket: e.target.value })}
+                />
+              </label>
+            </div>
+
+            {(['buyers', 'sellers', 'support'] as const).map((key) => {
+              const page = pagesDraft[key]
+              const titles = { buyers: 'For buyers', sellers: 'For sellers', support: 'Support' }
+              return (
+                <div key={key} className="invoice-profile-panel admin-span">
+                  <h3>{titles[key]}</h3>
+                  <div className="admin-form invoice-profile-fields">
+                    <label>
+                      Kicker
+                      <input
+                        value={page.kicker}
+                        onChange={(e) => patchMarketingPage(key, { kicker: e.target.value })}
+                      />
+                    </label>
+                    <label>
+                      Primary CTA
+                      <input
+                        value={page.primaryCta}
+                        onChange={(e) => patchMarketingPage(key, { primaryCta: e.target.value })}
+                      />
+                    </label>
+                    <label>
+                      Secondary CTA
+                      <input
+                        value={page.secondaryCta}
+                        onChange={(e) => patchMarketingPage(key, { secondaryCta: e.target.value })}
+                      />
+                    </label>
+                    <label className="admin-span">
+                      Title
+                      <input
+                        value={page.title}
+                        onChange={(e) => patchMarketingPage(key, { title: e.target.value })}
+                      />
+                    </label>
+                    <label className="admin-span">
+                      Lead
+                      <textarea
+                        rows={2}
+                        value={page.lead}
+                        onChange={(e) => patchMarketingPage(key, { lead: e.target.value })}
+                      />
+                    </label>
+                    <label className="admin-span">
+                      Body
+                      <textarea
+                        rows={5}
+                        value={page.body}
+                        onChange={(e) => patchMarketingPage(key, { body: e.target.value })}
+                      />
+                    </label>
+                  </div>
+                </div>
+              )
+            })}
+
+            <button className="btn btn-primary btn-sm" type="submit">
+              Save pages
+            </button>
+            <button
+              className="btn btn-ghost btn-sm"
+              type="button"
+              onClick={() =>
+                setDraft((prev) => ({
+                  ...prev,
+                  pages: mergePagesDraft(DEFAULT_SETTINGS.pages),
+                }))
+              }
+            >
+              Reset to defaults
+            </button>
+          </form>
+          {settingsMsg ? <p className="ok">{settingsMsg}</p> : null}
+        </section>
+      ) : null}
+
+      {section === 'settings' && desk === 'contact' ? (
+        <section className="card admin-section">
+          <h2>Footer &amp; contact</h2>
+          <p className="muted tiny" style={{ marginTop: 0 }}>
+            Shown on the site-wide footer (store, auth, and desk). Verified text is shortened in the bar when
+            long — hover shows the full line.
+          </p>
+          <form className="admin-form" onSubmit={(e) => onSaveSettings(e, 'keep')}>
+            <label className="admin-span">
+              Verified
+              <input
+                value={contactDraft.verifiedMember}
+                onChange={(e) => patchContact({ verifiedMember: e.target.value })}
+                placeholder="GsmExchange, ITAD, Kadorf & Other Leading B2B Networks"
+              />
+            </label>
+            <label className="admin-span">
+              Legal name
+              <input
+                value={contactDraft.legalName}
+                onChange={(e) => patchContact({ legalName: e.target.value })}
+              />
+            </label>
+            <label>
+              Email (enquiry)
+              <input
+                type="email"
+                value={contactDraft.emailEnquiry}
+                onChange={(e) => patchContact({ emailEnquiry: e.target.value })}
+              />
+            </label>
+            <label>
+              Email (business)
+              <input
+                type="email"
+                value={contactDraft.emailBusiness}
+                onChange={(e) => patchContact({ emailBusiness: e.target.value })}
+              />
+            </label>
+            <label>
+              Mobile display
+              <input
+                value={contactDraft.phoneDisplay}
+                onChange={(e) => patchContact({ phoneDisplay: e.target.value })}
+                placeholder="+852 6156 1800"
+              />
+            </label>
+            <label>
+              Mobile tel link
+              <input
+                value={contactDraft.phone}
+                onChange={(e) => patchContact({ phone: e.target.value })}
+                placeholder="+85261561800"
+              />
+            </label>
+            <label>
+              WeChat
+              <input
+                value={contactDraft.wechatId}
+                onChange={(e) => patchContact({ wechatId: e.target.value })}
+              />
+            </label>
+            <label>
+              D-U-N-S
+              <input
+                value={contactDraft.duns}
+                onChange={(e) => patchContact({ duns: e.target.value })}
+              />
+            </label>
+            <label>
+              Web label
+              <input
+                value={contactDraft.webLabel}
+                onChange={(e) => patchContact({ webLabel: e.target.value })}
+              />
+            </label>
+            <label>
+              Web URL
+              <input
+                value={contactDraft.webUrl}
+                onChange={(e) => patchContact({ webUrl: e.target.value })}
+              />
+            </label>
+            <label>
+              LinkedIn handle
+              <input
+                value={contactDraft.linkedinHandle}
+                onChange={(e) => patchContact({ linkedinHandle: e.target.value })}
+              />
+            </label>
+            <label>
+              LinkedIn URL
+              <input
+                value={contactDraft.linkedinUrl}
+                onChange={(e) => patchContact({ linkedinUrl: e.target.value })}
+              />
+            </label>
+            <label>
+              WhatsApp number
+              <input
+                value={contactDraft.whatsapp}
+                onChange={(e) => patchContact({ whatsapp: e.target.value })}
+                placeholder="85261561800"
+              />
+            </label>
+            <label>
+              WhatsApp display
+              <input
+                value={contactDraft.whatsappDisplay}
+                onChange={(e) => patchContact({ whatsappDisplay: e.target.value })}
+              />
+            </label>
+
+            <div className="invoice-profile-panel admin-span">
+              <h3>Social links</h3>
+              <p className="muted tiny">Empty URL hides that icon in the footer.</p>
+              <div className="admin-form invoice-profile-fields">
+                {(Object.keys(SOCIAL_LABELS) as Array<keyof SiteContact['social']>).map((key) => (
+                  <label key={key} className="admin-span">
+                    {SOCIAL_LABELS[key]}
+                    <input
+                      value={contactDraft.social[key]}
+                      onChange={(e) =>
+                        patchContact({ social: { ...contactDraft.social, [key]: e.target.value } })
+                      }
+                      placeholder="https://…"
+                    />
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <button className="btn btn-primary btn-sm" type="submit">
+              Save footer
+            </button>
+            <button
+              className="btn btn-ghost btn-sm"
+              type="button"
+              onClick={() =>
+                setDraft((prev) => ({
+                  ...prev,
+                  contact: {
+                    ...DEFAULT_SETTINGS.contact,
+                    social: { ...DEFAULT_SETTINGS.contact.social },
+                  },
+                }))
+              }
+            >
+              Reset to defaults
             </button>
           </form>
           {settingsMsg ? <p className="ok">{settingsMsg}</p> : null}

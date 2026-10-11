@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { Link } from 'react-router-dom'
 import { LotCard } from '../components/LotCard'
 import { useStore } from '../store'
 
@@ -21,14 +22,24 @@ export function Watchlist() {
       <div className="mypage-meta">
         <em>{rows.length} saved</em>
         {withBids ? <em className="is-yours">Your bids {withBids}</em> : null}
-        <span className="muted tiny">{settings.copy.favouritesIntro}</span>
+        {settings.copy.favouritesIntro ? (
+          <span className="muted tiny">{settings.copy.favouritesIntro}</span>
+        ) : null}
       </div>
-      <div className="grid">
-        {rows.map((lot) => (
-          <LotCard key={lot.id} lot={lot} />
-        ))}
-      </div>
-      {!rows.length ? <p className="empty">{settings.copy.emptyFavourites}</p> : null}
+      {rows.length ? (
+        <div className="grid">
+          {rows.map((lot) => (
+            <LotCard key={lot.id} lot={lot} />
+          ))}
+        </div>
+      ) : (
+        <section className="account-panel account-empty">
+          <p className="muted">{settings.copy.emptyFavourites}</p>
+          <Link className="btn btn-primary" to="/auctions">
+            Browse auctions
+          </Link>
+        </section>
+      )}
     </div>
   )
 }

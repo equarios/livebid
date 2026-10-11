@@ -5,10 +5,12 @@ import {
   AUCTION_DESK_KEY,
   BidTotals,
   bidDeskSummary,
+  readDeskCollapsed,
 } from '../components/AuctionTable'
 import { AuctionTypeHead } from '../components/AuctionTypeHead'
 import { AuctionTypeNav, auctionTypeFilterOptions } from '../components/AuctionTypeNav'
 import { BidCsv } from '../components/BidCsv'
+import { DeskIntro } from '../components/DeskIntro'
 import {
   capacityOptions,
   CheckMenu,
@@ -64,6 +66,7 @@ function AuctionList() {
   const [memories, setMemories] = useState<string[]>([])
   const [open, setOpen] = useState<'type' | 'maker' | 'grade' | 'memory' | 'csv' | null>(null)
   const filtersRef = useRef<HTMLDivElement>(null)
+  const toolsRef = useRef<HTMLDivElement>(null)
   const skipHashWrite = useRef(false)
   const [coachOn, setCoachOn] = useState(() => {
     try {
@@ -74,13 +77,7 @@ function AuctionList() {
   })
   const [compareIds, setCompareIds] = useState<string[]>([])
   const [compareOpen, setCompareOpen] = useState(false)
-  const [deskCollapsed, setDeskCollapsed] = useState(() => {
-    try {
-      return localStorage.getItem(AUCTION_DESK_KEY) === '1'
-    } catch {
-      return false
-    }
-  })
+  const [deskCollapsed, setDeskCollapsed] = useState(() => readDeskCollapsed(AUCTION_DESK_KEY))
   function toggleDesk() {
     setDeskCollapsed((prev) => {
       const next = !prev
@@ -144,7 +141,12 @@ function AuctionList() {
 
   useEffect(() => {
     function onDoc(e: MouseEvent) {
-      if (!isFilterUiTarget(e.target, filtersRef.current)) setOpen(null)
+      if (
+        !isFilterUiTarget(e.target, filtersRef.current) &&
+        !isFilterUiTarget(e.target, toolsRef.current)
+      ) {
+        setOpen(null)
+      }
     }
     document.addEventListener('mousedown', onDoc)
     return () => document.removeEventListener('mousedown', onDoc)
@@ -197,8 +199,12 @@ function AuctionList() {
   const csvLots = filtered.filter((l) => l.endsAt > now)
 
   return (
-    <div className="auctions-page is-command-bar">
-      <h1 className="sr-only">{settings.copy.auctionsTitle}</h1>
+    <div className="auctions-page is-command-bar desk-page">
+      <DeskIntro
+        brand={settings.brandName || 'Equarios'}
+        title={settings.copy.auctionsTitle}
+        body={settings.copy.auctionsIntro}
+      />
       {showCoach ? (
         <div className="coach-panel">
           <div>
@@ -240,59 +246,47 @@ function AuctionList() {
               onSelectAll={() => startTransition(() => setListFilters([]))}
             />
             {settings.filters.maker ? (
-            <CheckMenu
-              title="Maker"
-              open={open === 'maker'}
-              onOpen={() => setOpen((v) => (v === 'maker' ? null : 'maker'))}
-              options={makersList}
-              selected={makers}
-              onToggle={(value) =>
-                startTransition(() => setMakers((prev) => toggleValue(prev, value)))
-              }
-            />
+              <CheckMenu
+                title="Maker"
+                open={open === 'maker'}
+                onOpen={() => setOpen((v) => (v === 'maker' ? null : 'maker'))}
+                options={makersList}
+                selected={makers}
+                onToggle={(value) =>
+                  startTransition(() => setMakers((prev) => toggleValue(prev, value)))
+                }
+              />
             ) : null}
             {settings.filters.grade ? (
-            <CheckMenu
-              title="Grade"
-              open={open === 'grade'}
-              onOpen={() => setOpen((v) => (v === 'grade' ? null : 'grade'))}
-              options={GRADES}
-              selected={grades}
-              onToggle={(value) =>
-                startTransition(() => setGrades((prev) => toggleValue(prev, value)))
-              }
-            />
+              <CheckMenu
+                title="Grade"
+                open={open === 'grade'}
+                onOpen={() => setOpen((v) => (v === 'grade' ? null : 'grade'))}
+                options={GRADES}
+                selected={grades}
+                onToggle={(value) =>
+                  startTransition(() => setGrades((prev) => toggleValue(prev, value)))
+                }
+              />
             ) : null}
             {settings.filters.capacity ? (
-            <CheckMenu
-              title="Capacity"
-              open={open === 'memory'}
-              onOpen={() => setOpen((v) => (v === 'memory' ? null : 'memory'))}
-              options={capacities}
-              selected={memories}
-              onToggle={(value) =>
-                startTransition(() => setMemories((prev) => toggleValue(prev, value)))
-              }
-            />
-            ) : null}
-            {!closedOnly ? (
-              <BidCsv
-                lots={csvLots}
-                listKind={kind === 'closed' ? 'all' : kind}
-                open={open === 'csv'}
-                onOpen={() => setOpen((v) => (v === 'csv' ? null : 'csv'))}
+              <CheckMenu
+                title="Capacity"
+                open={open === 'memory'}
+                onOpen={() => setOpen((v) => (v === 'memory' ? null : 'memory'))}
+                options={capacities}
+                selected={memories}
+                onToggle={(value) =>
+                  startTransition(() => setMemories((prev) => toggleValue(prev, value)))
+                }
               />
-            ) : (
-              <p className="muted tiny bid-csv-hint">
-                Closed lots cannot take new bids. Clear Closed or add Ongoing for CSV.
-              </p>
-            )}
+            ) : null}
           </div>
         </div>
       </BidTotals>
       {groups.length ? (
         <div className="auction-lists-stack">
-          {groups.map((group) => {
+          {groups.map((group, groupIndex) => {
             const yourBids = group.lots.filter((lot) => myLastBid(lot.id)).length
             const openLots = group.lots.length - yourBids
             const solo = groups.length === 1
@@ -321,11 +315,6 @@ function AuctionList() {
                     {group.label}
                     <em>{group.lots.length}</em>
                   </h2>
-                  {(typeMeta?.feePct ?? settings.invoice.feePct) > 0 ? (
-                    <em className="is-fee" title="System usage fee on winning goods">
-                      Fee {typeMeta?.feePct ?? settings.invoice.feePct}%
-                    </em>
-                  ) : null}
                   {showTimer ? (
                     <span
                       className="auction-command-timer"
@@ -334,16 +323,6 @@ function AuctionList() {
                       <TimeLeft endsAt={endsAt} />
                     </span>
                   ) : null}
-                  {yourBids > 0 ? (
-                    <em className="is-yours">Your bids {yourBids}</em>
-                  ) : null}
-                  {openLots > 0 ? <em className="is-open">Open {openLots}</em> : null}
-                  <span
-                    className="auction-command-stat is-money"
-                    title="Your qty × your price on these lots"
-                  >
-                    Total Bid {usd(groupSummary.totalBid)}
-                  </span>
                   <span
                     className={`auction-command-stat${groupSummary.hideWin ? '' : ' is-win'}`}
                     title={
@@ -354,10 +333,41 @@ function AuctionList() {
                   >
                     Winning {groupSummary.hideWin ? 'Hidden' : usd(groupSummary.winningAmount)}
                   </span>
+                  {!deskCollapsed ? (
+                    <>
+                      {(typeMeta?.feePct ?? settings.invoice.feePct) > 0 ? (
+                        <em className="is-fee" title="System usage fee on winning goods">
+                          Fee {typeMeta?.feePct ?? settings.invoice.feePct}%
+                        </em>
+                      ) : null}
+                      {yourBids > 0 ? (
+                        <em className="is-yours">Your bids {yourBids}</em>
+                      ) : null}
+                      {openLots > 0 ? <em className="is-open">Open {openLots}</em> : null}
+                      <span
+                        className="auction-command-stat is-money"
+                        title="Your qty × your price on these lots"
+                      >
+                        Total Bid {usd(groupSummary.totalBid)}
+                      </span>
+                    </>
+                  ) : null}
                 </div>
-                <div className="auction-type-head-tools">
-                  {deskCollapsed ? (
-                    <p className="muted tiny auction-type-head-recap">Filters hidden</p>
+                <div
+                  className="auction-type-head-tools"
+                  ref={groupIndex === 0 ? toolsRef : undefined}
+                >
+                  {groupIndex === 0 && !closedOnly ? (
+                    <BidCsv
+                      lots={csvLots}
+                      listKind={kind === 'closed' ? 'all' : kind}
+                      open={open === 'csv'}
+                      onOpen={() => setOpen((v) => (v === 'csv' ? null : 'csv'))}
+                      variant="tools"
+                    />
+                  ) : null}
+                  {groupIndex === 0 && closedOnly ? (
+                    <p className="muted tiny bid-csv-hint">CSV needs open lots</p>
                   ) : null}
                   <button
                     type="button"
@@ -368,7 +378,7 @@ function AuctionList() {
                         ? 'Show search and filters'
                         : 'Hide search and filters'
                     }
-                    title={deskCollapsed ? 'Show' : 'Hide'}
+                    title={deskCollapsed ? 'Show filters' : 'Hide filters'}
                   >
                     {deskCollapsed ? '+' : '−'}
                   </button>
@@ -386,7 +396,20 @@ function AuctionList() {
           })}
         </div>
       ) : (
-        <p className="empty">{settings.copy.emptyFilters}</p>
+        <>
+          {!closedOnly ? (
+            <div className="auction-type-head-tools auction-empty-tools" ref={toolsRef}>
+              <BidCsv
+                lots={csvLots}
+                listKind={kind === 'closed' ? 'all' : kind}
+                open={open === 'csv'}
+                onOpen={() => setOpen((v) => (v === 'csv' ? null : 'csv'))}
+                variant="tools"
+              />
+            </div>
+          ) : null}
+          <p className="empty">{settings.copy.emptyFilters}</p>
+        </>
       )}
       {compareOpen ? (
         <LotCompare

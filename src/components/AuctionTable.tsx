@@ -69,6 +69,23 @@ function orderFocusRows(rows: Row[]) {
 
 export const AUCTION_DESK_KEY = 'equarios-auction-desk-hidden'
 
+/** Prefer saved preference; otherwise collapse filters on narrow viewports. */
+export function readDeskCollapsed(key: string, narrowMaxPx = 900): boolean {
+  try {
+    const v = localStorage.getItem(key)
+    if (v === '1') return true
+    if (v === '0') return false
+  } catch {
+    /* ignore */
+  }
+  if (typeof window === 'undefined') return false
+  try {
+    return window.matchMedia(`(max-width: ${narrowMaxPx}px)`).matches
+  } catch {
+    return false
+  }
+}
+
 function closeHeat(pct: number) {
   if (pct >= 0.75) return 'hot'
   if (pct >= 0.4) return 'mid'

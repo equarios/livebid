@@ -1,0 +1,109 @@
+# Multi-replica HA stack: nginx → api1/api2, care worker, Postgres, Redis.
+# Object storage: shared local uploads volume (MinIO optional when the image is pullable).
+#
+#   docker compose -f docker-compose.ha.yml up -d --build
+#   curl http://localhost:8080/api/health
+#
+# Frontend (Vite) can proxy to http://localhost:8080 instead of :8787.
+# Backups:  npm run db:backup   (from server/) or scripts/pg-backup.ps1
+
+name: equarios-ha
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: equarios
+      POSTGRES_PASSWORD: equarios
+      POSTGRES_DB: equarios
+    volumes:
+      - ha_pg:/var/lib/postgresql/data
+      - ha_backups:/backups
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U equarios -d equarios']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ['redis-server', '--save', '', '--appendonly', 'no']
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api1: &api
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment: &api_env
+      PORT: '8787'
+      CARE_INLINE: '0'
+      DATABASE_URL: postgresql://equarios:equarios@postgres:5432/equarios?schema=public
+      REDIS_URL: redis://redis:6379
+      SEED_ON_BOOT: ${SEED_ON_BOOT:-0}
+    volumes:
+      - ha_uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ['api']
+
+  api2:
+    <<: *api
+    environment:
+      <<: *api_env
+      SEED_ON_BOOT: '0'
+    command: ['api']
+
+  # Only api1 may seed on boot (avoids duplicate seed races).
+  # Start with: SEED_ON_BOOT=1 docker compose -f docker-compose.ha.yml up -d --build
+  # then re-create api1 once, or set below temporarily to "1".
+
+  worker:
+    <<: *api
+    environment:
+      <<: *api_env
+      SEED_ON_BOOT: '0'
+    command: ['worker']
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - '8080:80'
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - api1
+      - api2
+
+  # Nightly logical backup into the shared volume (keeps 14 days).
+  pg-backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: equarios
+      PGHOST: postgres
+      PGUSER: equarios
+      PGDATABASE: equarios
+      BACKUP_KEEP_DAYS: '14'
+    volumes:
+      - ha_backups:/backups
+      - ./deploy/pg-backup-loop.sh:/backup-loop.sh:ro
+    entrypoint: ['/bin/sh', '-c', 'tr -d "\\r" < /backup-loop.sh > /tmp/backup-loop.sh && exec /bin/sh /tmp/backup-loop.sh']
+
+volumes:
+  ha_pg:
+  ha_uploads:
+  ha_backups:

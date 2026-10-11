@@ -1,5 +1,10 @@
 import { ModalShell } from './ModalShell'
-import { invoiceDocHtml, invoicePreviewParts, openInvoiceDocument } from '../lib/invoiceDoc'
+import {
+  invoiceDocHtml,
+  invoicePreviewParts,
+  openInvoiceDocument,
+  saveInvoiceDocument,
+} from '../lib/invoiceDoc'
 import { useStore } from '../store'
 import type { Invoice } from '../types'
 
@@ -27,12 +32,19 @@ export function InvoicePreview({ invoice, onClose }: { invoice: Invoice; onClose
             </button>
             <button
               type="button"
-              className="btn btn-ghost btn-sm"
+              className="btn btn-primary btn-sm"
               onClick={() => openInvoiceDocument(invoice, lots, buyer, settings)}
             >
               Open
             </button>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={() => saveInvoiceDocument(invoice, lots, buyer, settings)}
+            >
+              Save
+            </button>
+            <button type="button" className="btn btn-primary btn-sm" onClick={onClose}>
               Close
             </button>
           </div>

@@ -1,4 +1,4 @@
-import { usd } from '../lib/format'
+import { usd, usdCents } from '../lib/format'
 import { feePctForLot, quoteMoney } from '../lib/invoices'
 import type { Lot } from '../types'
 import { ConfirmDialog } from './ConfirmDialog'
@@ -55,17 +55,17 @@ export function ConfirmBidDialog({
         </div>
         <div>
           <dt>Goods</dt>
-          <dd className="price-cell">{usd(quote.goods)}</dd>
+          <dd className="price-cell">{usdCents(quote.goods)}</dd>
         </div>
         {quote.feePct > 0 ? (
           <div>
             <dt>Fee {quote.feePct}%</dt>
-            <dd className="price-cell">{usd(quote.fee)}</dd>
+            <dd className="price-cell">{usdCents(quote.fee)}</dd>
           </div>
         ) : null}
         <div>
           <dt>Est. total</dt>
-          <dd className="price-cell">{usd(quote.total)}</dd>
+          <dd className="price-cell">{usdCents(quote.total)}</dd>
         </div>
       </dl>
     </ConfirmDialog>

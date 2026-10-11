@@ -18,11 +18,14 @@ export function BidCsv({
   listKind = 'all',
   open,
   onOpen,
+  variant = 'filter',
 }: {
   lots: Lot[]
   listKind?: AuctionListKind
   open?: boolean
   onOpen?: () => void
+  /** `tools` = quiet control outside the filter pill row */
+  variant?: 'filter' | 'tools'
 }) {
   const now = useNow()
   const { lots: allLots, placeBids, settings, myLastBid } = useStore()
@@ -282,18 +285,29 @@ export function BidCsv({
   const active = csvOpen || Boolean(pick)
 
   return (
-    <div className={`bid-csv filter-menu${csvOpen ? ' open' : ''}`}>
+    <div className={`bid-csv filter-menu${variant === 'tools' ? ' is-tools' : ''}${csvOpen ? ' open' : ''}`}>
       <button
         ref={triggerRef}
         type="button"
-        className={`filter-trigger${active ? ' is-active' : ''}`}
+        className={
+          variant === 'tools'
+            ? `btn btn-ghost btn-sm auction-tools-csv${active ? ' is-active' : ''}`
+            : `filter-trigger${active ? ' is-active' : ''}`
+        }
         onClick={toggleOpen}
         disabled={!csvReady}
         aria-expanded={csvOpen}
         aria-haspopup="menu"
+        title="Download bid template or upload CSV bids"
       >
-        <span className="filter-trigger-title">CSV</span>
-        <span className="filter-trigger-value">Bid file</span>
+        {variant === 'tools' ? (
+          'Bid CSV'
+        ) : (
+          <>
+            <span className="filter-trigger-title">CSV</span>
+            <span className="filter-trigger-value">Bid file</span>
+          </>
+        )}
       </button>
       <FilterPanel open={csvOpen} anchorRef={triggerRef} className="bid-csv-panel" role="menu">
         <button

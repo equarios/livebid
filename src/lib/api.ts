@@ -4,22 +4,53 @@ export type ApiUser = {
   accountId: string
   company: string
   email: string
+  firstName?: string
+  lastName?: string
   role: 'superadmin' | 'admin' | 'member'
   status: 'pending' | 'active' | 'disabled'
+  emailVerified?: boolean
+  wholesaleStatus?: 'none' | 'submitted' | 'needs_docs' | 'under_review' | 'approved' | 'rejected'
+}
+
+export class ApiError extends Error {
+  needsVerify?: boolean
+  accountId?: string
+  email?: string
+  code?: string
+  constructor(
+    message: string,
+    extra?: { needsVerify?: boolean; accountId?: string; email?: string; code?: string },
+  ) {
+    super(message)
+    this.name = 'ApiError'
+    if (extra) Object.assign(this, extra)
+  }
 }
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
+  const { headers: initHeaders, ...rest } = init || {}
   const res = await fetch(path, {
     credentials: 'include',
+    ...rest,
     headers: {
       'Content-Type': 'application/json',
-      ...(init?.headers || {}),
+      ...(initHeaders as Record<string, string> | undefined),
     },
-    ...init,
   })
-  const data = (await res.json().catch(() => ({}))) as T & { error?: string }
+  const data = (await res.json().catch(() => ({}))) as T & {
+    error?: string
+    needsVerify?: boolean
+    accountId?: string
+    email?: string
+    code?: string
+  }
   if (!res.ok) {
-    throw new Error((data as { error?: string }).error || `Request failed (${res.status})`)
+    throw new ApiError((data as { error?: string }).error || `Request failed (${res.status})`, {
+      needsVerify: data.needsVerify,
+      accountId: data.accountId,
+      email: data.email,
+      code: data.code,
+    })
   }
   return data
 }
@@ -33,23 +64,258 @@ export const api = {
       body: JSON.stringify({ ident, password }),
     }),
   register: (body: {
-    accountId: string
-    password: string
-    company: string
+    firstName: string
+    lastName: string
     email: string
+    emailConfirm: string
+    password: string
+    passwordConfirm: string
+    company?: string
+    accountId?: string
     address?: string
+    phone?: string
   }) =>
-    req<{ message: string }>('/api/auth/register', {
+    req<{
+      message: string
+      needsVerify?: boolean
+      code?: string
+      email?: string
+      account: { accountId: string }
+    }>('/api/auth/register', {
       method: 'POST',
       body: JSON.stringify(body),
     }),
-  logout: () => req<{ ok: boolean }>('/api/auth/logout', { method: 'POST' }),
-  bootstrap: () => req<Record<string, unknown>>('/api/commerce/bootstrap'),
-  placeBid: (lotId: string, amount: number, qty: number) =>
-    req<{ bid: unknown }>('/api/commerce/bids', {
+  verifyEmail: (ident: string, code: string) =>
+    req<{ user: ApiUser; message: string }>('/api/auth/verify-email', {
       method: 'POST',
-      body: JSON.stringify({ lotId, amount, qty }),
+      body: JSON.stringify({ ident, code }),
     }),
+  resendVerifyEmail: (ident: string) =>
+    req<{ ok: boolean; message: string; code?: string; email?: string }>(
+      '/api/auth/verify-email/resend',
+      { method: 'POST', body: JSON.stringify({ ident }) },
+    ),
+  patchAccount: (
+    accountId: string,
+    body: Partial<{
+      status: string
+      role: string
+      wholesaleStatus: string
+      emailVerified: boolean
+      company: string
+      email: string
+      address: string
+      phone: string
+    }>,
+  ) =>
+    req<{ account: unknown }>(`/api/auth/accounts/${encodeURIComponent(accountId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+  getWholesaleApplication: () =>
+    req<{
+      application: {
+        id: string
+        status: string
+        payload: Record<string, unknown>
+        staffNote: string
+        submittedAt: string | null
+        reviewedAt?: string | null
+        wholesaleStatus: string
+      }
+    }>('/api/account/wholesale-application'),
+  saveWholesaleApplication: (body: { payload?: Record<string, unknown>; submit?: boolean }) =>
+    req<{
+      application: {
+        id: string
+        status: string
+        payload: Record<string, unknown>
+        staffNote: string
+        submittedAt: string | null
+      }
+    }>('/api/account/wholesale-application', {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    }),
+  listAccountDocuments: () =>
+    req<{ documents: unknown[] }>('/api/account/documents'),
+  uploadAccountDocument: (body: {
+    title: string
+    category: string
+    fileName: string
+    mimeType: string
+    dataBase64: string
+    note?: string
+  }) =>
+    req<{ document: unknown }>('/api/account/documents', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  downloadAccountDocument: (id: string) =>
+    req<{ fileName: string; mimeType: string; dataBase64: string }>(
+      `/api/account/documents/${encodeURIComponent(id)}/download`,
+    ),
+  staffWholesaleApplications: () =>
+    req<{
+      applications: Array<{
+        id: string
+        accountId: string
+        company: string
+        email: string
+        status: string
+        wholesaleStatus: string
+        staffNote: string
+        submittedAt: string | null
+        payload: Record<string, unknown>
+      }>
+    }>('/api/account/staff/wholesale-applications'),
+  staffWholesaleAction: (
+    accountId: string,
+    body: {
+      action: 'approve' | 'reject' | 'needs_docs' | 'under_review' | 'note' | 'send_notice'
+      staffNote?: string
+      noticeTitle?: string
+      noticeBody?: string
+      noticeHref?: string
+    },
+  ) =>
+    req<{ ok: boolean; wholesaleStatus?: string }>(
+      `/api/account/staff/wholesale-applications/${encodeURIComponent(accountId)}`,
+      { method: 'POST', body: JSON.stringify(body) },
+    ),
+  staffSendDocument: (body: {
+    accountId: string
+    title: string
+    category?: string
+    fileName: string
+    mimeType?: string
+    dataBase64: string
+    note?: string
+  }) =>
+    req<{ ok: boolean; id: string }>('/api/account/staff/documents', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  marketingStatus: () =>
+    req<{
+      brevoConfigured: boolean
+      total: number
+      subscribed: number
+      unsubscribed: number
+      bounced: number
+    }>('/api/marketing/status'),
+  marketingClients: (opts?: { q?: string; status?: string; tag?: string; limit?: number }) => {
+    const qs = new URLSearchParams()
+    if (opts?.q) qs.set('q', opts.q)
+    if (opts?.status) qs.set('status', opts.status)
+    if (opts?.tag) qs.set('tag', opts.tag)
+    if (opts?.limit) qs.set('limit', String(opts.limit))
+    const q = qs.toString()
+    return req<{ clients: unknown[]; total: number }>(`/api/marketing/clients${q ? `?${q}` : ''}`)
+  },
+  marketingUpsertClient: (body: {
+    email: string
+    firstName?: string
+    lastName?: string
+    company?: string
+    phone?: string
+    tags?: string[]
+    status?: string
+    note?: string
+    consent?: boolean
+  }) =>
+    req<{ client: unknown }>('/api/marketing/clients', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  marketingImportCsv: (csv: string, defaultTags?: string[]) =>
+    req<{ ok: boolean; created: number; updated: number; skipped: number }>(
+      '/api/marketing/clients/import',
+      { method: 'POST', body: JSON.stringify({ csv, defaultTags }) },
+    ),
+  marketingSyncBrevo: () =>
+    req<{
+      ok: boolean
+      synced: number
+      listId?: number
+      simulated?: boolean
+      message?: string
+    }>('/api/marketing/clients/sync-brevo', { method: 'POST' }),
+  marketingCampaigns: () =>
+    req<{ campaigns: unknown[]; brevoConfigured: boolean }>('/api/marketing/campaigns'),
+  marketingCreateCampaign: (body: {
+    name: string
+    subject: string
+    previewText?: string
+    htmlBody: string
+    textBody?: string
+    audience?: string
+  }) =>
+    req<{ campaign: unknown }>('/api/marketing/campaigns', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  marketingSendCampaign: (id: string) =>
+    req<{ campaign: unknown; simulated?: boolean; message?: string }>(
+      `/api/marketing/campaigns/${encodeURIComponent(id)}/send`,
+      { method: 'POST' },
+    ),
+  marketingRefreshCampaign: (id: string) =>
+    req<{ campaign: unknown; message?: string }>(
+      `/api/marketing/campaigns/${encodeURIComponent(id)}/refresh`,
+      { method: 'POST' },
+    ),
+  logout: () => req<{ ok: boolean }>('/api/auth/logout', { method: 'POST' }),
+  bootstrap: () =>
+    req<
+      Record<string, unknown> & {
+        meta?: {
+          lotsTotal?: number
+          lotsReturned?: number
+          lotsHasMore?: boolean
+          lotsNextCursor?: string | null
+          bidsTotal?: number
+          bidsReturned?: number
+          bidsHasMore?: boolean
+        }
+      }
+    >('/api/commerce/bootstrap'),
+  lotsPage: (opts?: { cursor?: string | null; limit?: number }) => {
+    const q = new URLSearchParams()
+    if (opts?.cursor) q.set('cursor', opts.cursor)
+    if (opts?.limit) q.set('limit', String(opts.limit))
+    const qs = q.toString()
+    return req<{ lots: unknown[]; nextCursor: string | null }>(
+      `/api/commerce/lots${qs ? `?${qs}` : ''}`,
+    )
+  },
+  bidsPage: (opts?: { cursor?: string | null; limit?: number; lotId?: string }) => {
+    const q = new URLSearchParams()
+    if (opts?.cursor) q.set('cursor', opts.cursor)
+    if (opts?.limit) q.set('limit', String(opts.limit))
+    if (opts?.lotId) q.set('lotId', opts.lotId)
+    const qs = q.toString()
+    return req<{ bids: unknown[]; nextCursor: string | null }>(
+      `/api/commerce/bids${qs ? `?${qs}` : ''}`,
+    )
+  },
+  placeBid: (lotId: string, amount: number, qty: number, idempotencyKey?: string) => {
+    const key = idempotencyKey || `bid-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+    return req<{
+      bid: {
+        lotId: string
+        accountId: string
+        amount: number
+        qty: number
+        at: number
+      }
+      lot?: { id: string; currentPrice: number; bidCount: number }
+    }>('/api/commerce/bids', {
+      method: 'POST',
+      headers: { 'Idempotency-Key': key },
+      body: JSON.stringify({ lotId, amount, qty, idempotencyKey: key }),
+    })
+  },
   addToCart: (lotId: string, qty: number) =>
     req<{ item: unknown }>('/api/commerce/cart', {
       method: 'POST',
@@ -127,15 +393,381 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(fees),
     }),
+  imeiPacks: () =>
+    req<{
+      packs: Array<{
+        id: string
+        title: string
+        accountId: string | null
+        invoiceId: string | null
+        note: string | null
+        createdBy: string
+        createdAt: string
+        rowCount: number
+        company: string | null
+      }>
+    }>('/api/imei/packs'),
+  imeiPack: (id: string) =>
+    req<{
+      pack: {
+        id: string
+        title: string
+        accountId: string | null
+        invoiceId: string | null
+        note: string | null
+        createdBy: string
+        createdAt: string
+        rowCount: number
+        company: string | null
+      }
+      devices: Array<{
+        id: string
+        imei: string
+        unlockCode: string
+        model: string | null
+        box: string | null
+      }>
+    }>(`/api/imei/packs/${encodeURIComponent(id)}`),
+  createImeiPack: (body: {
+    title: string
+    accountId?: string | null
+    invoiceId?: string | null
+    note?: string | null
+    rows?: Array<{ imei: string; unlockCode: string; model?: string; box?: string }>
+  }) =>
+    req<{ pack: { id: string; rowCount: number; title: string } }>('/api/imei/packs', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  updateImeiDevice: (
+    id: string,
+    body: {
+      imei?: string
+      unlockCode?: string
+      model?: string | null
+      box?: string | null
+    },
+  ) =>
+    req<{
+      device: {
+        id: string
+        imei: string
+        unlockCode: string
+        model: string | null
+        box: string | null
+        packId: string
+      }
+    }>(`/api/imei/devices/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+  deleteImeiDevice: (id: string) =>
+    req<{ ok: boolean; packId: string }>(`/api/imei/devices/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    }),
+  updateImeiPack: (
+    id: string,
+    body: {
+      title?: string
+      accountId?: string | null
+      invoiceId?: string | null
+      note?: string | null
+    },
+  ) =>
+    req<{ pack: { id: string; accountId: string | null; title: string; rowCount: number } }>(
+      `/api/imei/packs/${encodeURIComponent(id)}`,
+      { method: 'PATCH', body: JSON.stringify(body) },
+    ),
+  appendImeiRows: (
+    id: string,
+    rows: Array<{ imei: string; unlockCode: string; model?: string; box?: string }>,
+  ) =>
+    req<{ pack: { id: string; rowCount: number }; upserted: number }>(
+      `/api/imei/packs/${encodeURIComponent(id)}/rows`,
+      { method: 'POST', body: JSON.stringify({ rows }) },
+    ),
+  deleteImeiPack: (id: string) =>
+    req<{ ok: boolean }>(`/api/imei/packs/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  searchImei: (q: string) =>
+    req<{
+      query: string
+      matches: Array<{
+        id: string
+        imei: string
+        unlockCode: string
+        model: string | null
+        box: string | null
+        packId: string
+        packTitle: string
+        invoiceId: string | null
+        accountId: string | null
+      }>
+    }>(`/api/imei/search?q=${encodeURIComponent(q)}`),
+  browseImeiDevices: (params: {
+    q?: string
+    accountId?: string
+    packId?: string
+    invoiceId?: string
+    take?: number
+    skip?: number
+  }) => {
+    const qs = new URLSearchParams()
+    if (params.q) qs.set('q', params.q)
+    if (params.accountId) qs.set('accountId', params.accountId)
+    if (params.packId) qs.set('packId', params.packId)
+    if (params.invoiceId) qs.set('invoiceId', params.invoiceId)
+    if (params.take != null) qs.set('take', String(params.take))
+    if (params.skip != null) qs.set('skip', String(params.skip))
+    const suffix = qs.toString() ? `?${qs}` : ''
+    return req<{
+      total: number
+      take: number
+      skip: number
+      devices: Array<{
+        id: string
+        imei: string
+        unlockCode: string
+        model: string | null
+        box: string | null
+        packId: string
+        packTitle: string
+        invoiceId: string | null
+        accountId: string | null
+      }>
+    }>(`/api/imei/devices${suffix}`)
+  },
+  storeProducts: (params?: { q?: string; category?: string }) => {
+    const qs = new URLSearchParams()
+    if (params?.q) qs.set('q', params.q)
+    if (params?.category) qs.set('category', params.category)
+    const suffix = qs.toString() ? `?${qs}` : ''
+    return req<{ products: StoreProductDto[] }>(`/api/store/products${suffix}`)
+  },
+  storeProduct: (idOrSlug: string) =>
+    req<{ product: StoreProductDto }>(`/api/store/products/${encodeURIComponent(idOrSlug)}`),
+  createStoreProduct: (body: Partial<StoreProductDto> & { title: string; price: number; stock: number }) =>
+    req<{ product: StoreProductDto }>('/api/store/products', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  updateStoreProduct: (id: string, body: Partial<StoreProductDto>) =>
+    req<{ product: StoreProductDto }>(`/api/store/products/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+  deleteStoreProduct: (id: string) =>
+    req<{ ok: boolean }>(`/api/store/products/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  uploadStoreImages: async (files: File[]) => {
+    const fd = new FormData()
+    for (const f of files) fd.append('files', f)
+    const res = await fetch('/api/store/upload', {
+      method: 'POST',
+      credentials: 'include',
+      body: fd,
+    })
+    const data = (await res.json().catch(() => ({}))) as { urls?: string[]; error?: string }
+    if (!res.ok) throw new ApiError(data.error || `Upload failed (${res.status})`)
+    return { urls: data.urls || [] }
+  },
+  uploadBrandLogo: async (file: File) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    const res = await fetch('/api/settings/brand-logo', {
+      method: 'POST',
+      credentials: 'include',
+      body: fd,
+    })
+    const data = (await res.json().catch(() => ({}))) as { url?: string; error?: string }
+    if (!res.ok) throw new ApiError(data.error || `Upload failed (${res.status})`)
+    if (!data.url) throw new ApiError('Upload failed.')
+    return { url: data.url }
+  },
+  placeStoreOrder: (body: {
+    email: string
+    name: string
+    phone?: string
+    address: string
+    note?: string
+    paymentMethod: 'card' | 'paypal' | 'bank'
+    lines: Array<{ productId: string; qty: number }>
+  }) =>
+    req<{ order: StoreOrderDto }>('/api/store/orders', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  storeOrders: () => req<{ orders: StoreOrderDto[] }>('/api/store/orders'),
+  storeOrder: (id: string) =>
+    req<{ order: StoreOrderDto }>(`/api/store/orders/${encodeURIComponent(id)}`),
+  updateStoreOrder: (
+    id: string,
+    body: { status?: 'pending_payment' | 'paid' | 'shipped' | 'cancelled'; paymentRef?: string | null },
+  ) =>
+    req<{ order: StoreOrderDto }>(`/api/store/orders/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+
+  communityListings: (params?: { q?: string; category?: string; mine?: boolean; queue?: boolean }) => {
+    const qs = new URLSearchParams()
+    if (params?.q) qs.set('q', params.q)
+    if (params?.category) qs.set('category', params.category)
+    if (params?.mine) qs.set('mine', '1')
+    if (params?.queue) qs.set('queue', '1')
+    const suffix = qs.toString() ? `?${qs}` : ''
+    return req<{ listings: CommunityListingDto[] }>(`/api/community/listings${suffix}`)
+  },
+  communityListing: (id: string) =>
+    req<{ listing: CommunityListingDto }>(`/api/community/listings/${encodeURIComponent(id)}`),
+  createCommunityListing: (body: CommunityListingInput) =>
+    req<{ listing: CommunityListingDto }>('/api/community/listings', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  updateCommunityListing: (id: string, body: Partial<CommunityListingInput> & { status?: string }) =>
+    req<{ listing: CommunityListingDto }>(`/api/community/listings/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+  moderateCommunityListing: (
+    id: string,
+    body: { status?: string; featured?: boolean; staffNote?: string },
+  ) =>
+    req<{ listing: CommunityListingDto }>(`/api/community/staff/listings/${encodeURIComponent(id)}`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  communityInterest: (id: string, body: { message: string; qtyWanted?: number }) =>
+    req<{ interest: { id: string; listingId: string; status: string; createdAt: string } }>(
+      `/api/community/listings/${encodeURIComponent(id)}/interest`,
+      { method: 'POST', body: JSON.stringify(body) },
+    ),
+  communityInterests: () =>
+    req<{
+      interests: Array<{
+        id: string
+        listingId: string
+        listingTitle: string
+        listingStatus: string
+        message: string
+        qtyWanted: number | null
+        status: string
+        fromCompany: string
+        fromAccountId?: string
+        fromEmail?: string
+        mine: boolean
+        createdAt: string
+      }>
+    }>('/api/community/interests'),
+}
+
+export type StoreProductDto = {
+  id: string
+  title: string
+  slug: string
+  description: string
+  price: number
+  compareAt: number | null
+  stock: number
+  category: string
+  imageUrl: string | null
+  /** Ordered gallery; first is cover. */
+  images?: string[]
+  active: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export type StoreOrderDto = {
+  id: string
+  accountId: string | null
+  email: string
+  name: string
+  phone: string | null
+  address: string
+  status: string
+  paymentMethod: string
+  paymentRef: string | null
+  subtotal: number
+  shippingFee: number
+  total: number
+  note: string | null
+  createdAt: string
+  paidAt: string | null
+  shippedAt: string | null
+  lines: Array<{
+    id: string
+    productId: string | null
+    title: string
+    unitPrice: number
+    qty: number
+  }>
+}
+
+export type CommunityListingDto = {
+  id: string
+  title: string
+  description: string
+  category: string
+  manufacturer: string
+  model: string
+  capacity: string
+  grade: string
+  color: string
+  qty: number
+  price: number | null
+  currency: string
+  imageUrl: string | null
+  status: string
+  featured: boolean
+  staffNote: string
+  interestCount: number
+  sellerName: string
+  mine: boolean
+  accountId?: string
+  createdAt: string
+  updatedAt: string
+  publishedAt: string | null
+}
+
+export type CommunityListingInput = {
+  title: string
+  description?: string
+  category?: string
+  manufacturer?: string
+  model?: string
+  capacity?: string
+  grade?: string
+  color?: string
+  qty?: number
+  price?: number | null
+  currency?: string
+  imageUrl?: string | null
 }
 
 let apiReady: boolean | null = null
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = window.setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+    promise.then(
+      (v) => {
+        window.clearTimeout(t)
+        resolve(v)
+      },
+      (e) => {
+        window.clearTimeout(t)
+        reject(e)
+      },
+    )
+  })
+}
 
 /** True when local Hono API is reachable (cached after first probe). */
 export async function isApiAvailable() {
   if (apiReady != null) return apiReady
   try {
-    await api.health()
+    // Hard cap — a hung proxy must not freeze the UI on “Loading session…”
+    await withTimeout(api.health(), 2500, 'API health')
     apiReady = true
   } catch {
     apiReady = false

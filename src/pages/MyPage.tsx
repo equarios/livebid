@@ -1,25 +1,20 @@
-import { useLayoutEffect } from 'react'
+import { useLayoutEffect, useMemo } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { AuctionTypeHead } from '../components/AuctionTypeHead'
-import { RecentLots } from '../components/RecentLots'
+import { DeskIntro } from '../components/DeskIntro'
+import { canUseWholesaleDesk } from '../lib/channelAccess'
 import { usd } from '../lib/format'
 import { invoiceTotals, invoiceVisibleToBuyer } from '../lib/invoices'
 import { useStore } from '../store'
 
-const TABS = [
-  { to: '/account', label: 'Bid History', end: true },
-  { to: '/account/marketplace-history', label: 'Marketplace' },
-  { to: '/account/settings', label: 'Account Settings' },
-  { to: '/account/favourites', label: 'Favorites' },
-  { to: '/account/invoices', label: 'Invoice' },
-  { to: '/account/complaint', label: 'Complaint' },
-] as const
+type Tab = { to: string; label: string; end?: boolean; badge?: number }
 
 export function MyPage() {
   const { pathname } = useLocation()
-  const { invoices, user, isStaff, settings, cart, cartOrders, offers } = useStore()
-  const onInvoices = pathname.startsWith('/account/invoices')
+  const { invoices, user, isStaff, settings, cart, cartOrders, offers, watchlist } = useStore()
+  const wholesaleOk = canUseWholesaleDesk(user, isStaff)
   const onMarket = pathname.startsWith('/account/marketplace-history')
+
   const mine = invoices.filter(
     (i) => invoiceVisibleToBuyer(i) && (isStaff || !i.accountId || i.accountId === user?.accountId),
   )
@@ -36,6 +31,47 @@ export function MyPage() {
       o.accountId === user?.accountId &&
       (o.status === 'pending' || o.status === 'accepted'),
   ).length
+  const favCount = watchlist.length
+
+  const tabs = useMemo((): Tab[] => {
+    const base: Tab[] = [{ to: '/account', label: 'Overview', end: true }]
+    // Application desk only — approved buyers already have the full trading bar.
+    if (!wholesaleOk) {
+      base.push({ to: '/account/wholesale', label: 'Wholesale' })
+    }
+    base.push({ to: '/account/documents', label: 'Documents' })
+    if (wholesaleOk) {
+      base.push(
+        { to: '/account/bids', label: 'Bids' },
+        {
+          to: '/account/marketplace-history',
+          label: 'Marketplace',
+          badge: cartCount || undefined,
+        },
+      )
+      if (settings.showCommunity !== false) {
+        base.push({ to: '/account/community', label: 'Community' })
+      }
+      base.push(
+        {
+          to: '/account/favourites',
+          label: 'Favorites',
+          badge: favCount || undefined,
+        },
+        {
+          to: '/account/invoices',
+          label: 'Invoice',
+          badge: unpaid.length || undefined,
+        },
+        { to: '/account/imei', label: 'IMEI' },
+      )
+    }
+    base.push(
+      { to: '/account/settings', label: 'Settings' },
+      { to: '/account/complaint', label: 'Complaint' },
+    )
+    return base
+  }, [wholesaleOk, settings.showCommunity, cartCount, favCount, unpaid.length])
 
   useLayoutEffect(() => {
     document.documentElement.style.setProperty('--auction-desk-h', '0px')
@@ -45,43 +81,52 @@ export function MyPage() {
   }, [])
 
   return (
-    <div className="mypage is-command-bar">
-      <section className="auction-type-block is-solo">
+    <div className="mypage is-command-bar desk-page">
+      <DeskIntro
+        brand={settings.brandName || 'Equarios'}
+        title={settings.copy.accountTitle || 'My Page'}
+        body={settings.copy.accountIntro}
+      />
+      <section className="auction-type-block is-solo mypage-desk">
         <AuctionTypeHead>
           <div className="auction-command">
-            <nav className="mypage-tabs" aria-label="My Page">
-              {TABS.map((tab) => (
-                <NavLink key={tab.to} to={tab.to} end={'end' in tab ? tab.end : false}>
+            <nav className="ops-nav mypage-ops-nav" aria-label="My Page">
+              {tabs.map((tab) => (
+                <NavLink
+                  key={tab.to}
+                  to={tab.to}
+                  end={tab.end}
+                  className={({ isActive }) => `ops-nav-btn${isActive ? ' on' : ''}`}
+                >
                   {tab.label}
-                  {tab.to === '/account/marketplace-history' && cartCount ? (
-                    <em>{cartCount}</em>
-                  ) : null}
+                  {tab.badge ? <em>{tab.badge}</em> : null}
                 </NavLink>
               ))}
             </nav>
-            {onMarket && cartCount ? (
-              <a href="#cart" className="auction-command-link is-yours">
-                Cart {cartCount}
-              </a>
-            ) : null}
-            {onMarket && offerCount ? (
-              <a href="#offers" className="auction-command-link is-open">
-                Offers {offerCount}
-              </a>
-            ) : null}
-            {due > 0 ? (
-              <Link
-                to="/account/invoices"
-                className="auction-command-stat is-lose"
-                title="Unpaid invoice total"
-              >
-                Unpaid {usd(due)}
-              </Link>
-            ) : null}
+            <div className="ops-nav-actions">
+              {onMarket && cartCount ? (
+                <a href="#cart" className="auction-command-link is-yours">
+                  Cart {cartCount}
+                </a>
+              ) : null}
+              {onMarket && offerCount ? (
+                <a href="#offers" className="auction-command-link is-open">
+                  Offers {offerCount}
+                </a>
+              ) : null}
+              {due > 0 ? (
+                <Link
+                  to="/account/invoices"
+                  className="auction-command-stat is-lose"
+                  title="Unpaid invoice total"
+                >
+                  Unpaid {usd(due)}
+                </Link>
+              ) : null}
+            </div>
           </div>
         </AuctionTypeHead>
         <div className="mypage-body">
-          {!onInvoices && !onMarket ? <RecentLots /> : null}
           <Outlet />
         </div>
       </section>

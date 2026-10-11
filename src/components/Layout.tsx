@@ -3,8 +3,11 @@ import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { BrandLogo } from './BrandLogo'
 import { HelpMenu } from './HelpMenu'
 import { LotPreviewProvider } from './LotPreview'
+import { MeMenu } from './MeMenu'
+import { SiteFooter } from './SiteFooter'
 import { SiteNav } from './SiteNav'
 import { SiteWarnPopup } from './SiteWarnPopup'
+import { canUseWholesaleDesk, wholesaleHome } from '../lib/channelAccess'
 import { useStore } from '../store'
 
 function searchTarget(pathname: string, showAuctions: boolean, showMarketplace: boolean) {
@@ -16,7 +19,7 @@ function searchTarget(pathname: string, showAuctions: boolean, showMarketplace: 
 }
 
 export function Layout() {
-  const { user, logout, notices, settings, markNoticesRead } = useStore()
+  const { user, notices, settings, markNoticesRead, isStaff } = useStore()
   const navigate = useNavigate()
   const location = useLocation()
   const [menuOpen, setMenuOpen] = useState(false)
@@ -49,11 +52,8 @@ export function Layout() {
 
   const myNotices = notices.filter((n) => n.accountId === user?.accountId).slice(0, 12)
   const unread = myNotices.filter((n) => !n.read).length
-  const home = '/'
+  const home = canUseWholesaleDesk(user, isStaff) ? wholesaleHome(settings) : '/account'
   const myPage = location.pathname.startsWith('/account')
-  const displayName = (user?.company || user?.accountId || 'Account').replace(/\w\S*/g, (w) =>
-    w[0].toUpperCase() + w.slice(1).toLowerCase(),
-  )
   const placeholder =
     location.pathname.startsWith('/marketplace')
       ? settings.copy.searchMarket
@@ -118,6 +118,7 @@ export function Layout() {
                   setNotesOpen(false)
                   setMenuOpen(false)
                 }}
+                onClose={() => setMenuOpen(false)}
               />
               <div className={`notice-menu ${notesOpen ? 'open' : ''}`}>
                 <button
@@ -157,44 +158,15 @@ export function Layout() {
                   </div>
                 ) : null}
               </div>
-              <div className={`user-menu ${menuOpen ? 'open' : ''}`}>
-                <button
-                  type="button"
-                  className="user-menu-btn"
-                  onClick={() => {
-                    setMenuOpen((v) => !v)
-                    setNotesOpen(false)
-                  }}
-                >
-                  {displayName}
-                  <span aria-hidden>▾</span>
-                </button>
-                {menuOpen ? (
-                  <div className="user-menu-panel">
-                    <div className="muted tiny">{user?.accountId}</div>
-                    <button
-                      type="button"
-                      className="btn btn-ghost"
-                      onClick={() => {
-                        setMenuOpen(false)
-                        navigate('/account/settings')
-                      }}
-                    >
-                      Account settings
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-ghost"
-                      onClick={() => {
-                        setMenuOpen(false)
-                        void logout().then(() => window.location.assign('/'))
-                      }}
-                    >
-                      {settings.copy.signOut}
-                    </button>
-                  </div>
-                ) : null}
-              </div>
+              <MeMenu
+                mode="app"
+                closeWhen={notesOpen}
+                onOpen={() => {
+                  setMenuOpen(true)
+                  setNotesOpen(false)
+                }}
+                onClose={() => setMenuOpen(false)}
+              />
             </div>
           </div>
         </header>
@@ -202,6 +174,7 @@ export function Layout() {
         <main className={`page ${myPage ? 'page-mypage' : ''}`}>
           <Outlet />
         </main>
+        <SiteFooter />
       </div>
     </LotPreviewProvider>
   )

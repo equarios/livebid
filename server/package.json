@@ -5,21 +5,33 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
+    "worker": "tsx watch src/worker.ts",
     "start": "tsx src/index.ts",
+    "worker:start": "tsx src/worker.ts",
+    "load:smoke": "node scripts/load-smoke.mjs",
+    "ha:up": "docker compose -f ../docker-compose.ha.yml up -d --build",
+    "ha:down": "docker compose -f ../docker-compose.ha.yml down",
+    "ha:logs": "docker compose -f ../docker-compose.ha.yml logs -f --tail=80",
+    "db:backup": "powershell -NoProfile -File ../scripts/pg-backup.ps1",
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
     "db:reset": "prisma db push --force-reset && tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1149.0",
     "@hono/node-server": "^1.14.4",
     "@prisma/client": "^6.16.2",
     "bcryptjs": "^3.0.2",
     "hono": "^4.9.8",
+    "redis": "^6.3.0",
+    "sharp": "^0.35.5",
+    "ws": "^8.22.0",
     "zod": "^4.1.11"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^24.13.3",
+    "@types/ws": "^8.18.2",
     "prisma": "^6.16.2",
     "tsx": "^4.20.5",
     "typescript": "~6.0.2"

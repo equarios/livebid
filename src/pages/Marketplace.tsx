@@ -1,6 +1,8 @@
 import { startTransition, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { AuctionTypeHead } from '../components/AuctionTypeHead'
+import { readDeskCollapsed } from '../components/AuctionTable'
+import { DeskIntro } from '../components/DeskIntro'
 import {
   capacityOptions,
   CheckMenu,
@@ -10,7 +12,7 @@ import {
 import { isFilterUiTarget } from '../components/FilterPanel'
 import { ItemLink } from '../components/ItemLink'
 import { ConfirmBidDialog } from '../components/ConfirmBidDialog'
-import { fillCopy, usd } from '../lib/format'
+import { fillCopy, usd, usdCents } from '../lib/format'
 import { checkOrderQty, lotMoq, moqLabel } from '../lib/moq'
 import { feePctForLot, moneyForChannel, moneyForLot, quoteMoney } from '../lib/invoices'
 import { useStore } from '../store'
@@ -172,9 +174,9 @@ function MarketLot({ lot, asCard }: { lot: Lot; asCard?: boolean }) {
             : null
         return buyQuote ? (
           <div className="muted tiny bid-cost-hint">
-            Buy est. {usd(buyQuote.total)}
+            Buy est. {usdCents(buyQuote.total)}
             {buyQuote.feePct > 0 ? ` (incl. ${buyQuote.feePct}% fee)` : ''}
-            {offerQuote ? ` · Offer est. ${usd(offerQuote.total)}` : ''}
+            {offerQuote ? ` · Offer est. ${usdCents(offerQuote.total)}` : ''}
           </div>
         ) : null
       })()}
@@ -309,13 +311,7 @@ export function Marketplace() {
   const [makers, setMakers] = useState<string[]>([])
   const [memories, setMemories] = useState<string[]>([])
   const [open, setOpen] = useState<'maker' | 'grade' | 'memory' | null>(null)
-  const [deskCollapsed, setDeskCollapsed] = useState(() => {
-    try {
-      return localStorage.getItem(MARKET_DESK_KEY) === '1'
-    } catch {
-      return false
-    }
-  })
+  const [deskCollapsed, setDeskCollapsed] = useState(() => readDeskCollapsed(MARKET_DESK_KEY))
   const filtersRef = useRef<HTMLDivElement>(null)
   function toggleDesk() {
     setDeskCollapsed((prev) => {
@@ -372,8 +368,12 @@ export function Marketplace() {
   ).length
 
   return (
-    <div className="market-page is-command-bar">
-      <h1 className="sr-only">{settings.copy.marketTitle}</h1>
+    <div className="market-page is-command-bar desk-page">
+      <DeskIntro
+        brand={settings.brandName || 'Equarios'}
+        title={settings.copy.marketTitle}
+        body={settings.copy.marketIntro}
+      />
       {!deskCollapsed ? (
         <div className="auction-desk is-scrollaway">
           <div className="auction-desk-filters">

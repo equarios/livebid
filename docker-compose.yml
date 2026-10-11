@@ -1,0 +1,74 @@
+# Optional scale stack (local demo still uses SQLite + local disk + memory cache).
+#
+#   docker compose up -d
+#
+# Postgres: set schema provider to postgresql + DATABASE_URL below
+# Redis:    REDIS_URL=redis://localhost:6379
+# MinIO:    S3_* vars below (S3-compatible CDN origin)
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    ports:
+      - '5432:5432'
+    environment:
+      POSTGRES_USER: equarios
+      POSTGRES_PASSWORD: equarios
+      POSTGRES_DB: equarios
+    volumes:
+      - equarios_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U equarios -d equarios']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+    command: ['redis-server', '--save', '', '--appendonly', 'no']
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: ['server', '/data', '--console-address', ':9001']
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    environment:
+      MINIO_ROOT_USER: equarios
+      MINIO_ROOT_PASSWORD: equariossecret
+    volumes:
+      - equarios_minio:/data
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://127.0.0.1:9000/minio/health/live']
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+
+  # One-shot bucket create for MinIO
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      sleep 3;
+      mc alias set local http://minio:9000 equarios equariossecret;
+      mc mb -p local/equarios || true;
+      mc anonymous set download local/equarios || true;
+      exit 0;
+      "
+
+volumes:
+  equarios_pg:
+  equarios_minio:

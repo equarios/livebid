@@ -5,8 +5,9 @@ export function BrandLogo({ size = 'header' }: { size?: 'header' | 'auth' | 'foo
   return (
     <img
       className={`brand-logo brand-logo-${size}`}
-      src={settings.brandLogo || '/equarios-logo.png'}
+      src={settings.brandLogo || '/equarios-logo.png?v=20261011'}
       alt={settings.brandName}
+      decoding="async"
     />
   )
 }

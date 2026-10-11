@@ -28,6 +28,16 @@ export function usd(n: number) {
   })
 }
 
+/** Currency with cents — use for fee / invoice totals where fractions matter. */
+export function usdCents(n: number) {
+  return n.toLocaleString('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
+}
+
 export function usdAmt(n: number) {
   return `${n.toLocaleString('en-US')} USD`
 }

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { ItemLink } from './ItemLink'
 import { ConfirmDialog } from './ConfirmDialog'
-import { formatDateTime, usd } from '../lib/format'
+import { formatDateTime, usdCents } from '../lib/format'
 import { catalogFeePct, quoteMoney } from '../lib/invoices'
 import { useStore } from '../store'
 import type { CartOrder, SiteSettings } from '../types'
@@ -92,7 +92,7 @@ export function CartDesk({ staff }: { staff?: boolean }) {
                   </td>
                   <td className="lot-qty">{orderPcs(order).toLocaleString()}</td>
                   <td className="price-cell">
-                    {usd(quote.total)}
+                    {usdCents(quote.total)}
                     {quote.feePct > 0 ? (
                       <div className="muted tiny">incl. {quote.feePct}% fee</div>
                     ) : null}
@@ -174,7 +174,7 @@ export function CartDesk({ staff }: { staff?: boolean }) {
               <div className="auction-card-meta">
                 <span>{order.lines.length} line(s)</span>
                 <span>{orderPcs(order).toLocaleString()} pcs</span>
-                <span>{usd(orderQuote(order, settings).total)}</span>
+                <span>{usdCents(orderQuote(order, settings).total)}</span>
               </div>
               <span
                 className={`pill pill-${
@@ -253,17 +253,17 @@ export function CartDesk({ staff }: { staff?: boolean }) {
             </div>
             <div>
               <dt>Goods</dt>
-              <dd>{usd(confirmingQuote?.goods || 0)}</dd>
+              <dd>{usdCents(confirmingQuote?.goods || 0)}</dd>
             </div>
             {confirmingQuote && confirmingQuote.feePct > 0 ? (
               <div>
                 <dt>Fee {confirmingQuote.feePct}%</dt>
-                <dd>{usd(confirmingQuote.fee)}</dd>
+                <dd>{usdCents(confirmingQuote.fee)}</dd>
               </div>
             ) : null}
             <div>
               <dt>Est. total</dt>
-              <dd>{usd(confirmingQuote?.total || 0)}</dd>
+              <dd>{usdCents(confirmingQuote?.total || 0)}</dd>
             </div>
           </div>
         </ConfirmDialog>

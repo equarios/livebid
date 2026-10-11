@@ -57,6 +57,7 @@ export type FeatureFlags = {
 
 export type CopySettings = {
   navAuctions: string
+  navStore: string
   navFavourites: string
   navInvoices: string
   navAccount: string
@@ -201,14 +202,101 @@ export type InvoiceProfile = {
   invoiceIdPrefix: string
 }
 
+/** Public site footer / contact strip (seeded from company email signature). */
+export type SiteContact = {
+  legalName: string
+  verifiedMember: string
+  webLabel: string
+  webUrl: string
+  emailBusiness: string
+  emailEnquiry: string
+  phone: string
+  phoneDisplay: string
+  wechatId: string
+  linkedinHandle: string
+  linkedinUrl: string
+  whatsapp: string
+  whatsappDisplay: string
+  duns: string
+  social: {
+    facebook: string
+    x: string
+    instagram: string
+    whatsapp: string
+    linkedin: string
+    google: string
+  }
+}
+
+/** One store homepage hero slide. */
+export type StoreHeroSlide = {
+  kicker: string
+  title: string
+  body: string
+  cta: string
+}
+
+/** Wholesale hub hero slide (CTA path e.g. /auctions). */
+export type WholesaleHeroSlide = {
+  kicker: string
+  title: string
+  body: string
+  cta: string
+  to: string
+}
+
+export type ContentCard = {
+  title: string
+  body: string
+}
+
+/**
+ * Marketing / auth page copy editable from Super.
+ * Body lines: use `Title|Detail` for stepped lists, `- item` for bullets, else paragraphs.
+ */
+export type MarketingPageCopy = {
+  kicker: string
+  title: string
+  lead: string
+  body: string
+  primaryCta: string
+  secondaryCta: string
+}
+
+/** Editable page surfaces that were previously hardcoded in the UI. */
+export type SitePages = {
+  footerCopyright: string
+  authBrand: string
+  authTitle: string
+  authLead: string
+  /** Hero auto-advance seconds (store + wholesale). Min 5. */
+  heroIntervalSec: number
+  storeHeroes: StoreHeroSlide[]
+  wholesaleHeroes: WholesaleHeroSlide[]
+  wholesaleHowTitle: string
+  wholesaleHowSteps: ContentCard[]
+  wholesaleTrust: ContentCard[]
+  wholesaleDealsTitle: string
+  wholesaleBrandsTitle: string
+  wholesaleEmptyDeals: string
+  wholesaleEmptyMarket: string
+  buyers: MarketingPageCopy
+  sellers: MarketingPageCopy
+  support: MarketingPageCopy
+}
+
 export type SiteSettings = {
   brandName: string
   brandMark: string
   brandLogo: string
   tagline: string
   marketplaceLabel: string
+  storeLabel: string
   showAuctions: boolean
   showMarketplace: boolean
+  showStore: boolean
+  /** Community under My Page — wholesale buyers + staff/sellers only. */
+  showCommunity: boolean
   showFavourites: boolean
   filters: {
     type: boolean
@@ -237,6 +325,8 @@ export type SiteSettings = {
   copy: CopySettings
   icons: IconSettings
   invoice: InvoiceProfile
+  contact: SiteContact
+  pages: SitePages
 }
 
 export type Lot = {
@@ -450,24 +540,52 @@ export type CartItem = {
 
 export type AccountRole = 'superadmin' | 'admin' | 'member'
 export type AccountStatus = 'pending' | 'active' | 'disabled'
+export type WholesaleStatus =
+  | 'none'
+  | 'submitted'
+  | 'needs_docs'
+  | 'under_review'
+  | 'approved'
+  | 'rejected'
 
 export type Account = {
   accountId: string
   password: string
   company: string
   email: string
+  firstName?: string
+  lastName?: string
   address?: string
   phone?: string
   /** Printed Buyer # on invoices; derived from accountId when omitted. */
   buyerNumber?: string
   role: AccountRole
   status: AccountStatus
+  emailVerified?: boolean
+  wholesaleStatus?: WholesaleStatus
 }
 
 export type User = {
   accountId: string
   company: string
   email: string
+  firstName?: string
+  lastName?: string
   role: AccountRole
   status: AccountStatus
+  emailVerified?: boolean
+  wholesaleStatus?: WholesaleStatus
+}
+
+export type RegisterInput = {
+  firstName: string
+  lastName: string
+  email: string
+  emailConfirm: string
+  password: string
+  passwordConfirm: string
+  company?: string
+  accountId?: string
+  address?: string
+  phone?: string
 }
