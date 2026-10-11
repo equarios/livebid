@@ -326,6 +326,7 @@ export function Admin() {
 
   return (
     <OpsShell
+      deskKey="admin"
       title="Admin"
       blurb="Catalog, commerce reviews, buyers, clients email, and first payment stamps. Super handles final confirms and site settings."
       sections={sections}

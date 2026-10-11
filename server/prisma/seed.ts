@@ -15,6 +15,7 @@ const STORE_CATALOG = require('../scripts/store-catalog.cjs') as Array<{
   compareAt: number | null
   stock: number
   category: string
+  brand?: string
 }>
 
 const prisma = new PrismaClient()

@@ -3349,7 +3349,7 @@ button.auction-close-count {
   padding: 0 0 40px;
   animation: auth-rise 0.4s var(--ease-out) both;
 }
-.ops-page .desk-intro {
+.ops-page .desk-banner.land-hero {
   margin-bottom: 10px;
 }
 .ops-desk .auction-type-block-head {
@@ -4433,7 +4433,44 @@ a.ops-subnav-btn.on {
   background-position: center 28%;
   background-repeat: no-repeat;
   transform: scale(1.04);
-  animation: land- ken 22s var(--ease-out) both;
+  animation: land-ken 22s var(--ease-out) both;
+}
+.land-hero-slider .land-hero-photo {
+  opacity: 0;
+  transition: opacity 0.9s ease;
+  animation: none;
+  transform: scale(1.06);
+}
+.land-hero-slider .land-hero-photo.is-on {
+  opacity: 1;
+  animation: land-ken 18s var(--ease-out) both;
+}
+.land-hero-slide-copy {
+  animation: auth-rise 0.55s var(--ease-out) both;
+}
+.land-hero-dots {
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.land-hero-dots button {
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.4);
+  cursor: pointer;
+  transition: width 0.2s ease, background 0.2s ease;
+}
+.land-hero-dots button.on {
+  width: 22px;
+  background: #fff;
 }
 .land-hero-veil {
   position: absolute;
@@ -4538,8 +4575,12 @@ a.ops-subnav-btn.on {
   .land-hero-brand,
   .land-hero-copy h1,
   .land-hero-lead,
-  .land-hero-cta {
+  .land-hero-cta,
+  .land-hero-slide-copy {
     animation: none;
+  }
+  .land-hero-slider .land-hero-photo {
+    transition: none;
   }
 }
 
@@ -4613,14 +4654,28 @@ a.ops-subnav-btn.on {
   box-shadow: var(--shadow-sm); transition: box-shadow 0.15s ease, border-color 0.15s ease;
 }
 .deal-card:hover { border-color: #b8c9d0; box-shadow: var(--shadow); }
-.deal-card-img { position: relative; height: 140px; background: #e8eef3; }
-.deal-card-img img { width: 100%; height: 100%; object-fit: cover; }
-.deal-card-img em {
-  position: absolute; left: 8px; top: 8px; background: #fff; font-style: normal; font-size: 11px; font-weight: 800;
-  padding: 2px 6px;
+.deal-card-img { position: relative; height: 140px; background: #e8eef3; overflow: hidden; }
+.deal-card-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.deal-card-body { padding: 10px 12px 12px; display: grid; gap: 3px; font-size: 13px; }
+.deal-card-maker {
+  display: block;
+  min-width: 0;
+  margin: 0 0 1px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--navy) 72%, var(--muted));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.deal-card-body { padding: 10px; display: grid; gap: 4px; font-size: 13px; }
-.deal-card-body strong { font-size: 13px; font-weight: 650; }
+.deal-card-body strong {
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.35;
+  color: var(--navy-2, #1a4a54);
+}
 .deal-price { font-weight: 700; }
 .deal-price.is-locked { font-weight: 650; color: var(--navy); font-size: 12px; }
 .brand-pills,
@@ -5258,6 +5313,12 @@ a.ops-subnav-btn.on {
   .pub-hero { min-height: 260px; padding: 32px 16px; }
   .pub-hero-copy h1 { font-size: 1.6rem; }
   .land-hero { min-height: 92svh; align-items: flex-end; padding-bottom: 56px; }
+  .desk-banner.land-hero {
+    min-height: 0;
+    align-items: center;
+    padding: 16px 14px;
+    padding-bottom: 16px;
+  }
   .land-hero-brand { font-size: clamp(2.3rem, 12vw, 3.2rem); }
   .land-hero-cta { flex-direction: column; align-items: flex-start; gap: 16px; }
   .pub-split { grid-template-columns: 1fr; }
@@ -5594,76 +5655,85 @@ a.ops-subnav-btn.on {
 .inv-timeline li.is-done { background: #e6f5f0; color: var(--win); border-color: #b7ddd4; }
 .inv-timeline li.is-current { background: #e4f0f4; color: var(--navy); border-color: #c5dde2; font-weight: 700; }
 
-.desk-intro {
+/* Compact lander strip — same language as .land-hero, workbench height */
+.desk-banner.land-hero {
+  min-height: 0;
+  height: auto;
+  align-items: center;
+  padding: 18px clamp(16px, 3vw, 28px);
+  margin: 0 0 14px;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  animation: auth-rise 0.45s var(--ease-out) both;
+}
+.desk-banner .land-hero-photo {
+  inset: 0;
+  transform: none;
+  animation: none;
+  background-position: center 40%;
+}
+.desk-banner .land-hero-veil,
+.desk-banner .land-hero-veil.is-wholesale {
+  animation: none;
+}
+.desk-banner-copy {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
-  gap: 8px 20px;
-  padding: 14px 4px 12px;
-  margin-bottom: 8px;
-  border-bottom: 1px solid var(--line);
-  animation: auth-rise 0.45s var(--ease-out) both;
+  gap: 8px 24px;
+  width: 100%;
+  max-width: none;
 }
-.desk-intro.is-trade {
-  align-items: flex-end;
-  gap: 10px 28px;
-  padding: 18px 0 16px;
-  margin: 0 0 14px;
-  border-bottom: 0;
-  position: relative;
-  background: linear-gradient(180deg, rgba(228, 240, 244, 0.7) 0%, rgba(240, 244, 246, 0) 100%);
-}
-.desk-intro.is-trade::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 1px;
-  background: linear-gradient(90deg, var(--teal) 0%, var(--line) 42%, transparent 100%);
-}
-.desk-intro-brand {
+.desk-banner-brand {
   font-family: var(--display);
-  font-size: clamp(1.5rem, 2.5vw, 1.85rem);
+  font-size: clamp(1.75rem, 3vw, 2.25rem);
   font-weight: 800;
-  letter-spacing: -0.04em;
-  line-height: 1;
-  color: var(--navy-2);
-  margin: 0;
-}
-.desk-intro.is-trade .desk-intro-brand {
-  font-size: clamp(1.85rem, 3.2vw, 2.35rem);
   letter-spacing: -0.05em;
-  animation: auth-rise 0.55s var(--ease-out) both;
+  line-height: 1;
+  color: #fff;
+  margin: 0;
+  flex: 0 0 auto;
 }
-.desk-intro-copy {
+.desk-banner-text {
   flex: 1;
-  min-width: 200px;
+  min-width: 180px;
 }
-.desk-intro-copy h1 {
+.desk-banner-text h1 {
   font-family: var(--display);
-  font-size: 1.05rem;
+  font-size: clamp(1.05rem, 2vw, 1.2rem);
   font-weight: 700;
   letter-spacing: -0.02em;
-  color: var(--navy);
-  margin: 0 0 2px;
+  line-height: 1.2;
+  color: #fff;
+  margin: 0 0 4px;
+  max-width: none;
+  animation: none;
 }
-.desk-intro.is-trade .desk-intro-copy h1 {
-  font-size: clamp(1.1rem, 2vw, 1.25rem);
-  color: var(--navy-2);
-  animation: auth-rise 0.55s var(--ease-out) 0.05s both;
-}
-.desk-intro-copy p {
+.desk-banner-text p {
   margin: 0;
   font-size: 13px;
   line-height: 1.4;
-  color: var(--muted);
-  max-width: 62ch;
+  color: rgba(255, 255, 255, 0.82);
+  max-width: 52ch;
 }
-.desk-intro.is-trade .desk-intro-copy p {
-  max-width: 46ch;
-  font-size: 14px;
-  animation: auth-rise 0.55s var(--ease-out) 0.1s both;
+.desk-banner.land-hero-slider .land-hero-photo {
+  opacity: 0;
+  transition: opacity 0.85s var(--ease-out);
+}
+.desk-banner.land-hero-slider .land-hero-photo.is-on {
+  opacity: 1;
+}
+.desk-banner-dots.land-hero-dots {
+  bottom: 10px;
+  right: 14px;
+  left: auto;
+  transform: none;
+  justify-content: flex-end;
+}
+.desk-banner .land-hero-slide-copy {
+  animation: auth-rise 0.45s var(--ease-out) both;
 }
 .desk-page .coach-panel {
   border-radius: var(--radius-lg);
@@ -6405,6 +6475,9 @@ a.ops-subnav-btn.on {
 }
 @media (max-width: 380px) {
   .store-lot-grid { grid-template-columns: 1fr; }
+}
+.store-lot-card .store-card-maker {
+  margin: 0 0 2px;
 }
 .store-lot-card .lot-body {
   flex: 1;

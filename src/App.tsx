@@ -1,36 +1,54 @@
-import { lazy, Suspense, type ReactNode } from 'react'
+import { lazy, Suspense, type ComponentType, type ReactNode } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { FloatingContact } from './components/FloatingContact'
 import { Layout } from './components/Layout'
 import { ThemeApplier } from './components/ThemeApplier'
-import { Account } from './pages/Account'
-import { Auctions } from './pages/Auctions'
-import { BidHistory } from './pages/BidHistory'
-import { Complaint } from './pages/Complaint'
-import { Home } from './pages/Home'
-import { DeviceSpec, InfoPage, Tutorial } from './pages/InfoPages'
-import { ImeiPage } from './pages/ImeiPage'
-import { Invoices } from './pages/Invoices'
-import { Login } from './pages/Login'
-import { Marketplace } from './pages/Marketplace'
-import { Community } from './pages/Community'
-import { Store } from './pages/Store'
-import { StoreCart } from './pages/StoreCart'
-import { StoreOrders } from './pages/StoreOrders'
-import { StoreProductPage } from './pages/StoreProduct'
-import { MarketplaceHistory } from './pages/MarketplaceHistory'
-import { AccountDocuments } from './pages/AccountDocuments'
-import { AccountOverview } from './pages/AccountOverview'
-import { MyPage } from './pages/MyPage'
-import { BuyersPage, SellersPage, SupportPage } from './pages/PublicInfo'
-import { Register } from './pages/Register'
-import { Watchlist } from './pages/Watchlist'
-import { WholesaleApply } from './pages/WholesaleApply'
 import { canUseWholesaleDesk, publicHome, wholesaleHome } from './lib/channelAccess'
 import { useStore } from './store'
 
-const Admin = lazy(() => import('./pages/Admin').then((m) => ({ default: m.Admin })))
-const Super = lazy(() => import('./pages/Super').then((m) => ({ default: m.Super })))
+const pageFallback = (
+  <p className="muted tiny" style={{ padding: 16 }}>
+    Loading…
+  </p>
+)
+
+function lazyNamed<M>(loader: () => Promise<M>, exportName: keyof M & string) {
+  return lazy(async () => {
+    const mod = await loader()
+    return { default: mod[exportName] as ComponentType }
+  })
+}
+
+/* Route pages — keep the entry chunk thin; staff desks and channel pages load on demand. */
+const Admin = lazyNamed(() => import('./pages/Admin'), 'Admin')
+const Super = lazyNamed(() => import('./pages/Super'), 'Super')
+const Home = lazyNamed(() => import('./pages/Home'), 'Home')
+const Store = lazyNamed(() => import('./pages/Store'), 'Store')
+const StoreCart = lazyNamed(() => import('./pages/StoreCart'), 'StoreCart')
+const StoreOrders = lazyNamed(() => import('./pages/StoreOrders'), 'StoreOrders')
+const StoreProductPage = lazyNamed(() => import('./pages/StoreProduct'), 'StoreProductPage')
+const Login = lazyNamed(() => import('./pages/Login'), 'Login')
+const Register = lazyNamed(() => import('./pages/Register'), 'Register')
+const Auctions = lazyNamed(() => import('./pages/Auctions'), 'Auctions')
+const Marketplace = lazyNamed(() => import('./pages/Marketplace'), 'Marketplace')
+const Community = lazyNamed(() => import('./pages/Community'), 'Community')
+const MyPage = lazyNamed(() => import('./pages/MyPage'), 'MyPage')
+const AccountOverview = lazyNamed(() => import('./pages/AccountOverview'), 'AccountOverview')
+const AccountDocuments = lazyNamed(() => import('./pages/AccountDocuments'), 'AccountDocuments')
+const Account = lazyNamed(() => import('./pages/Account'), 'Account')
+const BidHistory = lazyNamed(() => import('./pages/BidHistory'), 'BidHistory')
+const MarketplaceHistory = lazyNamed(() => import('./pages/MarketplaceHistory'), 'MarketplaceHistory')
+const Invoices = lazyNamed(() => import('./pages/Invoices'), 'Invoices')
+const ImeiPage = lazyNamed(() => import('./pages/ImeiPage'), 'ImeiPage')
+const Complaint = lazyNamed(() => import('./pages/Complaint'), 'Complaint')
+const Watchlist = lazyNamed(() => import('./pages/Watchlist'), 'Watchlist')
+const WholesaleApply = lazyNamed(() => import('./pages/WholesaleApply'), 'WholesaleApply')
+const BuyersPage = lazyNamed(() => import('./pages/PublicInfo'), 'BuyersPage')
+const SellersPage = lazyNamed(() => import('./pages/PublicInfo'), 'SellersPage')
+const SupportPage = lazyNamed(() => import('./pages/PublicInfo'), 'SupportPage')
+const DeviceSpec = lazyNamed(() => import('./pages/InfoPages'), 'DeviceSpec')
+const InfoPage = lazyNamed(() => import('./pages/InfoPages'), 'InfoPage')
+const Tutorial = lazyNamed(() => import('./pages/InfoPages'), 'Tutorial')
 
 function Guard({ children }: { children: ReactNode }) {
   const { user, authReady } = useStore()
@@ -132,11 +150,7 @@ function SuperGuard() {
       />
     )
   }
-  return (
-    <Suspense fallback={<p className="muted tiny" style={{ padding: 16 }}>Loading…</p>}>
-      <Super />
-    </Suspense>
-  )
+  return <Super />
 }
 
 function AdminGuard() {
@@ -149,11 +163,7 @@ function AdminGuard() {
       />
     )
   }
-  return (
-    <Suspense fallback={<p className="muted tiny" style={{ padding: 16 }}>Loading…</p>}>
-      <Admin />
-    </Suspense>
-  )
+  return <Admin />
 }
 
 export default function App() {
@@ -161,129 +171,131 @@ export default function App() {
     <>
       <ThemeApplier />
       <FloatingContact />
-      <Routes>
-        <Route path="/" element={<RootPage />} />
-        <Route path="/wholesale" element={<WholesaleHubPage />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
-        <Route path="/buyers" element={<BuyersPage />} />
-        <Route path="/sellers" element={<SellersPage />} />
-        <Route path="/support" element={<SupportPage />} />
-        <Route path="/community" element={<Navigate to="/account/community" replace />} />
-        <Route
-          path="/store"
-          element={
-            <ChannelGate flag="showStore">
-              <Store />
-            </ChannelGate>
-          }
-        />
-        <Route
-          path="/store/p/:slug"
-          element={
-            <ChannelGate flag="showStore">
-              <StoreProductPage />
-            </ChannelGate>
-          }
-        />
-        <Route
-          path="/store/cart"
-          element={
-            <ChannelGate flag="showStore">
-              <StoreCart />
-            </ChannelGate>
-          }
-        />
-        <Route
-          path="/store/orders"
-          element={
-            <ChannelGate flag="showStore">
-              <StoreOrders />
-            </ChannelGate>
-          }
-        />
-        <Route
-          element={
-            <Guard>
-              <Layout />
-            </Guard>
-          }
-        >
-          <Route path="/top" element={<Navigate to="/account" replace />} />
+      <Suspense fallback={pageFallback}>
+        <Routes>
+          <Route path="/" element={<RootPage />} />
+          <Route path="/wholesale" element={<WholesaleHubPage />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          <Route path="/buyers" element={<BuyersPage />} />
+          <Route path="/sellers" element={<SellersPage />} />
+          <Route path="/support" element={<SupportPage />} />
+          <Route path="/community" element={<Navigate to="/account/community" replace />} />
           <Route
-            path="/auctions"
+            path="/store"
             element={
-              <WholesaleDeskGate>
-                <ChannelGate flag="showAuctions">
-                  <Auctions />
-                </ChannelGate>
-              </WholesaleDeskGate>
+              <ChannelGate flag="showStore">
+                <Store />
+              </ChannelGate>
             }
           />
           <Route
-            path="/auctions/:type"
+            path="/store/p/:slug"
             element={
-              <WholesaleDeskGate>
-                <ChannelGate flag="showAuctions">
-                  <Auctions />
-                </ChannelGate>
-              </WholesaleDeskGate>
+              <ChannelGate flag="showStore">
+                <StoreProductPage />
+              </ChannelGate>
             }
           />
           <Route
-            path="/marketplace"
+            path="/store/cart"
             element={
-              <WholesaleDeskGate>
-                <ChannelGate flag="showMarketplace">
-                  <Marketplace />
-                </ChannelGate>
-              </WholesaleDeskGate>
+              <ChannelGate flag="showStore">
+                <StoreCart />
+              </ChannelGate>
             }
           />
-          <Route path="/device-spec" element={<DeviceSpec />} />
-          <Route path="/info" element={<InfoPage />} />
-          <Route path="/tutorial" element={<Tutorial />} />
-          <Route path="/account" element={<MyPage />}>
-            <Route index element={<AccountOverview />} />
-            <Route path="wholesale" element={<WholesaleApply />} />
-            <Route path="documents" element={<AccountDocuments />} />
-            <Route path="bids" element={<BidHistory />} />
-            <Route path="marketplace-history" element={<MarketplaceHistory />} />
+          <Route
+            path="/store/orders"
+            element={
+              <ChannelGate flag="showStore">
+                <StoreOrders />
+              </ChannelGate>
+            }
+          />
+          <Route
+            element={
+              <Guard>
+                <Layout />
+              </Guard>
+            }
+          >
+            <Route path="/top" element={<Navigate to="/account" replace />} />
             <Route
-              path="community"
+              path="/auctions"
               element={
-                <ChannelGate flag="showCommunity">
-                  <CommunityGate>
-                    <Community />
-                  </CommunityGate>
-                </ChannelGate>
+                <WholesaleDeskGate>
+                  <ChannelGate flag="showAuctions">
+                    <Auctions />
+                  </ChannelGate>
+                </WholesaleDeskGate>
               }
             />
-            <Route path="settings" element={<Account />} />
             <Route
-              path="favourites"
+              path="/auctions/:type"
               element={
-                <ChannelGate flag="showFavourites">
-                  <Watchlist />
-                </ChannelGate>
+                <WholesaleDeskGate>
+                  <ChannelGate flag="showAuctions">
+                    <Auctions />
+                  </ChannelGate>
+                </WholesaleDeskGate>
               }
             />
-            <Route path="invoices" element={<Invoices />} />
-            <Route path="imei" element={<ImeiPage />} />
-            <Route path="complaint" element={<Complaint />} />
+            <Route
+              path="/marketplace"
+              element={
+                <WholesaleDeskGate>
+                  <ChannelGate flag="showMarketplace">
+                    <Marketplace />
+                  </ChannelGate>
+                </WholesaleDeskGate>
+              }
+            />
+            <Route path="/device-spec" element={<DeviceSpec />} />
+            <Route path="/info" element={<InfoPage />} />
+            <Route path="/tutorial" element={<Tutorial />} />
+            <Route path="/account" element={<MyPage />}>
+              <Route index element={<AccountOverview />} />
+              <Route path="wholesale" element={<WholesaleApply />} />
+              <Route path="documents" element={<AccountDocuments />} />
+              <Route path="bids" element={<BidHistory />} />
+              <Route path="marketplace-history" element={<MarketplaceHistory />} />
+              <Route
+                path="community"
+                element={
+                  <ChannelGate flag="showCommunity">
+                    <CommunityGate>
+                      <Community />
+                    </CommunityGate>
+                  </ChannelGate>
+                }
+              />
+              <Route path="settings" element={<Account />} />
+              <Route
+                path="favourites"
+                element={
+                  <ChannelGate flag="showFavourites">
+                    <Watchlist />
+                  </ChannelGate>
+                }
+              />
+              <Route path="invoices" element={<Invoices />} />
+              <Route path="imei" element={<ImeiPage />} />
+              <Route path="complaint" element={<Complaint />} />
+            </Route>
+            <Route path="/watchlist" element={<Navigate to="/account/favourites" replace />} />
+            <Route path="/favourites" element={<Navigate to="/account/favourites" replace />} />
+            <Route path="/invoices" element={<Navigate to="/account/invoices" replace />} />
+            <Route path="/admin" element={<AdminGuard />} />
+            <Route path="/admin/invoices" element={<Navigate to="/admin?section=money" replace />} />
+            <Route path="/admin/imei" element={<Navigate to="/admin?section=imei" replace />} />
+            <Route path="/super" element={<SuperGuard />} />
+            <Route path="/super/invoices" element={<Navigate to="/super?section=money" replace />} />
+            <Route path="/super/imei" element={<Navigate to="/admin?section=imei" replace />} />
           </Route>
-          <Route path="/watchlist" element={<Navigate to="/account/favourites" replace />} />
-          <Route path="/favourites" element={<Navigate to="/account/favourites" replace />} />
-          <Route path="/invoices" element={<Navigate to="/account/invoices" replace />} />
-          <Route path="/admin" element={<AdminGuard />} />
-          <Route path="/admin/invoices" element={<Navigate to="/admin?section=money" replace />} />
-          <Route path="/admin/imei" element={<Navigate to="/admin?section=imei" replace />} />
-          <Route path="/super" element={<SuperGuard />} />
-          <Route path="/super/invoices" element={<Navigate to="/super?section=money" replace />} />
-          <Route path="/super/imei" element={<Navigate to="/admin?section=imei" replace />} />
-        </Route>
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Suspense>
     </>
   )
 }

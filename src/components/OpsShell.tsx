@@ -1,4 +1,6 @@
 import type { ReactNode } from 'react'
+import { resolveDeskBannerSlides } from '../lib/deskBanner'
+import type { DeskBannerKey } from '../types'
 import { useStore } from '../store'
 import { AuctionTypeHead } from './AuctionTypeHead'
 import { DeskIntro } from './DeskIntro'
@@ -17,7 +19,11 @@ export type OpsSection = {
 }
 
 type Props = {
-  title: string
+  /** Which Super-editable workbench banner to show. */
+  deskKey: Extract<DeskBannerKey, 'admin' | 'super'>
+  /** Fallback title when desk banner title is empty (legacy). */
+  title?: string
+  /** Fallback blurb when desk banner body is empty (legacy). */
   blurb?: string
   sections: OpsSection[]
   section: string
@@ -29,6 +35,7 @@ type Props = {
 }
 
 export function OpsShell({
+  deskKey,
   title,
   blurb,
   sections,
@@ -40,6 +47,16 @@ export function OpsShell({
   children,
 }: Props) {
   const { settings } = useStore()
+  const slides = resolveDeskBannerSlides(settings, deskKey).map((s, i) =>
+    i === 0
+      ? {
+          ...s,
+          title: s.title || title || (deskKey === 'super' ? 'Super admin' : 'Admin'),
+          body: s.body || blurb || 'Staff operations desk.',
+        }
+      : s,
+  )
+  const heading = slides[0]?.title || title || (deskKey === 'super' ? 'Super admin' : 'Admin')
   const current = sections.find((s) => s.id === section) || sections[0]
   const desks = current?.desks || []
   const activeDesk = desks.some((d) => d.id === desk) ? desk : desks[0]?.id
@@ -47,14 +64,16 @@ export function OpsShell({
   return (
     <div className="staff-page is-command-bar ops-page desk-page">
       <DeskIntro
-        brand={settings.brandName || 'Equarios'}
-        title={title}
-        body={blurb || 'Staff operations desk.'}
+        brand={settings.brandName || 'eQuarios'}
+        slides={slides}
+        intervalSec={settings.pages?.heroIntervalSec}
+        veil="ops"
+        label={heading}
       />
       <section className="auction-type-block is-solo ops-desk">
         <AuctionTypeHead>
           <div className="auction-command">
-            <nav className="ops-nav" aria-label={`${title} sections`}>
+            <nav className="ops-nav" aria-label={`${heading} sections`}>
               {sections.map((s) => (
                 <button
                   key={s.id}

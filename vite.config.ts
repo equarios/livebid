@@ -4,6 +4,20 @@ import { defineConfig } from 'vite'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  build: {
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          groups: [
+            {
+              name: 'react-vendor',
+              test: /node_modules[\\/](react|react-dom|scheduler|react-router|react-router-dom)[\\/]/,
+            },
+          ],
+        },
+      },
+    },
+  },
   server: {
     proxy: {
       // Default: local API :8787. HA edge: set VITE_API_PROXY=http://localhost:8080

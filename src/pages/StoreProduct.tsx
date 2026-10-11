@@ -5,6 +5,7 @@ import { StoreGallery } from '../components/StoreGallery'
 import { StoreRail } from '../components/StoreRail'
 import { api, type StoreProductDto } from '../lib/api'
 import { usd } from '../lib/format'
+import { storeProductBrand } from '../lib/storeBrand'
 import { addToStoreCart } from '../lib/storeCart'
 import { useStore } from '../store'
 
@@ -44,6 +45,7 @@ export function StoreProductPage() {
 
   const storeName = settings.storeLabel || 'Store'
   const soldOut = Boolean(product && product.stock < 1)
+  const brand = product ? storeProductBrand(product) : ''
 
   return (
     <PublicShell mode="consumer">
@@ -53,7 +55,7 @@ export function StoreProductPage() {
           title={product?.title || 'Product'}
           note={
             product
-              ? `${product.category} · fixed retail price`
+              ? `${[product.brand, product.category].filter(Boolean).join(' · ')} · fixed retail price`
               : 'Fixed retail price — add to cart and check out here.'
           }
           label={storeName}
@@ -75,6 +77,7 @@ export function StoreProductPage() {
               <StoreGallery product={product} variant="detail" />
             </div>
             <div className="store-pdp-body">
+              {brand ? <p className="deal-card-maker store-card-maker">{brand}</p> : null}
               <p className="store-pdp-price">
                 <strong>{usd(product.price)}</strong>
                 <span> / pc</span>
@@ -87,6 +90,12 @@ export function StoreProductPage() {
               </p>
 
               <dl className="specs store-pdp-specs">
+                {brand ? (
+                  <div>
+                    <dt>Brand</dt>
+                    <dd>{brand}</dd>
+                  </div>
+                ) : null}
                 <div>
                   <dt>Category</dt>
                   <dd>{product.category}</dd>

@@ -4,6 +4,7 @@ import { ModalShell } from './ModalShell'
 import { StoreGallery } from './StoreGallery'
 import { usd } from '../lib/format'
 import type { StoreProductDto } from '../lib/api'
+import { storeProductBrand } from '../lib/storeBrand'
 import { addToStoreCart } from '../lib/storeCart'
 
 type Props = {
@@ -16,6 +17,7 @@ export function StoreProductPreview({ product, onClose }: Props) {
   const [qty, setQty] = useState(1)
   const [msg, setMsg] = useState<string | null>(null)
   const soldOut = product.stock < 1
+  const brand = storeProductBrand(product)
 
   return (
     <ModalShell onClose={onClose} className="lot-backdrop">
@@ -29,6 +31,7 @@ export function StoreProductPreview({ product, onClose }: Props) {
         <div className="lot-modal-head">
           <div>
             <span className="pill pill-hybrid">Retail</span>
+            {brand ? <p className="deal-card-maker store-card-maker">{brand}</p> : null}
             <h2 id="store-preview-title">{product.title}</h2>
             <p className="muted">
               {usd(product.price)} / pc
@@ -47,6 +50,12 @@ export function StoreProductPreview({ product, onClose }: Props) {
         <StoreGallery product={product} variant="detail" />
 
         <dl className="specs">
+          {brand ? (
+            <div>
+              <dt>Brand</dt>
+              <dd>{brand}</dd>
+            </div>
+          ) : null}
           <div>
             <dt>Category</dt>
             <dd>{product.category}</dd>

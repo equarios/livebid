@@ -1,5 +1,6 @@
 import { usd } from '../lib/format'
 import type { StoreProductDto } from '../lib/api'
+import { storeProductBrand } from '../lib/storeBrand'
 import { addToStoreCart } from '../lib/storeCart'
 import { StoreGallery } from './StoreGallery'
 
@@ -13,14 +14,20 @@ type Props = {
 export function StoreProductCard({ product, onOpen, onAdded }: Props) {
   const soldOut = product.stock < 1
   const onSale = Boolean(product.compareAt && product.compareAt > product.price)
+  const brand = storeProductBrand(product)
 
   return (
     <article className="card lot-card store-lot-card">
       <div className="store-lot-card-media">
         <StoreGallery product={product} variant="card" onOpen={() => onOpen(product)} />
-        <span className="grade">{onSale ? 'Sale' : product.category}</span>
+        {onSale ? <span className="grade">Sale</span> : null}
       </div>
       <div className="lot-body">
+        {brand ? (
+          <span className="deal-card-maker store-card-maker" title={brand}>
+            {brand}
+          </span>
+        ) : null}
         <div className="lot-meta">
           <span className="pill pill-hybrid">Retail</span>
           <span className="muted">{soldOut ? 'Sold out' : `${product.stock} left`}</span>

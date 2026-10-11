@@ -150,6 +150,8 @@ model StoreProduct {
   compareAt   Float?
   stock       Int      @default(0)
   category    String   @default("Phones")
+  /// Maker / brand shown on store cards (e.g. Apple, Samsung).
+  brand       String   @default("")
   /// Cover / legacy single image.
   imageUrl    String?
   /// Ordered gallery URLs (JSON string[]). First is cover; synced to imageUrl.

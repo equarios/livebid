@@ -12,6 +12,11 @@ import { TimeLeft } from '../components/TimeLeft'
 import { DEFAULT_SETTINGS } from '../data'
 import { api } from '../lib/api'
 import { RESERVED_LIST_SLUGS, slugAuctionType } from '../lib/auctionLists'
+import {
+  DESK_BANNER_KEYS,
+  DESK_BANNER_LABELS,
+  mergeDeskBanners,
+} from '../lib/deskBanner'
 import { opsQueueCounts } from '../lib/opsQueues'
 import { useNow, useStore } from '../store'
 import type {
@@ -20,6 +25,8 @@ import type {
   AccountStatus,
   AuctionFillMode,
   AuctionTypeDef,
+  DeskBannerKey,
+  DeskBannerSlide,
   FeatureFlags,
   ContentCard,
   MarketingPageCopy,
@@ -312,6 +319,7 @@ function mergePagesDraft(partial?: Partial<SitePages> | null): SitePages {
     wholesaleTrust: p.wholesaleTrust?.length
       ? p.wholesaleTrust
       : [...DEFAULT_SETTINGS.pages.wholesaleTrust],
+    deskBanners: mergeDeskBanners(p.deskBanners),
     buyers: { ...DEFAULT_SETTINGS.pages.buyers, ...p.buyers },
     sellers: { ...DEFAULT_SETTINGS.pages.sellers, ...p.sellers },
     support: { ...DEFAULT_SETTINGS.pages.support, ...p.support },
@@ -442,6 +450,57 @@ export function Super() {
       }
       heroes[index] = { ...heroes[index], ...patch }
       return { ...prev, pages: { ...base, wholesaleHeroes: heroes } }
+    })
+  }
+
+  function patchDeskBannerSlide(
+    key: DeskBannerKey,
+    index: number,
+    patch: Partial<DeskBannerSlide>,
+  ) {
+    setDraft((prev) => {
+      const base = mergePagesDraft(prev.pages)
+      const slides = [...base.deskBanners[key]]
+      while (slides.length <= index) slides.push({ title: '', body: '', imageUrl: '' })
+      slides[index] = { ...slides[index], ...patch }
+      return {
+        ...prev,
+        pages: {
+          ...base,
+          deskBanners: { ...base.deskBanners, [key]: slides },
+        },
+      }
+    })
+  }
+
+  function addDeskBannerSlide(key: DeskBannerKey) {
+    setDraft((prev) => {
+      const base = mergePagesDraft(prev.pages)
+      return {
+        ...prev,
+        pages: {
+          ...base,
+          deskBanners: {
+            ...base.deskBanners,
+            [key]: [...base.deskBanners[key], { title: '', body: '', imageUrl: '' }],
+          },
+        },
+      }
+    })
+  }
+
+  function removeDeskBannerSlide(key: DeskBannerKey) {
+    setDraft((prev) => {
+      const base = mergePagesDraft(prev.pages)
+      const slides = base.deskBanners[key]
+      if (slides.length <= 1) return prev
+      return {
+        ...prev,
+        pages: {
+          ...base,
+          deskBanners: { ...base.deskBanners, [key]: slides.slice(0, -1) },
+        },
+      }
     })
   }
 
@@ -600,6 +659,89 @@ export function Super() {
     }
     const brandName = draft.brandName.trim()
     const prevBrand = settings.brandName
+    const pagesForSave = (() => {
+      const p = mergePagesDraft(draft.pages)
+      let authBrand = p.authBrand.trim() || DEFAULT_SETTINGS.pages.authBrand
+      if (
+        authBrand === prevBrand ||
+        authBrand === 'Equarios' ||
+        authBrand === DEFAULT_SETTINGS.pages.authBrand
+      ) {
+        authBrand = brandName
+      }
+      const trimPage = (page: MarketingPageCopy): MarketingPageCopy => ({
+        kicker: page.kicker.trim(),
+        title: page.title.trim(),
+        lead: page.lead.trim(),
+        body: page.body.trim(),
+        primaryCta: page.primaryCta.trim(),
+        secondaryCta: page.secondaryCta.trim(),
+      })
+      const trimCard = (c: ContentCard): ContentCard => ({
+        title: c.title.trim(),
+        body: c.body.trim(),
+      })
+      const deskBanners = mergeDeskBanners(p.deskBanners)
+      for (const key of DESK_BANNER_KEYS) {
+        const def = DEFAULT_SETTINGS.pages.deskBanners[key]
+        const rows = deskBanners[key]
+        deskBanners[key] = rows
+          .map((row, i) => {
+            const pad = def[i % def.length] || def[0]!
+            return {
+              title: (row.title || '').trim() || pad.title,
+              body: (row.body || '').trim() || pad.body,
+              imageUrl: (row.imageUrl || '').trim() || pad.imageUrl,
+            }
+          })
+          .filter((row) => row.title || row.body || row.imageUrl)
+        if (!deskBanners[key].length) {
+          deskBanners[key] = def.map((s) => ({ ...s }))
+        }
+      }
+      return {
+        footerCopyright: p.footerCopyright.trim() || DEFAULT_SETTINGS.pages.footerCopyright,
+        authBrand,
+        authTitle: p.authTitle.trim() || DEFAULT_SETTINGS.pages.authTitle,
+        authLead: p.authLead.trim() || DEFAULT_SETTINGS.pages.authLead,
+        heroIntervalSec: Math.max(5, Math.floor(Number(p.heroIntervalSec) || 30)),
+        storeHeroes: p.storeHeroes
+          .map((h) => ({
+            kicker: (h.kicker || '').trim(),
+            title: (h.title || '').trim(),
+            body: (h.body || '').trim(),
+            cta: (h.cta || '').trim(),
+            imageUrl: (h.imageUrl || '').trim(),
+          }))
+          .filter((h) => h.title || h.body || h.kicker),
+        wholesaleHeroes: p.wholesaleHeroes
+          .map((h) => ({
+            kicker: (h.kicker || '').trim(),
+            title: (h.title || '').trim(),
+            body: (h.body || '').trim(),
+            cta: (h.cta || '').trim(),
+            to: (h.to || '/auctions').trim() || '/auctions',
+            imageUrl: (h.imageUrl || '').trim(),
+          }))
+          .filter((h) => h.title || h.body || h.kicker),
+        deskBanners,
+        wholesaleHowTitle: p.wholesaleHowTitle.trim() || DEFAULT_SETTINGS.pages.wholesaleHowTitle,
+        wholesaleHowSteps: p.wholesaleHowSteps.map(trimCard).filter((c) => c.title || c.body),
+        wholesaleTrust: p.wholesaleTrust.map(trimCard).filter((c) => c.title || c.body),
+        wholesaleDealsTitle:
+          p.wholesaleDealsTitle.trim() || DEFAULT_SETTINGS.pages.wholesaleDealsTitle,
+        wholesaleBrandsTitle:
+          p.wholesaleBrandsTitle.trim() || DEFAULT_SETTINGS.pages.wholesaleBrandsTitle,
+        wholesaleEmptyDeals:
+          p.wholesaleEmptyDeals.trim() || DEFAULT_SETTINGS.pages.wholesaleEmptyDeals,
+        wholesaleEmptyMarket:
+          p.wholesaleEmptyMarket.trim() || DEFAULT_SETTINGS.pages.wholesaleEmptyMarket,
+        buyers: trimPage(p.buyers),
+        sellers: trimPage(p.sellers),
+        support: trimPage(p.support),
+      }
+    })()
+
     saveSettings({
       ...draft,
       brandName,
@@ -611,6 +753,15 @@ export function Super() {
       showStore: draft.showStore !== false,
       showCommunity: draft.showCommunity !== false,
       grades,
+      copy: {
+        ...draft.copy,
+        auctionsTitle: pagesForSave.deskBanners.auctions[0]?.title || draft.copy.auctionsTitle,
+        auctionsIntro: pagesForSave.deskBanners.auctions[0]?.body || draft.copy.auctionsIntro,
+        marketTitle: pagesForSave.deskBanners.marketplace[0]?.title || draft.copy.marketTitle,
+        marketIntro: pagesForSave.deskBanners.marketplace[0]?.body || draft.copy.marketIntro,
+        accountTitle: pagesForSave.deskBanners.myPage[0]?.title || draft.copy.accountTitle,
+        accountIntro: pagesForSave.deskBanners.myPage[0]?.body || draft.copy.accountIntro,
+      },
       invoice: { ...DEFAULT_SETTINGS.invoice, ...draft.invoice },
       contact: (() => {
         const c = {
@@ -645,67 +796,7 @@ export function Super() {
           },
         }
       })(),
-      pages: (() => {
-        const p = mergePagesDraft(draft.pages)
-        let authBrand = p.authBrand.trim() || DEFAULT_SETTINGS.pages.authBrand
-        if (
-          authBrand === prevBrand ||
-          authBrand === 'Equarios' ||
-          authBrand === DEFAULT_SETTINGS.pages.authBrand
-        ) {
-          authBrand = brandName
-        }
-        const trimPage = (page: MarketingPageCopy): MarketingPageCopy => ({
-          kicker: page.kicker.trim(),
-          title: page.title.trim(),
-          lead: page.lead.trim(),
-          body: page.body.trim(),
-          primaryCta: page.primaryCta.trim(),
-          secondaryCta: page.secondaryCta.trim(),
-        })
-        const trimCard = (c: ContentCard): ContentCard => ({
-          title: c.title.trim(),
-          body: c.body.trim(),
-        })
-        return {
-          footerCopyright: p.footerCopyright.trim() || DEFAULT_SETTINGS.pages.footerCopyright,
-          authBrand,
-          authTitle: p.authTitle.trim() || DEFAULT_SETTINGS.pages.authTitle,
-          authLead: p.authLead.trim() || DEFAULT_SETTINGS.pages.authLead,
-          heroIntervalSec: Math.max(5, Math.floor(Number(p.heroIntervalSec) || 30)),
-          storeHeroes: p.storeHeroes
-            .map((h) => ({
-              kicker: (h.kicker || '').trim(),
-              title: (h.title || '').trim(),
-              body: (h.body || '').trim(),
-              cta: (h.cta || '').trim(),
-            }))
-            .filter((h) => h.title || h.body || h.kicker),
-          wholesaleHeroes: p.wholesaleHeroes
-            .map((h) => ({
-              kicker: (h.kicker || '').trim(),
-              title: (h.title || '').trim(),
-              body: (h.body || '').trim(),
-              cta: (h.cta || '').trim(),
-              to: (h.to || '/auctions').trim() || '/auctions',
-            }))
-            .filter((h) => h.title || h.body || h.kicker),
-          wholesaleHowTitle: p.wholesaleHowTitle.trim() || DEFAULT_SETTINGS.pages.wholesaleHowTitle,
-          wholesaleHowSteps: p.wholesaleHowSteps.map(trimCard).filter((c) => c.title || c.body),
-          wholesaleTrust: p.wholesaleTrust.map(trimCard).filter((c) => c.title || c.body),
-          wholesaleDealsTitle:
-            p.wholesaleDealsTitle.trim() || DEFAULT_SETTINGS.pages.wholesaleDealsTitle,
-          wholesaleBrandsTitle:
-            p.wholesaleBrandsTitle.trim() || DEFAULT_SETTINGS.pages.wholesaleBrandsTitle,
-          wholesaleEmptyDeals:
-            p.wholesaleEmptyDeals.trim() || DEFAULT_SETTINGS.pages.wholesaleEmptyDeals,
-          wholesaleEmptyMarket:
-            p.wholesaleEmptyMarket.trim() || DEFAULT_SETTINGS.pages.wholesaleEmptyMarket,
-          buyers: trimPage(p.buyers),
-          sellers: trimPage(p.sellers),
-          support: trimPage(p.support),
-        }
-      })(),
+      pages: pagesForSave,
       auctionTypes: clocks === 'keep' ? settings.auctionTypes : draft.auctionTypes,
       defaultMoq: Math.max(0, Math.floor(Number(draft.defaultMoq) || 0)),
       reopenMinutes: Math.max(1, Math.floor(Number(draft.reopenMinutes ?? (draft.reopenHours || 4) * 60) || 1)),
@@ -765,6 +856,7 @@ export function Super() {
 
   return (
     <OpsShell
+      deskKey="super"
       title="Super admin"
       blurb="Approve catalogs, issue invoices, manage people, and edit site-wide text, look, and features under Settings → Guide. Day-to-day listing and IMEI live under Admin."
       sections={sections}
@@ -1494,8 +1586,8 @@ export function Super() {
                   <strong>Footer</strong> — Verified, email, mobile, WeChat, D-U-N-S, social links
                 </li>
                 <li>
-                  <strong>Pages</strong> — store &amp; wholesale heroes, how/trust strips, login aside, buyers /
-                  sellers / support, copyright, hero auto-slide seconds
+                  <strong>Pages</strong> — store &amp; wholesale heroes, workbench banners, how/trust strips,
+                  login aside, buyers / sellers / support, copyright, hero auto-slide seconds
                 </li>
                 <li>
                   <strong>Look</strong> — colors, font, corner radius (live CSS theme)
@@ -1535,7 +1627,8 @@ export function Super() {
         <section className="card admin-section">
           <h2>Pages &amp; marketing copy</h2>
           <p className="muted tiny" style={{ marginTop: 0 }}>
-            Store + wholesale heroes, hub strips, login aside, buyers / sellers / support. Body tips: use{' '}
+            Store + wholesale heroes, workbench banners, hub strips, login aside, buyers / sellers / support.
+            Body tips: use{' '}
             <code>Title|Detail</code> for steps, or <code>- item</code> for bullets.
           </p>
           <form className="admin-form" onSubmit={(e) => onSaveSettings(e, 'keep')}>
@@ -1611,6 +1704,14 @@ export function Super() {
                       onChange={(e) => patchHero(i, { body: e.target.value })}
                     />
                   </label>
+                  <label className="admin-span">
+                    Image URL
+                    <input
+                      value={hero.imageUrl || ''}
+                      onChange={(e) => patchHero(i, { imageUrl: e.target.value })}
+                      placeholder="https://…"
+                    />
+                  </label>
                 </div>
               ))}
               <button
@@ -1620,7 +1721,7 @@ export function Super() {
                   patchPages({
                     storeHeroes: [
                       ...pagesDraft.storeHeroes,
-                      { kicker: '', title: '', body: '', cta: 'Shop' },
+                      { kicker: '', title: '', body: '', cta: 'Shop', imageUrl: '' },
                     ],
                   })
                 }
@@ -1684,6 +1785,14 @@ export function Super() {
                       onChange={(e) => patchWholesaleHero(i, { body: e.target.value })}
                     />
                   </label>
+                  <label className="admin-span">
+                    Image URL
+                    <input
+                      value={hero.imageUrl || ''}
+                      onChange={(e) => patchWholesaleHero(i, { imageUrl: e.target.value })}
+                      placeholder="https://…"
+                    />
+                  </label>
                 </div>
               ))}
               <button
@@ -1693,7 +1802,7 @@ export function Super() {
                   patchPages({
                     wholesaleHeroes: [
                       ...pagesDraft.wholesaleHeroes,
-                      { kicker: '', title: '', body: '', cta: 'Enter', to: '/auctions' },
+                      { kicker: '', title: '', body: '', cta: 'Enter', to: '/auctions', imageUrl: '' },
                     ],
                   })
                 }
@@ -1711,6 +1820,81 @@ export function Super() {
                   Remove last slide
                 </button>
               ) : null}
+            </div>
+
+            <div className="invoice-profile-panel admin-span">
+              <h3>Workbench banners</h3>
+              <p className="tiny muted admin-span" style={{ margin: '0 0 10px' }}>
+                Compact sliding strip on Auctions, Marketplace, My Page, Admin, and Super — same
+                auto-slide seconds as store/wholesale heroes. Leave Image URL blank for the curated
+                default.
+              </p>
+              {DESK_BANNER_KEYS.map((key) => {
+                const slides = pagesDraft.deskBanners[key]
+                return (
+                  <div key={key} style={{ marginBottom: 16 }}>
+                    <p className="tiny muted admin-span" style={{ margin: '0 0 8px', fontWeight: 650 }}>
+                      {DESK_BANNER_LABELS[key]}
+                    </p>
+                    {slides.map((slide, i) => (
+                      <div
+                        key={`${key}-${i}`}
+                        className="admin-form invoice-profile-fields"
+                        style={{ marginBottom: 12 }}
+                      >
+                        <p className="tiny muted admin-span" style={{ margin: 0 }}>
+                          Slide {i + 1}
+                        </p>
+                        <label className="admin-span">
+                          Title
+                          <input
+                            value={slide.title}
+                            onChange={(e) =>
+                              patchDeskBannerSlide(key, i, { title: e.target.value })
+                            }
+                          />
+                        </label>
+                        <label className="admin-span">
+                          Body
+                          <textarea
+                            rows={2}
+                            value={slide.body}
+                            onChange={(e) =>
+                              patchDeskBannerSlide(key, i, { body: e.target.value })
+                            }
+                          />
+                        </label>
+                        <label className="admin-span">
+                          Image URL
+                          <input
+                            value={slide.imageUrl || ''}
+                            onChange={(e) =>
+                              patchDeskBannerSlide(key, i, { imageUrl: e.target.value })
+                            }
+                            placeholder="https://…"
+                          />
+                        </label>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => addDeskBannerSlide(key)}
+                    >
+                      Add {DESK_BANNER_LABELS[key]} slide
+                    </button>
+                    {slides.length > 1 ? (
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => removeDeskBannerSlide(key)}
+                      >
+                        Remove last slide
+                      </button>
+                    ) : null}
+                  </div>
+                )
+              })}
             </div>
 
             <div className="invoice-profile-panel admin-span">

@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { LandHeroSlider } from '../components/LandHeroSlider'
 import { PublicShell } from '../components/PublicShell'
 import { groupLotsByType, isSealedLot, listPath } from '../lib/auctionLists'
 import { usd } from '../lib/format'
@@ -18,9 +19,6 @@ function closesLabel(endsAt: number, now: number) {
   return `Closes in ${Math.floor(h / 24)}d`
 }
 
-const HERO_PHOTO =
-  'https://images.unsplash.com/photo-1556656793-08538906a9f8?auto=format&fit=crop&w=2000&q=72'
-
 function DealCard({
   lot,
   onOpen,
@@ -33,6 +31,7 @@ function DealCard({
   hideHigh?: boolean
 }) {
   const now = useNow()
+  const title = [lot.model, lot.modelNumber, lot.capacity].filter(Boolean).join(' ')
   return (
     <button type="button" className="deal-card" onClick={onOpen}>
       <div className="deal-card-img">
@@ -44,12 +43,13 @@ function DealCard({
             e.currentTarget.src = photoFallback(lot)
           }}
         />
-        <em>{lot.manufacturer}</em>
       </div>
       <div className="deal-card-body">
+        <span className="deal-card-maker" title={lot.manufacturer}>
+          {lot.manufacturer}
+        </span>
         <strong>
-          {lot.qty} {lot.qty === 1 ? 'Unit' : 'Units'} of {lot.manufacturer} {lot.model} {lot.capacity} · Grade{' '}
-          {lot.grade}
+          {lot.qty} {lot.qty === 1 ? 'unit' : 'units'} · {title} · Grade {lot.grade}
         </strong>
         <span>{closesLabel(lot.endsAt, now)}</span>
         {showPrice ? (
@@ -74,9 +74,17 @@ export function Home() {
   const pages = {
     ...DEFAULT_SETTINGS.pages,
     ...settings.pages,
-    wholesaleHeroes: settings.pages?.wholesaleHeroes?.length
-      ? settings.pages.wholesaleHeroes
-      : DEFAULT_SETTINGS.pages.wholesaleHeroes,
+    wholesaleHeroes: (() => {
+      const defaults = DEFAULT_SETTINGS.pages.wholesaleHeroes
+      const raw =
+        settings.pages?.wholesaleHeroes?.length && settings.pages.wholesaleHeroes.length >= 2
+          ? settings.pages.wholesaleHeroes
+          : defaults
+      return raw.map((s, i) => ({
+        ...s,
+        imageUrl: s.imageUrl || defaults[i % defaults.length]?.imageUrl || '',
+      }))
+    })(),
     wholesaleHowSteps: settings.pages?.wholesaleHowSteps?.length
       ? settings.pages.wholesaleHowSteps
       : DEFAULT_SETTINGS.pages.wholesaleHowSteps,
@@ -84,7 +92,6 @@ export function Home() {
       ? settings.pages.wholesaleTrust
       : DEFAULT_SETTINGS.pages.wholesaleTrust,
   }
-  const hero = pages.wholesaleHeroes[0]
   const brand = settings.brandName || 'eQuarios'
 
   const dealGroups = useMemo(() => {
@@ -127,26 +134,32 @@ export function Home() {
     <PublicShell mode="wholesale">
       {!q ? (
         <>
-          <section className="land-hero wholesale-hero" aria-label={`${brand} wholesale`}>
-            <div className="land-hero-media" aria-hidden>
-              <div className="land-hero-photo" style={{ backgroundImage: `url(${HERO_PHOTO})` }} />
-              <div className="land-hero-veil is-wholesale" />
-              <div className="land-hero-grain" />
-            </div>
-            <div className="land-hero-copy">
-              <p className="land-hero-brand">{brand}</p>
-              <h1>{hero.title}</h1>
-              <p className="land-hero-lead">{hero.body}</p>
-              <div className="land-hero-cta">
-                <button type="button" className="pub-btn pub-btn-fill" onClick={() => go(hero.to)}>
-                  {hero.cta}
-                </button>
-                <button type="button" className="land-hero-secondary" onClick={() => go('/register')}>
-                  Apply as buyer →
-                </button>
-              </div>
-            </div>
-          </section>
+          <LandHeroSlider
+            brand={brand}
+            label={`${brand} wholesale`}
+            veilClassName="is-wholesale"
+            slides={pages.wholesaleHeroes.map((s) => ({
+              title: s.title,
+              body: s.body,
+              cta: s.cta,
+              imageUrl: s.imageUrl || '',
+            }))}
+            intervalSec={settings.pages?.heroIntervalSec || 7}
+            primary={(slide, i) => (
+              <button
+                type="button"
+                className="pub-btn pub-btn-fill"
+                onClick={() => go(pages.wholesaleHeroes[i]?.to || '/auctions')}
+              >
+                {slide.cta}
+              </button>
+            )}
+            secondary={
+              <button type="button" className="land-hero-secondary" onClick={() => go('/register')}>
+                Apply as buyer →
+              </button>
+            }
+          />
 
           <section className="how-strip">
             <h2>{pages.wholesaleHowTitle}</h2>

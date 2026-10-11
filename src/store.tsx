@@ -29,6 +29,7 @@ import {
 import { api, isApiAvailable, resetApiProbe, type ApiUser } from './lib/api'
 import { onLotTick, startRealtime, stopRealtime } from './lib/realtime'
 import { buyerCareNotices, settleClosedAuctions } from './lib/settle'
+import { mergeDeskBanners } from './lib/deskBanner'
 import { checkBidPrice, checkOrderQty, lotMoq } from './lib/moq'
 import type {
   Account,
@@ -384,6 +385,7 @@ function mergeSettings(partial?: Partial<SiteSettings> | null): SiteSettings {
           wholesaleHeroes: [...base.wholesaleHeroes],
           wholesaleHowSteps: [...base.wholesaleHowSteps],
           wholesaleTrust: [...base.wholesaleTrust],
+          deskBanners: { ...base.deskBanners },
         }
       }
       const mergePage = (
@@ -448,6 +450,7 @@ function mergeSettings(partial?: Partial<SiteSettings> | null): SiteSettings {
         buyers: mergePage(base.buyers, p.buyers),
         sellers: mergePage(base.sellers, p.sellers),
         support: mergePage(base.support, p.support),
+        deskBanners: mergeDeskBanners(p.deskBanners),
       }
     })(),
     marketplaceFeePct: (() => {

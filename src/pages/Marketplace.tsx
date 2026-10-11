@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { AuctionTypeHead } from '../components/AuctionTypeHead'
 import { readDeskCollapsed } from '../components/AuctionTable'
 import { DeskIntro } from '../components/DeskIntro'
+import { resolveDeskBannerSlides } from '../lib/deskBanner'
 import {
   capacityOptions,
   CheckMenu,
@@ -371,9 +372,10 @@ export function Marketplace() {
     <div className="market-page is-command-bar desk-page">
       <DeskIntro
         brand={settings.brandName || 'eQuarios'}
-        title={settings.copy.marketTitle}
-        body={settings.copy.marketIntro}
-        tone="trade"
+        slides={resolveDeskBannerSlides(settings, 'marketplace')}
+        intervalSec={settings.pages?.heroIntervalSec}
+        veil="trade"
+        label="Marketplace"
       />
       {!deskCollapsed ? (
         <div className="auction-desk is-scrollaway">

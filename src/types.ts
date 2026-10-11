@@ -234,6 +234,8 @@ export type StoreHeroSlide = {
   title: string
   body: string
   cta: string
+  /** Full-bleed hero photo URL. */
+  imageUrl?: string
 }
 
 /** Wholesale hub hero slide (CTA path e.g. /auctions). */
@@ -243,12 +245,30 @@ export type WholesaleHeroSlide = {
   body: string
   cta: string
   to: string
+  /** Full-bleed hero photo URL. */
+  imageUrl?: string
 }
 
 export type ContentCard = {
   title: string
   body: string
 }
+
+/** One slide in a compact workbench banner. */
+export type DeskBannerSlide = {
+  title: string
+  body: string
+  /** Background photo URL — empty uses curated default for that desk. */
+  imageUrl?: string
+}
+
+/** @deprecated use DeskBannerSlide — kept for merge of older single-object saves. */
+export type DeskBannerCopy = DeskBannerSlide
+
+export type DeskBannerKey = 'auctions' | 'marketplace' | 'myPage' | 'admin' | 'super'
+
+/** Per-desk slide lists (crossfade like store/wholesale heroes). */
+export type DeskBanners = Record<DeskBannerKey, DeskBannerSlide[]>
 
 /**
  * Marketing / auth page copy editable from Super.
@@ -273,6 +293,8 @@ export type SitePages = {
   heroIntervalSec: number
   storeHeroes: StoreHeroSlide[]
   wholesaleHeroes: WholesaleHeroSlide[]
+  /** Compact lander-style banners on signed-in desks. */
+  deskBanners: DeskBanners
   wholesaleHowTitle: string
   wholesaleHowSteps: ContentCard[]
   wholesaleTrust: ContentCard[]

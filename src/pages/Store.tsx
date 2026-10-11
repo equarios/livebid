@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
+import { LandHeroSlider } from '../components/LandHeroSlider'
 import { PublicShell } from '../components/PublicShell'
 import { StoreProductCard } from '../components/StoreProductCard'
 import { StoreProductPreview } from '../components/StoreProductPreview'
@@ -7,10 +8,6 @@ import { StoreRail } from '../components/StoreRail'
 import { DEFAULT_SETTINGS } from '../data'
 import { api, type StoreProductDto } from '../lib/api'
 import { useStore } from '../store'
-
-/** Full-bleed store landing photo (devices in hand / desk). */
-const HERO_PHOTO =
-  'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?auto=format&fit=crop&w=2000&q=72'
 
 export function Store() {
   const { settings } = useStore()
@@ -22,16 +19,22 @@ export function Store() {
   const [toast, setToast] = useState<string | null>(null)
   const [preview, setPreview] = useState<StoreProductDto | null>(null)
 
-  const heroes =
-    settings.pages?.storeHeroes?.length
+  const defaults = DEFAULT_SETTINGS.pages.storeHeroes
+  const raw =
+    settings.pages?.storeHeroes?.length && settings.pages.storeHeroes.length >= 2
       ? settings.pages.storeHeroes
-      : DEFAULT_SETTINGS.pages.storeHeroes
-  const hero = heroes[0]
+      : defaults
+  const heroes = raw.map((s, i) => ({
+    title: s.title,
+    body: s.body,
+    cta: s.cta,
+    imageUrl: s.imageUrl || defaults[i % defaults.length]?.imageUrl || '',
+  }))
 
   const filtered = useMemo(() => {
     if (!q) return products
     return products.filter((p) => {
-      const hay = [p.title, p.category, p.slug, p.id].filter(Boolean).join(' ').toLowerCase()
+      const hay = [p.title, p.brand, p.category, p.slug, p.id].filter(Boolean).join(' ').toLowerCase()
       return hay.includes(q)
     })
   }, [products, q])
@@ -70,26 +73,22 @@ export function Store() {
 
   return (
     <PublicShell mode="consumer">
-      <section className="land-hero store-hero" aria-label={`${brand} store`}>
-        <div className="land-hero-media" aria-hidden>
-          <div className="land-hero-photo" style={{ backgroundImage: `url(${HERO_PHOTO})` }} />
-          <div className="land-hero-veil" />
-          <div className="land-hero-grain" />
-        </div>
-        <div className="land-hero-copy">
-          <p className="land-hero-brand">{brand}</p>
-          <h1>{hero.title}</h1>
-          <p className="land-hero-lead">{hero.body}</p>
-          <div className="land-hero-cta">
-            <a href="#shop-catalog" className="pub-btn pub-btn-fill">
-              {hero.cta}
-            </a>
-            <Link to="/buyers" className="land-hero-secondary">
-              Wholesale buyers →
-            </Link>
-          </div>
-        </div>
-      </section>
+      <LandHeroSlider
+        brand={brand}
+        label={`${brand} store`}
+        slides={heroes}
+        intervalSec={settings.pages?.heroIntervalSec || 7}
+        primary={(slide) => (
+          <a href="#shop-catalog" className="pub-btn pub-btn-fill">
+            {slide.cta}
+          </a>
+        )}
+        secondary={
+          <Link to="/buyers" className="land-hero-secondary">
+            Wholesale buyers →
+          </Link>
+        }
+      />
 
       <div className="retail-store" id="shop-catalog">
         <StoreRail

@@ -3,6 +3,7 @@ import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { AuctionTypeHead } from '../components/AuctionTypeHead'
 import { DeskIntro } from '../components/DeskIntro'
 import { canUseWholesaleDesk } from '../lib/channelAccess'
+import { resolveDeskBannerSlides } from '../lib/deskBanner'
 import { usd } from '../lib/format'
 import { invoiceTotals, invoiceVisibleToBuyer } from '../lib/invoices'
 import { useStore } from '../store'
@@ -84,9 +85,10 @@ export function MyPage() {
     <div className="mypage is-command-bar desk-page">
       <DeskIntro
         brand={settings.brandName || 'eQuarios'}
-        title={settings.copy.accountTitle || 'My Page'}
-        body={settings.copy.accountIntro}
-        tone="trade"
+        slides={resolveDeskBannerSlides(settings, 'myPage')}
+        intervalSec={settings.pages?.heroIntervalSec}
+        veil="trade"
+        label="My Page"
       />
       <section className="auction-type-block is-solo mypage-desk">
         <AuctionTypeHead>

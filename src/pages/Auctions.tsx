@@ -11,6 +11,7 @@ import { AuctionTypeHead } from '../components/AuctionTypeHead'
 import { AuctionTypeNav, auctionTypeFilterOptions } from '../components/AuctionTypeNav'
 import { BidCsv } from '../components/BidCsv'
 import { DeskIntro } from '../components/DeskIntro'
+import { resolveDeskBannerSlides } from '../lib/deskBanner'
 import {
   capacityOptions,
   CheckMenu,
@@ -202,9 +203,10 @@ function AuctionList() {
     <div className="auctions-page is-command-bar desk-page">
       <DeskIntro
         brand={settings.brandName || 'eQuarios'}
-        title={settings.copy.auctionsTitle}
-        body={settings.copy.auctionsIntro}
-        tone="trade"
+        slides={resolveDeskBannerSlides(settings, 'auctions')}
+        intervalSec={settings.pages?.heroIntervalSec}
+        veil="trade"
+        label="Auctions"
       />
       {showCoach ? (
         <div className="coach-panel">

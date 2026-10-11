@@ -704,6 +704,7 @@ export type StoreProductDto = {
   compareAt: number | null
   stock: number
   category: string
+  brand?: string
   imageUrl: string | null
   /** Ordered gallery; first is cover. */
   images?: string[]

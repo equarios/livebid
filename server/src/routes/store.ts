@@ -38,6 +38,7 @@ function mapProduct(p: {
   compareAt: number | null
   stock: number
   category: string
+  brand?: string | null
   imageUrl: string | null
   images?: unknown
   active: boolean
@@ -54,6 +55,7 @@ function mapProduct(p: {
     compareAt: p.compareAt,
     stock: p.stock,
     category: p.category,
+    brand: (p.brand || '').trim(),
     imageUrl: images[0] || null,
     images,
     active: p.active,
@@ -130,6 +132,7 @@ storeRoutes.get('/products', optionalUser, async (c) => {
               { title: { contains: q } },
               { description: { contains: q } },
               { category: { contains: q } },
+              { brand: { contains: q } },
             ],
           }
         : {}),
@@ -188,6 +191,7 @@ storeRoutes.post('/products', requireUser, requireStaff, async (c) => {
       compareAt: z.number().positive().nullable().optional(),
       stock: z.number().int().min(0),
       category: z.string().optional(),
+      brand: z.string().optional(),
       imageUrl: z.string().nullable().optional(),
       images: z.array(z.string()).max(MAX_STORE_IMAGES).optional(),
       active: z.boolean().optional(),
@@ -210,6 +214,7 @@ storeRoutes.post('/products', requireUser, requireStaff, async (c) => {
       compareAt: body.data.compareAt ?? null,
       stock: body.data.stock,
       category: body.data.category?.trim() || 'Phones',
+      brand: body.data.brand?.trim() || '',
       imageUrl: images[0] || null,
       images,
       active: body.data.active ?? true,
@@ -227,6 +232,7 @@ storeRoutes.patch('/products/:id', requireUser, requireStaff, async (c) => {
       compareAt: z.number().positive().nullable().optional(),
       stock: z.number().int().min(0).optional(),
       category: z.string().optional(),
+      brand: z.string().optional(),
       imageUrl: z.string().nullable().optional(),
       images: z.array(z.string()).max(MAX_STORE_IMAGES).optional(),
       active: z.boolean().optional(),
@@ -265,6 +271,7 @@ storeRoutes.patch('/products/:id', requireUser, requireStaff, async (c) => {
       compareAt: body.data.compareAt === undefined ? undefined : body.data.compareAt,
       stock: body.data.stock,
       category: body.data.category?.trim(),
+      brand: body.data.brand === undefined ? undefined : body.data.brand.trim(),
       active: body.data.active,
       ...imagePatch,
     },

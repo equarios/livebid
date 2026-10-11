@@ -17,6 +17,7 @@ export function StoreDesk() {
   const [compareAt, setCompareAt] = useState('')
   const [stock, setStock] = useState('10')
   const [category, setCategory] = useState('Phones')
+  const [brand, setBrand] = useState('')
   const [description, setDescription] = useState('')
   const [imageUrl, setImageUrl] = useState('')
   const [images, setImages] = useState<string[]>([])
@@ -47,6 +48,7 @@ export function StoreDesk() {
     setCompareAt('')
     setStock('10')
     setCategory('Phones')
+    setBrand('')
   }
 
   async function onPickFiles(fileList: FileList | null) {
@@ -107,6 +109,7 @@ export function StoreDesk() {
         compareAt: compareAt.trim() ? Number(compareAt) : null,
         stock: Math.max(0, Math.floor(Number(stock) || 0)),
         category: category.trim() || 'Phones',
+        brand: brand.trim(),
         description: description.trim(),
         images,
         imageUrl: images[0] || null,
@@ -135,6 +138,7 @@ export function StoreDesk() {
     setCompareAt(p.compareAt != null ? String(p.compareAt) : '')
     setStock(String(p.stock))
     setCategory(p.category)
+    setBrand(p.brand || '')
     setDescription(p.description || '')
     setImages(p.images?.length ? [...p.images] : p.imageUrl ? [p.imageUrl] : [])
     setImageUrl('')
@@ -249,6 +253,14 @@ export function StoreDesk() {
               <input required value={stock} onChange={(e) => setStock(e.target.value)} />
             </label>
             <label className="field">
+              <span>Brand</span>
+              <input
+                value={brand}
+                onChange={(e) => setBrand(e.target.value)}
+                placeholder="Apple, Samsung…"
+              />
+            </label>
+            <label className="field">
               <span>Category</span>
               <input value={category} onChange={(e) => setCategory(e.target.value)} />
             </label>
@@ -348,7 +360,8 @@ export function StoreDesk() {
                         <div>
                           <strong>{p.title}</strong>
                           <div className="muted tiny">
-                            {p.category} · {p.images?.length || (p.imageUrl ? 1 : 0)} photo
+                            {[p.brand, p.category].filter(Boolean).join(' · ')} ·{' '}
+                            {p.images?.length || (p.imageUrl ? 1 : 0)} photo
                             {(p.images?.length || 0) === 1 ? '' : 's'} · /store/p/{p.slug}
                           </div>
                         </div>
