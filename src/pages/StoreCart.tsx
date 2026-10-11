@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { PublicShell } from '../components/PublicShell'
+import { StoreRail } from '../components/StoreRail'
 import { api, type StoreProductDto } from '../lib/api'
 import { usd } from '../lib/format'
 import { storeProductFallback, storeProductImage } from '../lib/storePhotos'
@@ -20,6 +21,7 @@ export function StoreCart() {
   const navigate = useNavigate()
   const [lines, setLines] = useState<StoreCartLine[]>(() => readStoreCart())
   const [products, setProducts] = useState<StoreProductDto[]>([])
+  const [catalogReady, setCatalogReady] = useState(false)
   const [email, setEmail] = useState(user?.email || '')
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
@@ -36,10 +38,19 @@ export function StoreCart() {
   }, [])
 
   useEffect(() => {
+    let alive = true
     void api
       .storeProducts()
-      .then((res) => setProducts(res.products))
+      .then((res) => {
+        if (alive) setProducts(res.products)
+      })
       .catch(() => {})
+      .finally(() => {
+        if (alive) setCatalogReady(true)
+      })
+    return () => {
+      alive = false
+    }
   }, [])
 
   useEffect(() => {
@@ -56,6 +67,7 @@ export function StoreCart() {
   }, [lines, products])
 
   const cartN = storeCartCount()
+  const storeName = settings.storeLabel || 'Store'
   const subtotal = rows.reduce((n, r) => n + r.product.price * r.line.qty, 0)
   const shipping = subtotal >= 200 || subtotal === 0 ? 0 : 9.9
   const total = Math.round((subtotal + shipping) * 100) / 100
@@ -66,20 +78,41 @@ export function StoreCart() {
       setErr('Cart is empty.')
       return
     }
+    const mail = email.trim()
+    const fullName = name.trim()
+    const shipTo = address.trim()
+    if (!mail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)) {
+      setErr('Enter a valid email for the order confirmation.')
+      return
+    }
+    if (!fullName) {
+      setErr('Enter the name on the shipment.')
+      return
+    }
+    if (shipTo.length < 8) {
+      setErr('Enter a full shipping address.')
+      return
+    }
+    for (const r of rows) {
+      if (r.line.qty < 1 || r.line.qty > r.product.stock) {
+        setErr(`${r.product.title} qty must be between 1 and ${r.product.stock}.`)
+        return
+      }
+    }
     setBusy(true)
     setErr(null)
     try {
       const res = await api.placeStoreOrder({
-        email: email.trim(),
-        name: name.trim(),
+        email: mail,
+        name: fullName,
         phone: phone.trim() || undefined,
-        address: address.trim(),
+        address: shipTo,
         note: note.trim() || undefined,
         paymentMethod: pay,
         lines: rows.map((r) => ({ productId: r.product.id, qty: r.line.qty })),
       })
       clearStoreCart()
-      navigate(`/store/orders?placed=${encodeURIComponent(res.order.id)}`)
+      navigate(`/store/orders?placed=${encodeURIComponent(res.order.id)}&pay=${pay}`)
     } catch (ex) {
       setErr(ex instanceof Error ? ex.message : 'Checkout failed.')
     } finally {
@@ -97,30 +130,30 @@ export function StoreCart() {
     )
   }
 
-  const storeName = settings.storeLabel || 'Store'
-
   return (
     <PublicShell mode="consumer">
       <div className="retail-store retail-cart">
-        <div className="store-command-bar" aria-label="Cart">
-          <div className="store-command">
-            <h2>
-              Cart
-              <em>{cartN}</em>
-            </h2>
-            <Link to="/" className="store-command-link is-orders">
-              ← {storeName}
-            </Link>
-            <Link to="/store/orders" className="store-command-link is-orders">
-              Orders
+        <StoreRail
+          page="cart"
+          title="Cart"
+          count={cartN}
+          note="Fixed retail checkout — separate from wholesale invoices."
+          label={storeName}
+        />
+
+        {!lines.length ? (
+          <div className="mh-empty shop-empty">
+            <p>Your cart is empty.</p>
+            <Link to="/store" className="btn btn-primary btn-sm">
+              Shop collection
             </Link>
           </div>
-        </div>
-
-        {!rows.length ? (
-          <div className="store-cart-empty">
-            <p className="muted">Your cart is empty.</p>
-            <Link to="/" className="btn btn-primary btn-sm">
+        ) : !catalogReady ? (
+          <p className="muted tiny">Loading cart…</p>
+        ) : !rows.length ? (
+          <div className="mh-empty shop-empty">
+            <p>Cart items are no longer available.</p>
+            <Link to="/store" className="btn btn-primary btn-sm">
               Shop collection
             </Link>
           </div>
@@ -247,15 +280,18 @@ export function StoreCart() {
                   </label>
                 ))}
               </div>
-              <p className="muted tiny store-pay-hint">Demo checkout — live keys later.</p>
+              <p className="muted tiny store-pay-hint">
+                Demo checkout records the order only — card and PayPal keys are not live yet. Bank
+                transfer is marked pending until staff confirms.
+              </p>
 
-              {err ? <p className="tiny imei-err">{err}</p> : null}
+              {err ? <p className="tiny imei-err" role="alert">{err}</p> : null}
               <button type="submit" className="btn btn-primary store-checkout-btn" disabled={busy}>
                 {busy
-                  ? 'Placing…'
+                  ? 'Placing order…'
                   : pay === 'bank'
                     ? `Place order · ${usd(total)}`
-                    : `Pay ${usd(total)}`}
+                    : `Confirm demo ${pay === 'paypal' ? 'PayPal' : 'card'} · ${usd(total)}`}
               </button>
             </form>
           </div>

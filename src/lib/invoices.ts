@@ -126,7 +126,7 @@ export function buildInvoice(
   const feePct =
     Number.isFinite(partial.feePct) && (partial.feePct as number) >= 0
       ? normalizeFeePct(partial.feePct)
-      : suggestedFeePct(partial, lots || [], settings)
+      : suggestedFeePct({ ...partial, qty, unitPrice }, lots || [], settings)
   const draft: Invoice = {
     ...partial,
     qty,

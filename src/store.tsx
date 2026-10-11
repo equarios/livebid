@@ -125,12 +125,12 @@ type Store = {
   confirmOffer: (id: string) => Promise<string | null>
   cancelOffer: (id: string) => string | null
   toggleWatch: (lotId: string) => Promise<void>
-  submitPayment: (id: string, receiptName: string, receiptData: string) => string | null
-  reviewPayment: (id: string, side: PayReviewSide, decision: PayDecision) => string | null
-  reviewInvoiceIssue: (id: string, side: PayReviewSide, decision: PayDecision) => string | null
-  saveInvoice: (invoice: Invoice, previousId?: string) => string | null
-  removeInvoice: (id: string) => string | null
-  clearPaymentConfirmation: (id: string) => string | null
+  submitPayment: (id: string, receiptName: string, receiptData: string) => Promise<string | null>
+  reviewPayment: (id: string, side: PayReviewSide, decision: PayDecision) => Promise<string | null>
+  reviewInvoiceIssue: (id: string, side: PayReviewSide, decision: PayDecision) => Promise<string | null>
+  saveInvoice: (invoice: Invoice, previousId?: string) => Promise<string | null>
+  removeInvoice: (id: string) => Promise<string | null>
+  clearPaymentConfirmation: (id: string) => Promise<string | null>
   markInvoiceOpened: (id: string) => void
   markNoticesRead: () => void
   myBid: (lotId: string) => number | undefined
@@ -2272,7 +2272,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const submitPayment = useCallback(
-    (id: string, receiptName: string, receiptData: string) => {
+    async (id: string, receiptName: string, receiptData: string) => {
+      if (apiModeRef.current) {
+        try {
+          await api.submitInvoicePayment(id, receiptName, receiptData)
+          await applyBootstrap()
+          return null
+        } catch (e) {
+          return e instanceof Error ? e.message : 'Payment submit failed.'
+        }
+      }
       const copy = data.settings.copy
       const inv = data.invoices.find((i) => i.id === id)
       if (!inv) return copy.warnLotMissing
@@ -2300,11 +2309,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }))
       return null
     },
-    [data.invoices, data.settings.copy, user],
+    [applyBootstrap, data.invoices, data.settings.copy, user],
   )
 
   const reviewPayment = useCallback(
-    (id: string, side: PayReviewSide, decision: PayDecision) => {
+    async (id: string, side: PayReviewSide, decision: PayDecision) => {
+      if (apiModeRef.current) {
+        try {
+          await api.reviewInvoicePayment(id, side, decision)
+          await applyBootstrap()
+          return null
+        } catch (e) {
+          return e instanceof Error ? e.message : 'Payment review failed.'
+        }
+      }
       if (user?.role !== 'admin' && user?.role !== 'superadmin') {
         return 'Only admin or super admin can review payments.'
       }
@@ -2345,11 +2363,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       })
       return null
     },
-    [data.invoices, data.settings.copy, user, pushServerNotice],
+    [applyBootstrap, data.invoices, data.settings.copy, user, pushServerNotice],
   )
 
   const reviewInvoiceIssue = useCallback(
-    (id: string, side: PayReviewSide, decision: PayDecision) => {
+    async (id: string, side: PayReviewSide, decision: PayDecision) => {
+      if (apiModeRef.current) {
+        try {
+          await api.issueInvoice(id, side, decision)
+          await applyBootstrap()
+          return null
+        } catch (e) {
+          return e instanceof Error ? e.message : 'Issue review failed.'
+        }
+      }
       if (user?.role !== 'admin' && user?.role !== 'superadmin') {
         return 'Only admin or super admin can issue invoices.'
       }
@@ -2403,11 +2430,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       })
       return null
     },
-    [data.invoices, data.settings.copy, user, pushServerNotice],
+    [applyBootstrap, data.invoices, data.settings.copy, user, pushServerNotice],
   )
 
   const saveInvoice = useCallback(
-    (invoice: Invoice, previousId?: string) => {
+    async (invoice: Invoice, previousId?: string) => {
       if (user?.role !== 'admin' && user?.role !== 'superadmin') {
         return 'Only admin or super admin can edit invoices.'
       }
@@ -2457,6 +2484,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         trackingNo: invoice.trackingNo?.trim() || undefined,
       }
       const replaceId = (previousId || id).toUpperCase()
+      if (apiModeRef.current) {
+        try {
+          await api.saveInvoice(next as unknown as Record<string, unknown>, previousId)
+          await applyBootstrap()
+          return null
+        } catch (e) {
+          return e instanceof Error ? e.message : 'Save invoice failed.'
+        }
+      }
       const trackingJustSet =
         Boolean(next.trackingNo) &&
         next.trackingNo !== existing?.trackingNo &&
@@ -2496,24 +2532,42 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
       return null
     },
-    [data.lots, data.invoices, data.settings, user, pushServerNotice],
+    [applyBootstrap, data.lots, data.invoices, data.settings, user, pushServerNotice],
   )
 
   const removeInvoice = useCallback(
-    (id: string) => {
+    async (id: string) => {
       if (user?.role !== 'admin' && user?.role !== 'superadmin') {
         return 'Only admin or super admin can delete invoices.'
+      }
+      if (apiModeRef.current) {
+        try {
+          await api.deleteInvoice(id)
+          await applyBootstrap()
+          return null
+        } catch (e) {
+          return e instanceof Error ? e.message : 'Delete failed.'
+        }
       }
       setData((prev) => ({ ...prev, invoices: prev.invoices.filter((row) => row.id !== id) }))
       return null
     },
-    [user],
+    [applyBootstrap, user],
   )
 
   const clearPaymentConfirmation = useCallback(
-    (id: string) => {
+    async (id: string) => {
       if (user?.role !== 'admin' && user?.role !== 'superadmin') {
         return 'Only admin or super admin can edit payment confirmations.'
+      }
+      if (apiModeRef.current) {
+        try {
+          await api.clearInvoicePayment(id)
+          await applyBootstrap()
+          return null
+        } catch (e) {
+          return e instanceof Error ? e.message : 'Clear receipt failed.'
+        }
       }
       setData((prev) => ({
         ...prev,
@@ -2531,7 +2585,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }))
       return null
     },
-    [user],
+    [applyBootstrap, user],
   )
 
   const markInvoiceOpened = useCallback((id: string) => {
@@ -2539,6 +2593,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       ...prev,
       invoices: prev.invoices.map((row) => (row.id === id ? { ...row, opened: true } : row)),
     }))
+    if (apiModeRef.current) {
+      void api.markInvoiceOpened(id).catch(() => undefined)
+    }
   }, [])
 
   const markNoticesRead = useCallback(() => {

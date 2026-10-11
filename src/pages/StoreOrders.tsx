@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { PublicShell } from '../components/PublicShell'
+import { StoreRail } from '../components/StoreRail'
 import { api, type StoreOrderDto } from '../lib/api'
 import { usd } from '../lib/format'
 import { useStore } from '../store'
@@ -9,6 +10,7 @@ export function StoreOrders() {
   const { settings, user } = useStore()
   const [params] = useSearchParams()
   const placed = params.get('placed')
+  const pay = params.get('pay')
   const [orders, setOrders] = useState<StoreOrderDto[]>([])
   const [err, setErr] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -45,41 +47,61 @@ export function StoreOrders() {
     )
   }
 
+  const storeName = settings.storeLabel || 'Store'
+  const count = !user ? null : loading ? '…' : orders.length
+
   return (
     <PublicShell mode="consumer">
-      <div className="retail-store">
-        <header className="retail-hero">
-          <div>
-            <h1>Retail orders</h1>
-            <p className="muted tiny">Consumer store orders only (not wholesale invoices).</p>
-          </div>
-          <Link to="/" className="btn btn-ghost btn-sm">
-            Back to store
-          </Link>
-        </header>
+      <div className="retail-store store-orders-desk">
+        <StoreRail
+          page="orders"
+          title="Orders"
+          count={count}
+          note="Consumer store orders only — not wholesale invoices."
+          label={storeName}
+        />
 
         {placed ? (
-          <p className="retail-toast">
-            Order <strong className="mono">{placed}</strong> placed. Thank you!
-          </p>
+          <div className="retail-toast shop-toast store-order-confirm" role="status">
+            <p>
+              Order <strong className="mono">{placed}</strong> recorded
+              {pay === 'bank'
+                ? ' — awaiting bank transfer confirmation.'
+                : pay === 'paypal' || pay === 'card'
+                  ? ' — demo payment accepted (not charged).'
+                  : '.'}{' '}
+              Thank you.
+            </p>
+            <Link to="/store" className="btn btn-ghost btn-sm">
+              Keep shopping
+            </Link>
+          </div>
         ) : null}
 
         {!user ? (
-          <p className="muted">
-            <Link to="/login" state={{ from: '/store/orders' }}>
+          <div className="mh-empty shop-empty">
+            <p>
+              Sign in to see orders linked to your account. Guest checkouts still receive the order
+              id above.
+            </p>
+            <Link to="/login" state={{ from: '/store/orders' }} className="btn btn-primary btn-sm">
               Sign in
-            </Link>{' '}
-            to see orders linked to your account. Guest checkouts still receive the order id above.
-          </p>
+            </Link>
+          </div>
         ) : loading ? (
           <p className="muted tiny">Loading…</p>
         ) : err ? (
           <p className="tiny imei-err">{err}</p>
         ) : !orders.length ? (
-          <p className="muted">No retail orders yet.</p>
+          <div className="mh-empty shop-empty">
+            <p>No retail orders yet.</p>
+            <Link to="/store" className="btn btn-primary btn-sm">
+              Shop collection
+            </Link>
+          </div>
         ) : (
-          <div className="table-wrap">
-            <table className="auction-table">
+          <div className="mh-table-wrap desk-list-scroll">
+            <table className="gbs-table mh-table store-orders-table">
               <thead>
                 <tr>
                   <th>Order</th>
@@ -96,7 +118,7 @@ export function StoreOrders() {
                     <td>{o.status.replace(/_/g, ' ')}</td>
                     <td>{o.paymentMethod}</td>
                     <td className="num">{usd(o.total)}</td>
-                    <td className="tiny">
+                    <td className="tiny store-orders-items">
                       {o.lines.map((l) => `${l.qty}× ${l.title}`).join(', ')}
                     </td>
                   </tr>

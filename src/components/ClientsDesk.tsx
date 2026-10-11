@@ -220,53 +220,47 @@ export function ClientsDesk() {
 
   return (
     <div className="clients-desk">
-      <section className="card admin-section">
-        <p className="kicker" style={{ color: 'var(--teal-deep)' }}>
-          Marketing
-        </p>
-        <h2>Clients &amp; email (Brevo)</h2>
-        <p className="muted tiny">
-          Local client DB for large lists. Sync and send through Brevo — deliverability and unsubs stay with the ESP;
-          reports mirror here.
-        </p>
-        {status ? (
-          <div className="clients-kpis">
-            <span>
-              <strong>{status.total}</strong> clients
-            </span>
-            <span>
-              <strong>{status.subscribed}</strong> subscribed
-            </span>
-            <span>
-              <strong>{status.unsubscribed}</strong> unsubscribed
-            </span>
-            <span>
-              <strong>{status.bounced}</strong> bounced
-            </span>
-            <span className={status.brevoConfigured ? 'ok' : 'muted'}>
-              Brevo: {status.brevoConfigured ? 'connected' : 'not configured (simulated sends)'}
-            </span>
+      <section className="mh-desk">
+        <header className="mh-desk-head">
+          <h2>
+            Clients
+            <em>{status ? status.total : '…'}</em>
+          </h2>
+          <p className="mh-desk-note">
+            Local list + Brevo sync — deliverability stays with the ESP; reports mirror here.
+          </p>
+          <div className="mh-desk-actions">
+            {status ? (
+              <div className="mh-desk-sum clients-kpi-sum">
+                <strong>
+                  {status.subscribed} sub · {status.unsubscribed} unsub · {status.bounced} bounce
+                </strong>
+                <span className={status.brevoConfigured ? 'ok tiny' : 'muted tiny'}>
+                  Brevo: {status.brevoConfigured ? 'connected' : 'simulated'}
+                </span>
+              </div>
+            ) : null}
+            <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={() => void onSync()}>
+              Sync → Brevo
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              disabled={busy}
+              onClick={() => void reload().then(() => setOk('Refreshed.'))}
+            >
+              Refresh
+            </button>
           </div>
-        ) : null}
-        {error ? <p className="error">{error}</p> : null}
-        {ok ? <p className="ok">{ok}</p> : null}
-        <div className="row-actions" style={{ marginTop: 8 }}>
-          <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={() => void onSync()}>
-            Sync subscribed → Brevo
-          </button>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            disabled={busy}
-            onClick={() => void reload().then(() => setOk('Refreshed.'))}
-          >
-            Refresh
-          </button>
-        </div>
-      </section>
+        </header>
 
-      <section className="card admin-section">
-        <h2>Add client</h2>
+        {error ? <p className="error tiny">{error}</p> : null}
+        {ok ? <p className="ok tiny">{ok}</p> : null}
+
+        <header className="mh-desk-head is-sub">
+          <h2>Add client</h2>
+          <p className="mh-desk-note">Save one contact, or import CSV below.</p>
+        </header>
         <form className="admin-form" onSubmit={onAdd}>
           <label>
             Email
@@ -292,68 +286,92 @@ export function ClientsDesk() {
             Save client
           </button>
         </form>
-      </section>
 
-      <section className="card admin-section">
-        <h2>Import CSV</h2>
-        <p className="muted tiny">Header required: email,firstName,lastName,company,phone,tags,status</p>
-        <form onSubmit={onImport}>
-          <textarea rows={6} value={csv} onChange={(e) => setCsv(e.target.value)} className="clients-csv" />
+        <header className="mh-desk-head is-sub">
+          <h2>Import CSV</h2>
+          <p className="mh-desk-note">Header: email,firstName,lastName,company,phone,tags,status</p>
+        </header>
+        <form className="clients-import" onSubmit={onImport}>
+          <textarea rows={5} value={csv} onChange={(e) => setCsv(e.target.value)} className="clients-csv" />
           <button className="btn btn-primary btn-sm" type="submit" disabled={busy}>
             Import CSV
           </button>
         </form>
+
+        <header className="mh-desk-head is-sub">
+          <h2>
+            Client list
+            <em>{clients.length}</em>
+          </h2>
+          <p className="mh-desk-note">Search email, name, or company.</p>
+          <div className="mh-desk-actions">
+            <form
+              className="clients-search"
+              onSubmit={(e) => {
+                e.preventDefault()
+                void reload()
+              }}
+            >
+              <input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Search email, name, company"
+                aria-label="Search clients"
+              />
+              <button className="btn btn-ghost btn-sm" type="submit">
+                Search
+              </button>
+            </form>
+          </div>
+        </header>
+
+        {!clients.length ? (
+          <div className="mh-empty">
+            <p>No clients yet — add one or import CSV.</p>
+          </div>
+        ) : (
+          <div className="mh-table-wrap desk-list-scroll">
+            <table className="gbs-table mh-table clients-table">
+              <thead>
+                <tr>
+                  <th>Email</th>
+                  <th>Name</th>
+                  <th>Company</th>
+                  <th>Tags</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {clients.map((cl) => (
+                  <tr key={cl.id}>
+                    <td className="tiny">{cl.email}</td>
+                    <td className="tiny">
+                      {cl.firstName} {cl.lastName}
+                    </td>
+                    <td className="tiny">{cl.company || '—'}</td>
+                    <td className="tiny">{cl.tags.join(', ') || '—'}</td>
+                    <td className="tiny">{cl.status}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
 
-      <section className="table-wrap card admin-section">
-        <h2>Client list</h2>
-        <form
-          className="clients-search"
-          onSubmit={(e) => {
-            e.preventDefault()
-            void reload()
-          }}
-        >
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search email, name, company" />
-          <button className="btn btn-ghost btn-sm" type="submit">
-            Search
-          </button>
-        </form>
-        <table className="auction-table">
-          <thead>
-            <tr>
-              <th>Email</th>
-              <th>Name</th>
-              <th>Company</th>
-              <th>Tags</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {clients.map((cl) => (
-              <tr key={cl.id}>
-                <td className="tiny">{cl.email}</td>
-                <td className="tiny">
-                  {cl.firstName} {cl.lastName}
-                </td>
-                <td className="tiny">{cl.company || '—'}</td>
-                <td className="tiny">{cl.tags.join(', ') || '—'}</td>
-                <td className="tiny">{cl.status}</td>
-              </tr>
-            ))}
-            {!clients.length ? (
-              <tr>
-                <td colSpan={5} className="muted tiny">
-                  No clients yet — add or import CSV.
-                </td>
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
-      </section>
+      <section className="mh-desk">
+        <header className="mh-desk-head">
+          <h2>
+            Campaigns
+            <em>{campaigns.length}</em>
+          </h2>
+          <p className="mh-desk-note">Draft, send, and mirror Brevo reports.</p>
+        </header>
 
-      <section className="card admin-section">
-        <h2>New campaign</h2>
+        <header className="mh-desk-head is-sub">
+          <h2>New campaign</h2>
+          <p className="mh-desk-note">Save a draft, then send from the list below.</p>
+        </header>
         <form className="admin-form" onSubmit={onCreateCampaign}>
           <label>
             Internal name
@@ -377,65 +395,72 @@ export function ClientsDesk() {
           </label>
           <label className="admin-span">
             HTML body
-            <textarea rows={10} value={campHtml} onChange={(e) => setCampHtml(e.target.value)} required />
+            <textarea rows={8} value={campHtml} onChange={(e) => setCampHtml(e.target.value)} required />
           </label>
           <button className="btn btn-primary btn-sm" type="submit" disabled={busy}>
             Save draft
           </button>
         </form>
-      </section>
 
-      <section className="card admin-section">
-        <h2>Campaigns &amp; reports</h2>
-        <ul className="campaign-list">
-          {campaigns.map((camp) => (
-            <li key={camp.id}>
-              <header>
-                <strong>{camp.name}</strong>
-                <span className="muted tiny">
-                  {camp.status} · {camp.recipientCount} recipients
-                  {camp.sentAt ? ` · sent ${new Date(camp.sentAt).toLocaleString()}` : ''}
-                </span>
-              </header>
-              <p className="tiny">{camp.subject}</p>
-              {camp.errorMessage ? <p className="error tiny">{camp.errorMessage}</p> : null}
-              <div className="row-actions">
-                {(camp.status === 'draft' || camp.status === 'failed') && (
-                  <button
-                    type="button"
-                    className="btn btn-primary btn-sm"
-                    disabled={busy}
-                    onClick={() => void onSend(camp.id)}
-                  >
-                    Send now
-                  </button>
-                )}
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  disabled={busy}
-                  onClick={() => {
-                    setSelected(camp)
-                    if (camp.brevoCampaignId) void onRefresh(camp.id)
-                  }}
-                >
-                  View report
-                </button>
-                {camp.brevoCampaignId ? (
+        <header className="mh-desk-head is-sub">
+          <h2>Campaigns &amp; reports</h2>
+          <p className="mh-desk-note">Send drafts or refresh stats from Brevo.</p>
+        </header>
+
+        {!campaigns.length ? (
+          <div className="mh-empty">
+            <p>No campaigns yet.</p>
+          </div>
+        ) : (
+          <ul className="campaign-list">
+            {campaigns.map((camp) => (
+              <li key={camp.id}>
+                <header>
+                  <strong>{camp.name}</strong>
+                  <span className="muted tiny">
+                    {camp.status} · {camp.recipientCount} recipients
+                    {camp.sentAt ? ` · sent ${new Date(camp.sentAt).toLocaleString()}` : ''}
+                  </span>
+                </header>
+                <p className="tiny">{camp.subject}</p>
+                {camp.errorMessage ? <p className="error tiny">{camp.errorMessage}</p> : null}
+                <div className="row-actions">
+                  {(camp.status === 'draft' || camp.status === 'failed') && (
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      disabled={busy}
+                      onClick={() => void onSend(camp.id)}
+                    >
+                      Send now
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="btn btn-ghost btn-sm"
                     disabled={busy}
-                    onClick={() => void onRefresh(camp.id)}
+                    onClick={() => {
+                      setSelected(camp)
+                      if (camp.brevoCampaignId) void onRefresh(camp.id)
+                    }}
                   >
-                    Refresh from Brevo
+                    View report
                   </button>
-                ) : null}
-              </div>
-            </li>
-          ))}
-          {!campaigns.length ? <li className="muted tiny">No campaigns yet.</li> : null}
-        </ul>
+                  {camp.brevoCampaignId ? (
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      disabled={busy}
+                      onClick={() => void onRefresh(camp.id)}
+                    >
+                      Refresh from Brevo
+                    </button>
+                  ) : null}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
 
         {selected ? (
           <div className="campaign-report">

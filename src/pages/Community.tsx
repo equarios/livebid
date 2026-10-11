@@ -99,27 +99,13 @@ function ListingTable({
   emptyBody: string
   emptyAction?: { label: string; onClick: () => void }
 }) {
-  if (!listings.length) {
-    return (
-      <div className="cm-empty-state">
-        <strong>{emptyTitle}</strong>
-        <p>{emptyBody}</p>
-        {emptyAction ? (
-          <button type="button" className="btn btn-primary btn-sm" onClick={emptyAction.onClick}>
-            {emptyAction.label}
-          </button>
-        ) : null}
-      </div>
-    )
-  }
-
   return (
     <div className="desk-list-scroll cm-table-wrap" role="region" aria-label="Community listings">
-      <table className="auction-table cm-table">
+      <table className="gbs-table cm-table">
         <thead>
           <tr>
-            <th>Item</th>
-            <th>Qty</th>
+            <th>Items</th>
+            <th>Quantity</th>
             <th>Price</th>
             {mode === 'board' ? <th>Seller</th> : <th>Interest</th>}
             <th>Status</th>
@@ -169,77 +155,97 @@ function ListingTable({
               </td>
               <td className="cart-actions-col">
                 <div className="row-actions">
-                  {mode === 'board' && listing.status === 'live' && !listing.mine ? (
-                    <button
-                      type="button"
-                      className="btn btn-primary btn-sm"
-                      onClick={() => onInquire(listing)}
-                    >
-                      Interest
-                    </button>
-                  ) : null}
-                  {mode === 'board' && listing.mine ? (
-                    <span className="tiny muted">Yours</span>
-                  ) : null}
-                  {mode === 'mine' && onOwnerStatus ? (
-                    <>
-                      {listing.status === 'live' || listing.status === 'paused' ? (
-                        <button
-                          type="button"
-                          className="linkish"
-                          onClick={() =>
-                            onOwnerStatus(listing, listing.status === 'paused' ? 'pending' : 'paused')
-                          }
-                        >
-                          {listing.status === 'paused' ? 'Resubmit' : 'Pause'}
-                        </button>
-                      ) : null}
-                      {listing.status !== 'closed' ? (
-                        <button
-                          type="button"
-                          className="linkish"
-                          onClick={() => onOwnerStatus(listing, 'closed')}
-                        >
-                          Close
-                        </button>
-                      ) : null}
-                    </>
-                  ) : null}
-                  {(mode === 'queue' || (isStaff && mode === 'board')) && onModerate ? (
-                    <>
-                      {listing.status !== 'live' ? (
-                        <button
-                          type="button"
-                          className="linkish"
-                          onClick={() => onModerate(listing, 'live')}
-                        >
-                          Approve
-                        </button>
-                      ) : null}
-                      {listing.status === 'pending' || listing.status === 'live' ? (
-                        <button
-                          type="button"
-                          className="linkish"
-                          onClick={() => onModerate(listing, 'reject')}
-                        >
-                          Reject
-                        </button>
-                      ) : null}
+                  <div className="cm-mod-actions">
+                    {mode === 'board' && listing.status === 'live' && !listing.mine ? (
                       <button
                         type="button"
-                        className="linkish"
-                        onClick={() => onModerate(listing, listing.featured ? 'unfeature' : 'feature')}
+                        className="cm-mod-btn is-approve"
+                        onClick={() => onInquire(listing)}
                       >
-                        {listing.featured ? 'Unfeature' : 'Feature'}
+                        Interest
                       </button>
-                    </>
-                  ) : null}
+                    ) : null}
+                    {mode === 'board' && listing.mine ? (
+                      <span className="tiny muted">Yours</span>
+                    ) : null}
+                    {mode === 'mine' && onOwnerStatus ? (
+                      <>
+                        {listing.status === 'live' || listing.status === 'paused' ? (
+                          <button
+                            type="button"
+                            className="cm-mod-btn is-feature"
+                            onClick={() =>
+                              onOwnerStatus(
+                                listing,
+                                listing.status === 'paused' ? 'pending' : 'paused',
+                              )
+                            }
+                          >
+                            {listing.status === 'paused' ? 'Resubmit' : 'Pause'}
+                          </button>
+                        ) : null}
+                        {listing.status !== 'closed' ? (
+                          <button
+                            type="button"
+                            className="cm-mod-btn is-reject"
+                            onClick={() => onOwnerStatus(listing, 'closed')}
+                          >
+                            Close
+                          </button>
+                        ) : null}
+                      </>
+                    ) : null}
+                    {(mode === 'queue' || (isStaff && mode === 'board')) && onModerate ? (
+                      <>
+                        {listing.status !== 'live' ? (
+                          <button
+                            type="button"
+                            className="cm-mod-btn is-approve"
+                            onClick={() => onModerate(listing, 'live')}
+                          >
+                            Approve
+                          </button>
+                        ) : null}
+                        {listing.status === 'pending' || listing.status === 'live' ? (
+                          <button
+                            type="button"
+                            className="cm-mod-btn is-reject"
+                            onClick={() => onModerate(listing, 'reject')}
+                          >
+                            Reject
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          className={`cm-mod-btn is-feature${listing.featured ? ' is-on' : ''}`}
+                          onClick={() =>
+                            onModerate(listing, listing.featured ? 'unfeature' : 'feature')
+                          }
+                        >
+                          {listing.featured ? 'Unfeature' : 'Feature'}
+                        </button>
+                      </>
+                    ) : null}
+                  </div>
                 </div>
               </td>
             </tr>
           ))}
         </tbody>
       </table>
+      {!listings.length ? (
+        <div className="mh-empty cm-empty-state">
+          <div>
+            <strong>{emptyTitle}</strong>
+            <p>{emptyBody}</p>
+          </div>
+          {emptyAction ? (
+            <button type="button" className="btn btn-primary btn-sm" onClick={emptyAction.onClick}>
+              {emptyAction.label}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -530,7 +536,7 @@ export function Community() {
   if (isStaff) tabs.push({ id: 'queue', label: 'Queue' })
 
   return (
-    <div className="cm-desk">
+    <div className="cm-desk mypage-listings">
       <div className="cm-switch" role="tablist" aria-label="Community">
         {tabs.map((t) => (
           <button
@@ -550,18 +556,17 @@ export function Community() {
       {err ? <p className="error tiny cm-flash">{err}</p> : null}
 
       {tab === 'board' ? (
-        <section className="cm-panel" aria-labelledby="cm-board-title">
-          <div className="mypage-toolbar">
-            <div className="mypage-meta">
-              <span className="mypage-meta-label" id="cm-board-title">
-                Board
-              </span>
+        <section className="cm-panel mh-desk" aria-labelledby="cm-board-title">
+          <header className="mh-desk-head">
+            <h2 id="cm-board-title">
+              Board
               <em>
                 {loading ? '…' : filteredListings.length}
-                {filtersActive || q.trim() ? ` match · ${listings.length}` : ' live'}
+                {filtersActive || q.trim() ? ` match` : ''}
               </em>
-            </div>
-            <div className="mypage-toolbar-flags">
+            </h2>
+            <p className="mh-desk-note">Peer stock board — inquire on live lots, or post your own.</p>
+            <div className="mh-desk-actions">
               <form
                 className="cm-search"
                 onSubmit={(e) => {
@@ -579,11 +584,8 @@ export function Community() {
                   Search
                 </button>
               </form>
-              <button type="button" className="btn btn-primary btn-sm" onClick={() => goTab('post')}>
-                Post stock
-              </button>
             </div>
-          </div>
+          </header>
 
           <div className="cm-filters mypage-filters auction-desk-filters" ref={filtersRef}>
             <div className="filter-groups cm-filter-groups">
@@ -637,6 +639,9 @@ export function Community() {
               />
               Featured
             </label>
+            <button type="button" className="btn btn-primary btn-sm" onClick={() => goTab('post')}>
+              Post stock
+            </button>
             {filtersActive ? (
               <button
                 type="button"
@@ -705,12 +710,14 @@ export function Community() {
       ) : null}
 
       {tab === 'mine' ? (
-        <section className="cm-panel" aria-labelledby="cm-mine-title">
-          <div className="mypage-toolbar">
+        <section className="cm-panel mh-desk" aria-labelledby="cm-mine-title">
+          <header className="mh-desk-head">
+            <h2 id="cm-mine-title">
+              Mine
+              {mineStats ? <em>{mineStats.live + mineStats.pending}</em> : null}
+            </h2>
+            <p className="mh-desk-note">Your posts — pending review, live, or paused.</p>
             <div className="mypage-meta">
-              <span className="mypage-meta-label" id="cm-mine-title">
-                Mine
-              </span>
               {mineStats ? (
                 <>
                   <em className="is-yours">{mineStats.live} live</em>
@@ -719,10 +726,12 @@ export function Community() {
                 </>
               ) : null}
             </div>
-            <button type="button" className="btn btn-primary btn-sm" onClick={() => goTab('post')}>
-              New post
-            </button>
-          </div>
+            <div className="mh-desk-actions">
+              <button type="button" className="btn btn-primary btn-sm" onClick={() => goTab('post')}>
+                New post
+              </button>
+            </div>
+          </header>
           {loading ? <p className="muted tiny">Loading…</p> : null}
           {!loading ? (
             <ListingTable
@@ -754,13 +763,14 @@ export function Community() {
       ) : null}
 
       {tab === 'queue' && isStaff ? (
-        <section className="cm-panel" aria-labelledby="cm-queue-title">
-          <div className="mypage-meta">
-            <span className="mypage-meta-label" id="cm-queue-title">
+        <section className="cm-panel mh-desk" aria-labelledby="cm-queue-title">
+          <header className="mh-desk-head">
+            <h2 id="cm-queue-title">
               Queue
-            </span>
-            <em>{loading ? '…' : listings.length} in queue</em>
-          </div>
+              <em>{loading ? '…' : listings.length}</em>
+            </h2>
+            <p className="mh-desk-note">Listings waiting for staff review.</p>
+          </header>
           {loading ? <p className="muted tiny">Loading…</p> : null}
           {!loading ? (
             <ListingTable
@@ -792,13 +802,11 @@ export function Community() {
       ) : null}
 
       {tab === 'post' ? (
-        <section className="cm-panel cm-panel-post" aria-labelledby="cm-post-title">
-          <div className="mypage-meta">
-            <span className="mypage-meta-label" id="cm-post-title">
-              Post
-            </span>
-            <span className="muted tiny">Staff review before live — keep the title scannable.</span>
-          </div>
+        <section className="cm-panel cm-panel-post mh-desk" aria-labelledby="cm-post-title">
+          <header className="mh-desk-head">
+            <h2 id="cm-post-title">Post</h2>
+            <p className="mh-desk-note">Staff review before live — keep the title scannable.</p>
+          </header>
 
           <div className="cm-post-layout">
             <form className="cm-post" onSubmit={(e) => void onPost(e)}>

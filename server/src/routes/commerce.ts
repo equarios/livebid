@@ -20,6 +20,12 @@ import { trackBid } from '../metrics'
 import { notify, notifyStaff } from '../notify'
 import { rateLimitOrRetryAfter } from '../rateLimit'
 import { broadcastLotTick } from '../realtime'
+import {
+  invoiceUpdateData,
+  settleInvoice,
+  settleInvoiceIssue,
+  splitInvoiceRow,
+} from '../invoiceSettle'
 
 export const commerceRoutes = new Hono<AuthedEnv>()
 
@@ -764,4 +770,273 @@ commerceRoutes.get('/invoices', requireUser, async (c) => {
     orderBy: { createdAt: 'desc' },
   })
   return c.json({ invoices: rows.map(mapInvoice) })
+})
+
+/** Staff create / update draft (and shipping fields, fee, etc.). */
+commerceRoutes.put('/invoices', requireUser, requireStaff, async (c) => {
+  const body = z
+    .object({
+      invoice: z.record(z.string(), z.unknown()),
+      previousId: z.string().optional(),
+    })
+    .safeParse(await c.req.json().catch(() => ({})))
+  if (!body.success) return c.json({ error: 'Invalid invoice.' }, 400)
+
+  const incoming = body.data.invoice
+  const id = String(incoming.id || '').trim().toUpperCase()
+  if (!id) return c.json({ error: 'Invoice ID is required.' }, 400)
+
+  const replaceId = (body.data.previousId || id).trim().toUpperCase()
+  const existing = await prisma.invoice.findUnique({ where: { id: replaceId } })
+  const existingMapped = existing ? (mapInvoice(existing) as Record<string, unknown>) : null
+  const merged = {
+    ...(existingMapped || {}),
+    ...incoming,
+    id,
+    createdAt: existingMapped?.createdAt ?? incoming.createdAt ?? Date.now(),
+    status: existingMapped?.status || incoming.status || 'draft',
+  }
+  const row = splitInvoiceRow(merged)
+
+  if (existing && replaceId !== id) {
+    await prisma.invoice.delete({ where: { id: replaceId } }).catch(() => undefined)
+  }
+  const saved = await prisma.invoice.upsert({
+    where: { id },
+    create: row,
+    update: {
+      lotId: row.lotId,
+      channel: row.channel,
+      amount: row.amount,
+      qty: row.qty,
+      unitPrice: row.unitPrice,
+      status: row.status,
+      accountId: row.accountId,
+      dataJson: row.dataJson,
+    },
+  })
+
+  const tracking = String(merged.trackingNo || '')
+  const prevTrack = String(existingMapped?.trackingNo || '')
+  if (tracking && tracking !== prevTrack && row.accountId) {
+    await notify({
+      id: `N-SHIP-${id}-${tracking}`,
+      accountId: row.accountId,
+      kind: 'shipping',
+      title: 'Shipment update',
+      body: `${id} · tracking ${tracking}`,
+      href: '/account/invoices',
+    })
+  }
+  if (!existing) {
+    await notifyStaff(
+      'invoice',
+      'Invoice waiting to be issued',
+      `${id} drafted by staff`,
+      '/admin?section=money',
+      `N-ISSUE-${id}`,
+    )
+  }
+
+  return c.json({ invoice: mapInvoice(saved) })
+})
+
+commerceRoutes.delete('/invoices/:id', requireUser, requireStaff, async (c) => {
+  const id = c.req.param('id').trim().toUpperCase()
+  await prisma.invoice.delete({ where: { id } }).catch(() => undefined)
+  return c.json({ ok: true })
+})
+
+commerceRoutes.post('/invoices/:id/issue', requireUser, requireStaff, async (c) => {
+  const user = c.get('user')
+  const id = c.req.param('id').trim().toUpperCase()
+  const body = z
+    .object({
+      side: z.enum(['admin', 'super']),
+      decision: z.enum(['accepted', 'declined']),
+    })
+    .safeParse(await c.req.json().catch(() => ({})))
+  if (!body.success) return c.json({ error: 'Invalid issue review.' }, 400)
+  if (body.data.side === 'super' && user.role !== 'superadmin') {
+    return c.json({ error: 'Only super admin can give the super-admin issue stamp.' }, 403)
+  }
+
+  const row = await prisma.invoice.findUnique({ where: { id } })
+  if (!row) return c.json({ error: 'Invoice not found.' }, 404)
+  const mapped = mapInvoice(row) as Record<string, unknown> & {
+    status: string
+    issuedAt?: number
+    issueAdmin?: { decision: string; by: string; at: number }
+    issueSuper?: { decision: string; by: string; at: number }
+    accountId?: string
+  }
+  if (mapped.status !== 'draft' && !(mapped.status === 'declined' && !mapped.issuedAt)) {
+    return c.json({ error: 'That invoice is already issued.' }, 400)
+  }
+
+  const review = { decision: body.data.decision, by: user.accountId, at: Date.now() }
+  const next = settleInvoiceIssue({
+    ...mapped,
+    issueAdmin: body.data.side === 'admin' ? review : mapped.issueAdmin,
+    issueSuper: body.data.side === 'super' ? review : mapped.issueSuper,
+  })
+  const saved = await prisma.invoice.update({
+    where: { id },
+    data: invoiceUpdateData(next as Record<string, unknown>),
+  })
+
+  if (mapped.status === 'draft' && next.status === 'unpaid' && next.accountId) {
+    await notify({
+      id: `N-ISSUED-${id}`,
+      accountId: String(next.accountId),
+      kind: 'invoice',
+      title: 'Invoice issued',
+      body: `${id} is ready. Pay within 7 days of issue and upload the receipt.`,
+      href: '/account/invoices',
+    })
+  }
+
+  return c.json({ invoice: mapInvoice(saved) })
+})
+
+commerceRoutes.post('/invoices/:id/pay', requireUser, async (c) => {
+  const user = c.get('user')
+  const id = c.req.param('id').trim().toUpperCase()
+  const body = z
+    .object({
+      receiptName: z.string().min(1).max(240),
+      receiptData: z.string().min(1).max(4_500_000),
+    })
+    .safeParse(await c.req.json().catch(() => ({})))
+  if (!body.success) return c.json({ error: 'Receipt required (image or PDF, under ~3 MB).' }, 400)
+
+  const row = await prisma.invoice.findUnique({ where: { id } })
+  if (!row) return c.json({ error: 'Invoice not found.' }, 404)
+  const mapped = mapInvoice(row) as Record<string, unknown> & {
+    status: string
+    accountId?: string
+  }
+  const staff = user.role === 'admin' || user.role === 'superadmin'
+  if (!staff && mapped.accountId !== user.accountId) {
+    return c.json({ error: 'Invoice not found.' }, 404)
+  }
+  if (mapped.status === 'paid') return c.json({ error: 'Already paid.' }, 400)
+  if (mapped.status === 'draft') {
+    return c.json({ error: 'This invoice is not issued yet. Admin and Super must stamp it first.' }, 400)
+  }
+  if (mapped.status === 'pending_review' && user.role === 'member') {
+    return c.json({ error: 'Payment already submitted — waiting for staff review.' }, 400)
+  }
+
+  const next = settleInvoice({
+    ...mapped,
+    receiptName: body.data.receiptName,
+    receiptData: body.data.receiptData,
+    paidDeclaredAt: Date.now(),
+    adminReview: undefined,
+    superReview: undefined,
+  })
+  const saved = await prisma.invoice.update({
+    where: { id },
+    data: invoiceUpdateData(next as Record<string, unknown>),
+  })
+  await notifyStaff(
+    'payment',
+    'Payment receipt uploaded',
+    `${id} awaiting Admin + Super accept`,
+    '/admin?section=money',
+    `N-PAY-${id}`,
+  )
+  return c.json({ invoice: mapInvoice(saved) })
+})
+
+commerceRoutes.post('/invoices/:id/review-payment', requireUser, requireStaff, async (c) => {
+  const user = c.get('user')
+  const id = c.req.param('id').trim().toUpperCase()
+  const body = z
+    .object({
+      side: z.enum(['admin', 'super']),
+      decision: z.enum(['accepted', 'declined']),
+    })
+    .safeParse(await c.req.json().catch(() => ({})))
+  if (!body.success) return c.json({ error: 'Invalid payment review.' }, 400)
+  if (body.data.side === 'super' && user.role !== 'superadmin') {
+    return c.json({ error: 'Only super admin can give the super-admin decision.' }, 403)
+  }
+
+  const row = await prisma.invoice.findUnique({ where: { id } })
+  if (!row) return c.json({ error: 'Invoice not found.' }, 404)
+  const mapped = mapInvoice(row) as Record<string, unknown> & {
+    status: string
+    receiptData?: string
+    adminReview?: { decision: string; by: string; at: number }
+    superReview?: { decision: string; by: string; at: number }
+    accountId?: string
+  }
+  if (mapped.status === 'draft') {
+    return c.json({ error: 'Issue this invoice first, then review payment.' }, 400)
+  }
+  if (!mapped.receiptData) return c.json({ error: 'No receipt on this invoice.' }, 400)
+
+  const review = { decision: body.data.decision, by: user.accountId, at: Date.now() }
+  const next = settleInvoice({
+    ...mapped,
+    adminReview: body.data.side === 'admin' ? review : mapped.adminReview,
+    superReview: body.data.side === 'super' ? review : mapped.superReview,
+  })
+  const saved = await prisma.invoice.update({
+    where: { id },
+    data: invoiceUpdateData(next as Record<string, unknown>),
+  })
+
+  if (mapped.status !== 'paid' && next.status === 'paid' && next.accountId) {
+    await notify({
+      id: `N-PAID-${id}`,
+      accountId: String(next.accountId),
+      kind: 'payment',
+      title: 'Payment confirmed',
+      body: `${id} is marked paid. Shipping updates will follow.`,
+      href: '/account/invoices',
+    })
+  }
+
+  return c.json({ invoice: mapInvoice(saved) })
+})
+
+commerceRoutes.post('/invoices/:id/clear-payment', requireUser, requireStaff, async (c) => {
+  const id = c.req.param('id').trim().toUpperCase()
+  const row = await prisma.invoice.findUnique({ where: { id } })
+  if (!row) return c.json({ error: 'Invoice not found.' }, 404)
+  const mapped = mapInvoice(row) as Record<string, unknown>
+  const next = settleInvoice({
+    ...mapped,
+    receiptName: undefined,
+    receiptData: undefined,
+    paidDeclaredAt: undefined,
+    adminReview: undefined,
+    superReview: undefined,
+  })
+  const saved = await prisma.invoice.update({
+    where: { id },
+    data: invoiceUpdateData(next as Record<string, unknown>),
+  })
+  return c.json({ invoice: mapInvoice(saved) })
+})
+
+commerceRoutes.post('/invoices/:id/opened', requireUser, async (c) => {
+  const user = c.get('user')
+  const id = c.req.param('id').trim().toUpperCase()
+  const row = await prisma.invoice.findUnique({ where: { id } })
+  if (!row) return c.json({ error: 'Invoice not found.' }, 404)
+  const mapped = mapInvoice(row) as Record<string, unknown> & { accountId?: string }
+  const staff = user.role === 'admin' || user.role === 'superadmin'
+  if (!staff && mapped.accountId !== user.accountId) {
+    return c.json({ error: 'Invoice not found.' }, 404)
+  }
+  const next = { ...mapped, opened: true }
+  const saved = await prisma.invoice.update({
+    where: { id },
+    data: { dataJson: splitInvoiceRow(next).dataJson },
+  })
+  return c.json({ invoice: mapInvoice(saved) })
 })

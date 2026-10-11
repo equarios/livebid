@@ -266,7 +266,7 @@ function AddAuctionTypeDialog({
   )
 }
 
-type SuperSection = 'today' | 'catalog' | 'money' | 'store' | 'people' | 'settings'
+type SuperSection = 'today' | 'catalog' | 'money' | 'store' | 'people' | 'clients' | 'settings'
 type SuperSettingsDesk =
   | 'guide'
   | 'site'
@@ -283,6 +283,7 @@ const SUPER_SECTIONS = new Set<SuperSection>([
   'money',
   'store',
   'people',
+  'clients',
   'settings',
 ])
 const SETTINGS_DESKS = new Set<SuperSettingsDesk>([
@@ -938,7 +939,13 @@ export function Super() {
       {section === 'store' ? <StoreDesk /> : null}
 
       {section === 'money' ? (
-        <section className="card admin-section pay-queue-card invoice-super-panel">
+        <section className="mh-desk pay-queue-card invoice-super-panel">
+          <header className="mh-desk-head">
+            <h2>Money</h2>
+            <p className="mh-desk-note">
+              Issue drafts, stamp receipts with Admin, then final Super payment confirm.
+            </p>
+          </header>
           <InvoiceDesk canAdmin canSuper allowCreate />
         </section>
       ) : null}

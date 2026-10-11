@@ -3,13 +3,16 @@ export function DeskIntro({
   brand,
   title,
   body,
+  tone = 'default',
 }: {
   brand: string
   title: string
   body: string
+  /** `trade` = stronger brand strip for Auctions / Marketplace */
+  tone?: 'default' | 'trade'
 }) {
   return (
-    <header className="desk-intro">
+    <header className={`desk-intro${tone === 'trade' ? ' is-trade' : ''}`}>
       <p className="desk-intro-brand">{brand}</p>
       <div className="desk-intro-copy">
         <h1>{title}</h1>

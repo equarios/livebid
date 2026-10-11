@@ -17,6 +17,9 @@ export function renderPageBody(body: string): ReactNode {
           const detail = rest.join('|').trim()
           return (
             <li key={i}>
+              <span className="how-step-n" aria-hidden>
+                {String(i + 1).padStart(2, '0')}
+              </span>
               <strong>{title.trim()}</strong>
               {detail ? <span>{detail}</span> : null}
             </li>

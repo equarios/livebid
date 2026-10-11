@@ -116,7 +116,8 @@ function WholesaleHubPage() {
   if (!authReady) {
     return <p className="muted tiny" style={{ padding: 16 }}>Loading session…</p>
   }
-  if (!user) return <Navigate to="/buyers" replace />
+  /* Guests can browse the deal board (prices locked); approved buyers/staff get the full hub. */
+  if (!user) return <Home />
   if (!canUseWholesaleDesk(user, isStaff)) return <Navigate to="/account" replace />
   return <Home />
 }
@@ -169,7 +170,14 @@ export default function App() {
         <Route path="/sellers" element={<SellersPage />} />
         <Route path="/support" element={<SupportPage />} />
         <Route path="/community" element={<Navigate to="/account/community" replace />} />
-        <Route path="/store" element={<Navigate to="/" replace />} />
+        <Route
+          path="/store"
+          element={
+            <ChannelGate flag="showStore">
+              <Store />
+            </ChannelGate>
+          }
+        />
         <Route
           path="/store/p/:slug"
           element={

@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { PublicShell } from '../components/PublicShell'
 import { StoreProductCard } from '../components/StoreProductCard'
 import { StoreProductPreview } from '../components/StoreProductPreview'
+import { StoreRail } from '../components/StoreRail'
 import { DEFAULT_SETTINGS } from '../data'
 import { api, type StoreProductDto } from '../lib/api'
-import { storeCartCount } from '../lib/storeCart'
 import { useStore } from '../store'
 
 /** Full-bleed store landing photo (devices in hand / desk). */
@@ -14,12 +14,13 @@ const HERO_PHOTO =
 
 export function Store() {
   const { settings } = useStore()
+  const [params] = useSearchParams()
+  const q = (params.get('q') || '').trim().toLowerCase()
   const [products, setProducts] = useState<StoreProductDto[]>([])
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [preview, setPreview] = useState<StoreProductDto | null>(null)
-  const [cartN, setCartN] = useState(() => storeCartCount())
 
   const heroes =
     settings.pages?.storeHeroes?.length
@@ -27,11 +28,13 @@ export function Store() {
       : DEFAULT_SETTINGS.pages.storeHeroes
   const hero = heroes[0]
 
-  useEffect(() => {
-    const onCart = () => setCartN(storeCartCount())
-    window.addEventListener('livebid-store-cart', onCart)
-    return () => window.removeEventListener('livebid-store-cart', onCart)
-  }, [])
+  const filtered = useMemo(() => {
+    if (!q) return products
+    return products.filter((p) => {
+      const hay = [p.title, p.category, p.slug, p.id].filter(Boolean).join(' ').toLowerCase()
+      return hay.includes(q)
+    })
+  }, [products, q])
 
   useEffect(() => {
     let alive = true
@@ -89,23 +92,24 @@ export function Store() {
       </section>
 
       <div className="retail-store" id="shop-catalog">
-        <header className="store-rail" aria-label="Store collection">
-          <h2>
-            {storeName}
-            <span className="store-rail-count">{loading ? '…' : products.length}</span>
-          </h2>
-          <div className="store-rail-links">
-            <Link to="/store/cart">Cart{cartN ? ` · ${cartN}` : ''}</Link>
-            <Link to="/store/orders">Orders</Link>
-          </div>
-        </header>
+        <StoreRail
+          page="store"
+          title={storeName}
+          count={loading ? '…' : filtered.length}
+          note={
+            q
+              ? `Results for “${params.get('q')}”.`
+              : 'Fixed retail prices — add to cart and check out here.'
+          }
+          label={storeName}
+        />
 
         {toast ? <p className="tiny retail-toast shop-toast">{toast}</p> : null}
         {err ? <p className="tiny imei-err">{err}</p> : null}
         {loading && !products.length ? <p className="muted tiny">Loading…</p> : null}
 
         <div className="store-lot-grid" aria-label="Store products">
-          {products.map((p) => (
+          {filtered.map((p) => (
             <StoreProductCard
               key={p.id}
               product={p}
@@ -115,8 +119,15 @@ export function Store() {
           ))}
         </div>
 
-        {!loading && !products.length ? (
-          <p className="shop-empty muted">No products listed yet.</p>
+        {!loading && !filtered.length ? (
+          <div className="mh-empty shop-empty">
+            <p>{q ? 'No products match that search.' : 'No products listed yet.'}</p>
+            {q ? (
+              <Link to="/store" className="btn btn-sm">
+                Clear search
+              </Link>
+            ) : null}
+          </div>
         ) : null}
       </div>
 

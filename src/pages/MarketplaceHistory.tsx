@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useLocation } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { CartDesk } from '../components/CartDesk'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { InvoicePreview } from '../components/InvoicePreview'
@@ -107,104 +107,88 @@ export function MarketplaceHistory() {
   }
 
   return (
-    <div className="market-history-page">
-      <section id="cart" className="cart-panel">
-        <div className="cart-panel-head">
+    <div className="market-history-page mypage-listings">
+      <section id="cart" className="mh-desk">
+        <header className="mh-desk-head">
           <h2>
             {settings.copy.cartTitle}
-            {cartRows.length ? <em>{cartRows.length}</em> : null}
+            <em>{cartRows.length}</em>
           </h2>
-        </div>
-        {!cartRows.length ? (
-          <p className="muted">{settings.copy.emptyCart}</p>
-        ) : (
-          <>
-            <div className="table-wrap cart-table-wrap">
-              <table className="auction-table">
-                <thead>
-                  <tr>
-                    <th>Items</th>
-                    <th>Quantity</th>
-                    <th>Current Price</th>
-                    <th>Total amount</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {cartRows.map(({ item, lot, quote }) => (
-                    <tr key={item.lotId}>
-                      <td className="item-col">
-                        <ItemLink lot={lot} showMoq={false} showGrade={false} showLotId />
-                      </td>
-                      <td className="lot-qty">{item.qty}</td>
-                      <td className="price-cell">{usd(lot.buyNowPrice ?? 0)}</td>
-                      <td className="price-cell cart-total-cell">
-                        <div className="cart-total-actions">
-                          <strong>{usd(quote.goods)}</strong>
-                          <button
-                            type="button"
-                            className="btn"
-                            onClick={() => removeFromCart(item.lotId)}
-                          >
-                            {settings.copy.btnRemove}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="auction-cards cart-cards">
-              {cartRows.map(({ item, lot, quote }) => (
-                <article key={item.lotId} className="auction-card">
-                  <ItemLink lot={lot} showMoq={false} showGrade={false} showLotId />
-                  <div className="auction-card-meta">
-                    <span className={`grade-inline grade-${lot.grade}`}>{lot.grade}</span>
-                    <span className="lot-qty">{item.qty} pcs</span>
-                    <span>{usd(lot.buyNowPrice ?? 0)} / pc</span>
-                    <span>
-                      Goods <strong>{usd(quote.goods)}</strong>
-                    </span>
-                  </div>
-                  <div className="row-actions">
-                    <button
-                      type="button"
-                      className="btn"
-                      onClick={() => removeFromCart(item.lotId)}
-                    >
-                      {settings.copy.btnRemove}
-                    </button>
-                  </div>
-                </article>
-              ))}
-            </div>
-            <div className="cart-foot">
-              <div className="cart-foot-sum">
-                <strong>Est. total {usdCents(cartQuote.total)}</strong>
+          <p className="mh-desk-note">Buy at list price on Marketplace, then send for review.</p>
+          {cartRows.length ? (
+            <div className="mh-desk-actions">
+              <div className="mh-desk-sum">
+                <strong>Est. {usdCents(cartQuote.total)}</strong>
                 {cartQuote.feePct > 0 ? (
                   <span className="muted tiny">
-                    Goods {usdCents(cartQuote.goods)} · Fee {cartQuote.feePct}% {usdCents(cartQuote.fee)}
+                    Goods {usdCents(cartQuote.goods)} · Fee {cartQuote.feePct}%
                   </span>
                 ) : null}
               </div>
               <button
                 type="button"
-                className="btn btn-primary"
+                className="btn btn-primary btn-sm"
                 onClick={() => setCheckoutOpen(true)}
               >
                 {settings.copy.btnCheckout}
               </button>
             </div>
-          </>
-        )}
+          ) : null}
+        </header>
+
+        <div className="mh-table-wrap">
+          <table className="gbs-table mh-table">
+            <thead>
+              <tr>
+                <th>Items</th>
+                <th>Quantity</th>
+                <th>Current Price</th>
+                <th>Total amount</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {cartRows.map(({ item, lot, quote }) => (
+                <tr key={item.lotId}>
+                  <td className="item-col">
+                    <ItemLink lot={lot} showMoq={false} showGrade={false} showLotId />
+                  </td>
+                  <td className="lot-qty">{item.qty}</td>
+                  <td className="price-cell">{usd(lot.buyNowPrice ?? 0)}</td>
+                  <td className="price-cell">
+                    <strong>{usd(quote.goods)}</strong>
+                  </td>
+                  <td>
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      onClick={() => removeFromCart(item.lotId)}
+                    >
+                      {settings.copy.btnRemove}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {!cartRows.length ? (
+            <div className="mh-empty">
+              <p>{settings.copy.emptyCart}</p>
+              <Link to="/marketplace" className="btn btn-sm">
+                Open Marketplace
+              </Link>
+            </div>
+          ) : null}
+        </div>
         {notice ? <p className={notice.ok ? 'ok' : 'error'}>{notice.text}</p> : null}
 
-        <div className="cart-panel-head market-history-head" style={{ marginTop: 14 }}>
+        <header className="mh-desk-head is-sub">
           <h2>
             Checkout requests
-            {openCartOrders ? <em className="is-open">{openCartOrders}</em> : null}
+            <em className={openCartOrders ? 'is-open' : undefined}>{openCartOrders}</em>
           </h2>
-        </div>
+          <p className="mh-desk-note">Awaiting staff review, then your confirm.</p>
+        </header>
         <CartDesk staff={isStaff} />
       </section>
 
@@ -242,28 +226,32 @@ export function MarketplaceHistory() {
         </ConfirmDialog>
       ) : null}
 
-      <section id="offers" className="cart-panel">
-        <div className="cart-panel-head">
+      <section id="offers" className="mh-desk">
+        <header className="mh-desk-head">
           <h2>
             Offers
-            {myOffers ? <em className="is-open">{myOffers}</em> : null}
+            <em className={myOffers ? 'is-open' : undefined}>{myOffers}</em>
           </h2>
-        </div>
+          <p className="mh-desk-note">Your prices on listings — staff accept, then you confirm.</p>
+        </header>
         <OfferDesk staff={isStaff} />
       </section>
 
-      <section id="orders" className="cart-panel">
-        <div className="cart-panel-head market-history-head">
+      <section id="orders" className="mh-desk">
+        <header className="mh-desk-head">
           <h2>
             Orders
             <em>{rows.length}</em>
           </h2>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={exportCsv}>
-            Export CSV
-          </button>
-        </div>
-        <div className="table-wrap gbs-table-wrap">
-          <table className="gbs-table">
+          <p className="mh-desk-note">Invoiced marketplace buys and confirmed offers.</p>
+          <div className="mh-desk-actions">
+            <button type="button" className="btn btn-ghost btn-sm" onClick={exportCsv}>
+              Export CSV
+            </button>
+          </div>
+        </header>
+        <div className="mh-table-wrap">
+          <table className="gbs-table mh-table market-history-table">
             <thead>
               <tr>
                 <th>Date</th>
@@ -294,7 +282,11 @@ export function MarketplaceHistory() {
                     </td>
                     <td>
                       {invoiceVisibleToBuyer(inv) ? (
-                        <button type="button" className="linkish" onClick={() => setPreviewId(inv.id)}>
+                        <button
+                          type="button"
+                          className="linkish"
+                          onClick={() => setPreviewId(inv.id)}
+                        >
                           View invoice
                         </button>
                       ) : (
@@ -306,31 +298,14 @@ export function MarketplaceHistory() {
               })}
             </tbody>
           </table>
-          {!rows.length ? <p className="empty">No marketplace orders yet.</p> : null}
-        </div>
-        <div className="inv-cards">
-          {rows.map((inv) => {
-            const lot = lots.find((l) => l.id === inv.lotId)
-            return (
-              <article key={inv.id} className="inv-card">
-                {lot ? <ItemLink lot={lot} /> : <strong>{inv.lotId}</strong>}
-                <div className="muted tiny">
-                  {inv.id} · {formatDateTime(inv.createdAt)}
-                </div>
-                <div className="inv-card-meta">
-                  <span>{inv.qty} pcs</span>
-                  <span>{usdAmt(inv.unitPrice)} / pc</span>
-                  <span>{usdAmt(invoiceTotals(inv, settings).total)}</span>
-                </div>
-                <span className={`pill ${invoicePill(inv.status)}`}>{invoiceStatusLabel(inv.status)}</span>
-                {invoiceVisibleToBuyer(inv) ? (
-                  <button type="button" className="linkish" onClick={() => setPreviewId(inv.id)}>
-                    View invoice
-                  </button>
-                ) : null}
-              </article>
-            )
-          })}
+          {!rows.length ? (
+            <div className="mh-empty">
+              <p>No marketplace orders yet.</p>
+              <Link to="/marketplace" className="btn btn-sm">
+                Open Marketplace
+              </Link>
+            </div>
+          ) : null}
         </div>
       </section>
 

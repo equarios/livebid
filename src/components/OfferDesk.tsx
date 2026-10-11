@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { ItemLink } from './ItemLink'
 import { formatDateTime, usd } from '../lib/format'
 import { useStore } from '../store'
@@ -12,15 +13,12 @@ function statusLabel(status: MarketOffer['status']) {
 }
 
 export function OfferDesk({ staff }: { staff?: boolean }) {
-  const { offers, lots, accounts, user, settings, reviewOffer, confirmOffer, cancelOffer } = useStore()
+  const { offers, lots, accounts, user, settings, reviewOffer, confirmOffer, cancelOffer } =
+    useStore()
   const rows = (offers || [])
     .filter((o) => (staff ? true : o.accountId === user?.accountId))
     .slice()
     .sort((a, b) => b.createdAt - a.createdAt)
-
-  if (!rows.length) {
-    return <p className="muted">{staff ? 'No marketplace offers yet.' : 'No offers yet. Send a price from a listing.'}</p>
-  }
 
   const actionButtons = (offer: MarketOffer) => (
     <div className="row-actions">
@@ -61,9 +59,8 @@ export function OfferDesk({ staff }: { staff?: boolean }) {
   )
 
   return (
-    <>
-    <div className="table-wrap offer-table-wrap">
-      <table className="auction-table">
+    <div className="mh-table-wrap">
+      <table className="gbs-table mh-table">
         <thead>
           <tr>
             <th>When</th>
@@ -85,13 +82,27 @@ export function OfferDesk({ staff }: { staff?: boolean }) {
                 <td className="mono">{formatDateTime(offer.createdAt)}</td>
                 {staff ? <td>{buyer?.company || offer.accountId}</td> : null}
                 <td className="item-col">
-                  {lot ? <ItemLink lot={lot} showMoq={false} showGrade={false} showLotId /> : offer.lotId}
+                  {lot ? (
+                    <ItemLink lot={lot} showMoq={false} showGrade={false} showLotId />
+                  ) : (
+                    offer.lotId
+                  )}
                 </td>
                 <td className="lot-qty">{offer.qty}</td>
                 <td className="price-cell">{usd(offer.unitPrice)}</td>
                 <td className="price-cell">{usd(offer.listedPrice)}</td>
                 <td>
-                  <span className={`pill pill-${offer.status === 'accepted' ? 'live' : offer.status === 'confirmed' ? 'win' : offer.status === 'pending' ? 'hybrid' : 'sealed'}`}>
+                  <span
+                    className={`pill pill-${
+                      offer.status === 'accepted'
+                        ? 'live'
+                        : offer.status === 'confirmed'
+                          ? 'win'
+                          : offer.status === 'pending'
+                            ? 'hybrid'
+                            : 'sealed'
+                    }`}
+                  >
                     {statusLabel(offer.status)}
                   </span>
                 </td>
@@ -101,32 +112,20 @@ export function OfferDesk({ staff }: { staff?: boolean }) {
           })}
         </tbody>
       </table>
+      {!rows.length ? (
+        <div className="mh-empty">
+          <p>
+            {staff
+              ? 'No marketplace offers yet.'
+              : 'No offers yet. Send a price from a Marketplace listing.'}
+          </p>
+          {!staff ? (
+            <Link to="/marketplace" className="btn btn-sm">
+              Open Marketplace
+            </Link>
+          ) : null}
+        </div>
+      ) : null}
     </div>
-    <div className="auction-cards offer-cards">
-      {rows.map((offer) => {
-        const lot = lots.find((l) => l.id === offer.lotId)
-        const buyer = accounts.find((a) => a.accountId === offer.accountId)
-        return (
-          <article key={offer.id} className="auction-card">
-            {lot ? (
-              <ItemLink lot={lot} showMoq={false} showGrade={false} showLotId />
-            ) : (
-              <strong>{offer.lotId}</strong>
-            )}
-            {staff ? <div className="muted tiny">{buyer?.company || offer.accountId}</div> : null}
-            <div className="auction-card-meta">
-              <span>{offer.qty} pcs</span>
-              <span>Offer {usd(offer.unitPrice)}</span>
-              <span>List {usd(offer.listedPrice)}</span>
-            </div>
-            <span className={`pill pill-${offer.status === 'accepted' ? 'live' : offer.status === 'confirmed' ? 'win' : offer.status === 'pending' ? 'hybrid' : 'sealed'}`}>
-              {statusLabel(offer.status)}
-            </span>
-            {actionButtons(offer)}
-          </article>
-        )
-      })}
-    </div>
-    </>
   )
 }

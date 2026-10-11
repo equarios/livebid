@@ -192,11 +192,13 @@ export function WholesaleReviewDesk() {
   }
 
   return (
-    <section className="card admin-section">
-      <h2>Wholesale applications</h2>
-      <p className="muted tiny">
-        Review forms, request docs, send a staff PDF/form to My Page → Documents, then approve desk access.
-      </p>
+    <section className="mh-desk">
+      <header className="mh-desk-head">
+        <h2>Wholesale applications</h2>
+        <p className="mh-desk-note">
+          Review forms, request docs, send files to My Page → Documents, then approve desk access.
+        </p>
+      </header>
       {error ? <p className="error">{error}</p> : null}
       {ok ? <p className="ok">{ok}</p> : null}
 

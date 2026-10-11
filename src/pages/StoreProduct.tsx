@@ -2,12 +2,13 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { PublicShell } from '../components/PublicShell'
 import { StoreGallery } from '../components/StoreGallery'
+import { StoreRail } from '../components/StoreRail'
 import { api, type StoreProductDto } from '../lib/api'
 import { usd } from '../lib/format'
-import { addToStoreCart, storeCartCount } from '../lib/storeCart'
+import { addToStoreCart } from '../lib/storeCart'
 import { useStore } from '../store'
 
-/** Deep-link PDP — same layout language as LotDetailDialog / StoreProductPreview. */
+/** Deep-link PDP — same rail language as Store / Cart / Orders. */
 export function StoreProductPage() {
   const { slug = '' } = useParams()
   const { settings } = useStore()
@@ -15,13 +16,6 @@ export function StoreProductPage() {
   const [qty, setQty] = useState(1)
   const [err, setErr] = useState<string | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
-  const [cartN, setCartN] = useState(() => storeCartCount())
-
-  useEffect(() => {
-    const onCart = () => setCartN(storeCartCount())
-    window.addEventListener('livebid-store-cart', onCart)
-    return () => window.removeEventListener('livebid-store-cart', onCart)
-  }, [])
 
   useEffect(() => {
     let alive = true
@@ -48,87 +42,100 @@ export function StoreProductPage() {
     )
   }
 
+  const storeName = settings.storeLabel || 'Store'
   const soldOut = Boolean(product && product.stock < 1)
 
   return (
     <PublicShell mode="consumer">
       <div className="retail-store retail-pdp">
-        <div className="retail-pdp-nav">
-          <Link to="/">← {settings.storeLabel || 'Store'}</Link>
-          <Link to="/store/cart">Cart{cartN ? ` (${cartN})` : ''}</Link>
-        </div>
-        {err ? <p className="tiny imei-err">{err}</p> : null}
+        <StoreRail
+          page="product"
+          title={product?.title || 'Product'}
+          note={
+            product
+              ? `${product.category} · fixed retail price`
+              : 'Fixed retail price — add to cart and check out here.'
+          }
+          label={storeName}
+        />
+
+        {err ? (
+          <div className="mh-empty shop-empty">
+            <p>{err}</p>
+            <Link to="/store" className="btn btn-primary btn-sm">
+              Back to {storeName}
+            </Link>
+          </div>
+        ) : null}
         {!product && !err ? <p className="muted tiny">Loading…</p> : null}
+
         {product ? (
-          <div className="card lot-modal store-pdp-card">
-            <div className="lot-modal-head">
-              <div>
-                <span className="pill pill-hybrid">Retail</span>
-                <h1 id="store-pdp-title">{product.title}</h1>
-                <p className="muted">
-                  {usd(product.price)} / pc
-                  {product.compareAt && product.compareAt > product.price
-                    ? ` · was ${usd(product.compareAt)}`
-                    : ''}
-                  {' · '}
-                  {soldOut ? 'Sold out' : `${product.stock} in stock`}
-                </p>
-              </div>
+          <div className="store-pdp-desk">
+            <div className="store-pdp-media">
+              <StoreGallery product={product} variant="detail" />
             </div>
+            <div className="store-pdp-body">
+              <p className="store-pdp-price">
+                <strong>{usd(product.price)}</strong>
+                <span> / pc</span>
+                {product.compareAt && product.compareAt > product.price ? (
+                  <s>{usd(product.compareAt)}</s>
+                ) : null}
+              </p>
+              <p className="muted tiny">
+                {soldOut ? 'Sold out' : `${product.stock} in warehouse`} · Consumer store
+              </p>
 
-            <StoreGallery product={product} variant="detail" />
+              <dl className="specs store-pdp-specs">
+                <div>
+                  <dt>Category</dt>
+                  <dd>{product.category}</dd>
+                </div>
+                <div>
+                  <dt>Availability</dt>
+                  <dd>{soldOut ? 'Sold out' : `${product.stock} units`}</dd>
+                </div>
+                <div>
+                  <dt>Channel</dt>
+                  <dd>Retail</dd>
+                </div>
+              </dl>
 
-            <dl className="specs">
-              <div>
-                <dt>Category</dt>
-                <dd>{product.category}</dd>
-              </div>
-              <div>
-                <dt>Price</dt>
-                <dd>{usd(product.price)}</dd>
-              </div>
-              <div>
-                <dt>Availability</dt>
-                <dd>{soldOut ? 'Sold out' : `${product.stock} units`}</dd>
-              </div>
-              <div>
-                <dt>Channel</dt>
-                <dd>Consumer store</dd>
-              </div>
-            </dl>
+              <h3 className="detail-notes-title">Condition notes</h3>
+              <p className="store-pdp-desc">
+                {product.description || 'Retail unit. Inspected and ready to ship.'}
+              </p>
 
-            <h3 className="detail-notes-title">Condition notes</h3>
-            <p>{product.description || 'Retail unit. Inspected and ready to ship.'}</p>
-
-            <div className="store-preview-buy">
-              <label className="field">
-                <span>Qty</span>
-                <input
-                  type="number"
-                  className="retail-qty"
-                  min={1}
-                  max={Math.max(1, product.stock)}
-                  value={qty}
+              <div className="store-preview-buy">
+                <label className="field">
+                  <span>Qty</span>
+                  <input
+                    type="number"
+                    className="retail-qty"
+                    min={1}
+                    max={Math.max(1, product.stock)}
+                    value={qty}
+                    disabled={soldOut}
+                    onChange={(e) => setQty(Math.max(1, Number(e.target.value) || 1))}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="btn btn-primary"
                   disabled={soldOut}
-                  onChange={(e) => setQty(Math.max(1, Number(e.target.value) || 1))}
-                />
-              </label>
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={soldOut}
-                onClick={() => {
-                  addToStoreCart(product.id, qty)
-                  setMsg(`Added ${qty} to cart`)
-                }}
-              >
-                Add to cart
-              </button>
-              <Link to="/store/cart" className="btn btn-ghost">
-                Checkout
-              </Link>
+                  onClick={() => {
+                    addToStoreCart(product.id, qty)
+                    setMsg(`Added ${qty} to cart`)
+                  }}
+                >
+                  Add to cart
+                </button>
+                <Link to="/store/cart" className="btn btn-ghost">
+                  Checkout
+                </Link>
+              </div>
+              {msg ? <p className="tiny retail-toast shop-toast">{msg}</p> : null}
             </div>
-            {msg ? <p className="tiny retail-toast">{msg}</p> : null}
           </div>
         ) : null}
       </div>

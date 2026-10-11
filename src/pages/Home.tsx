@@ -125,53 +125,57 @@ export function Home() {
 
   return (
     <PublicShell mode="wholesale">
-      <section className="land-hero wholesale-hero" aria-label={`${brand} wholesale`}>
-        <div className="land-hero-media" aria-hidden>
-          <div className="land-hero-photo" style={{ backgroundImage: `url(${HERO_PHOTO})` }} />
-          <div className="land-hero-veil is-wholesale" />
-          <div className="land-hero-grain" />
-        </div>
-        <div className="land-hero-copy">
-          <p className="land-hero-brand">{brand}</p>
-          <h1>{hero.title}</h1>
-          <p className="land-hero-lead">{hero.body}</p>
-          <div className="land-hero-cta">
-            <button type="button" className="pub-btn pub-btn-fill" onClick={() => go(hero.to)}>
-              {hero.cta}
-            </button>
-            <button type="button" className="land-hero-secondary" onClick={() => go('/register')}>
-              Apply as buyer →
-            </button>
-          </div>
-        </div>
-      </section>
+      {!q ? (
+        <>
+          <section className="land-hero wholesale-hero" aria-label={`${brand} wholesale`}>
+            <div className="land-hero-media" aria-hidden>
+              <div className="land-hero-photo" style={{ backgroundImage: `url(${HERO_PHOTO})` }} />
+              <div className="land-hero-veil is-wholesale" />
+              <div className="land-hero-grain" />
+            </div>
+            <div className="land-hero-copy">
+              <p className="land-hero-brand">{brand}</p>
+              <h1>{hero.title}</h1>
+              <p className="land-hero-lead">{hero.body}</p>
+              <div className="land-hero-cta">
+                <button type="button" className="pub-btn pub-btn-fill" onClick={() => go(hero.to)}>
+                  {hero.cta}
+                </button>
+                <button type="button" className="land-hero-secondary" onClick={() => go('/register')}>
+                  Apply as buyer →
+                </button>
+              </div>
+            </div>
+          </section>
 
-      <section className="how-strip">
-        <h2>{pages.wholesaleHowTitle}</h2>
-        <ol>
-          {pages.wholesaleHowSteps.map((step, i) => (
-            <li key={step.title}>
-              <span className="how-step-n" aria-hidden>
-                {String(i + 1).padStart(2, '0')}
-              </span>
-              <strong>{step.title}</strong>
-              <span>{step.body}</span>
-            </li>
-          ))}
-        </ol>
-      </section>
+          <section className="how-strip">
+            <h2>{pages.wholesaleHowTitle}</h2>
+            <ol>
+              {pages.wholesaleHowSteps.map((step, i) => (
+                <li key={step.title}>
+                  <span className="how-step-n" aria-hidden>
+                    {String(i + 1).padStart(2, '0')}
+                  </span>
+                  <strong>{step.title}</strong>
+                  <span>{step.body}</span>
+                </li>
+              ))}
+            </ol>
+          </section>
 
-      <section className="trust-strip" aria-label="Trust">
-        {pages.wholesaleTrust.map((item) => (
-          <p key={item.title}>
-            <strong>{item.title}</strong>
-            {item.body}
-          </p>
-        ))}
-      </section>
+          <section className="trust-strip" aria-label="Trust">
+            {pages.wholesaleTrust.map((item) => (
+              <p key={item.title}>
+                <strong>{item.title}</strong>
+                {item.body}
+              </p>
+            ))}
+          </section>
+        </>
+      ) : null}
 
-      <section className="pub-section">
-        <div className="pub-section-head">
+      <section className={`pub-section${q ? ' is-search-results' : ''}`}>
+        <div className="pub-section-head is-rail">
           <h2>{q ? `Results for “${params.get('q')}”` : pages.wholesaleDealsTitle}</h2>
           <button type="button" className="linkish" onClick={() => go('/auctions')}>
             View all
@@ -180,7 +184,7 @@ export function Home() {
         {dealGroups.length ? (
           dealGroups.map((group) => (
             <div key={group.value} className="deal-type-block">
-              <div className="pub-section-head">
+              <div className="pub-section-head is-rail">
                 <h3>{group.label}</h3>
                 <button type="button" className="linkish" onClick={() => go(listPath(group.value))}>
                   View {group.label}
@@ -200,69 +204,92 @@ export function Home() {
             </div>
           ))
         ) : (
-          <p className="muted">{pages.wholesaleEmptyDeals}</p>
+          <div className="mh-empty">
+            <p>
+              {q
+                ? `No deals match “${params.get('q')}”. Try another model, SKU, or maker.`
+                : pages.wholesaleEmptyDeals}
+            </p>
+          </div>
         )}
       </section>
 
-      {settings.showMarketplace ? (
+      {settings.showMarketplace && (!q || market.length) ? (
         <section className="pub-section">
-          <div className="pub-section-head">
-            <h2>{settings.marketplaceLabel}</h2>
-            <button type="button" className="linkish" onClick={() => go('/marketplace')}>
-              View all
-            </button>
-          </div>
-          <div className="deal-grid">
-            {market.map((lot) => (
-              <DealCard
-                key={lot.id}
-                lot={lot}
-                showPrice={Boolean(user)}
-                onOpen={() => go('/marketplace')}
-              />
-            ))}
-          </div>
-          {!market.length ? <p className="muted">{pages.wholesaleEmptyMarket}</p> : null}
-        </section>
-      ) : null}
-
-      {makers.length ? (
-        <section className="pub-section">
-          <div className="pub-section-head">
-            <h2>{pages.wholesaleBrandsTitle}</h2>
-          </div>
-          <div className="brand-row">
-            {makers.map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => go(`/auctions?q=${encodeURIComponent(m)}`)}
-              >
-                {m}
+          <div className="deal-type-block">
+            <div className="pub-section-head is-rail">
+              <h2>{settings.marketplaceLabel}</h2>
+              <button type="button" className="linkish" onClick={() => go('/marketplace')}>
+                View all
               </button>
-            ))}
+            </div>
+            <div className="deal-grid">
+              {market.map((lot) => (
+                <DealCard
+                  key={lot.id}
+                  lot={lot}
+                  showPrice={Boolean(user)}
+                  onOpen={() => go('/marketplace')}
+                />
+              ))}
+            </div>
+            {!market.length ? (
+              <div className="mh-empty">
+                <p>{pages.wholesaleEmptyMarket}</p>
+              </div>
+            ) : null}
           </div>
         </section>
       ) : null}
 
-      <section className="pub-split">
-        <div>
-          <h2>Buying on {brand}</h2>
-          <p className="muted">
-            Official wholesale auctions and marketplace for verified companies — phones, tablets, and
-            electronics by grade and lot size.
-          </p>
-          <Link to="/buyers">How buying works →</Link>
-        </div>
-        <div>
-          <h2>Selling through {brand}</h2>
-          <p className="muted">
-            Move returned and excess stock to approved B2B buyers. Catalog and clocks run from the ops
-            desk.
-          </p>
-          <Link to="/sellers">For sellers →</Link>
-        </div>
-      </section>
+      {!q && makers.length ? (
+        <section className="pub-section">
+          <div className="deal-type-block">
+            <div className="pub-section-head is-rail">
+              <h2>{pages.wholesaleBrandsTitle}</h2>
+              <button
+                type="button"
+                className="linkish"
+                onClick={() => go('/auctions')}
+              >
+                View all
+              </button>
+            </div>
+            <div className="brand-row">
+              {makers.map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => go(`/auctions?q=${encodeURIComponent(m)}`)}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      {!q ? (
+        <section className="pub-split">
+          <div>
+            <h2>Buying on {brand}</h2>
+            <p className="muted">
+              Official wholesale auctions and marketplace for verified companies — phones, tablets, and
+              electronics by grade and lot size.
+            </p>
+            <Link to="/buyers">How buying works →</Link>
+          </div>
+          <div>
+            <h2>Selling through {brand}</h2>
+            <p className="muted">
+              Move returned and excess stock to approved B2B buyers. Catalog and clocks run from the ops
+              desk.
+            </p>
+            <Link to="/sellers">For sellers →</Link>
+          </div>
+        </section>
+      ) : null}
     </PublicShell>
   )
 }

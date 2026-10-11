@@ -409,12 +409,13 @@ export function ImeiDesk() {
     : devices
 
   return (
-    <section className="card admin-section imei-desk">
-      <h2>IMEI unlock packs</h2>
-      <p className="muted tiny">
-        Manage packs in the app (view, add, edit, delete) or bulk-upload CSV. Clients only see packs
-        assigned to them.
-      </p>
+    <section className="mh-desk imei-desk">
+      <header className="mh-desk-head">
+        <h2>IMEI unlock packs</h2>
+        <p className="mh-desk-note">
+          Manage packs in the app or bulk-upload CSV. Clients only see packs assigned to them.
+        </p>
+      </header>
 
       <form className="imei-search imei-staff-search" onSubmit={(e) => void onSearch(e)}>
         <label className="field">

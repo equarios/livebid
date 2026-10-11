@@ -346,59 +346,79 @@ export function Admin() {
       ) : null}
 
       {section === 'commerce' && desk === 'carts' ? (
-        <section className="card admin-section">
-          <h2>Cart checkouts</h2>
-          <p className="muted tiny">
-            Accept or decline listed-price carts. Buyer confirms after accept, then an invoice is drafted.
-          </p>
+        <section className="mh-desk">
+          <header className="mh-desk-head">
+            <h2>Cart checkouts</h2>
+            <p className="mh-desk-note">
+              Accept or decline listed-price carts. Buyer confirms after accept, then an invoice is drafted.
+            </p>
+          </header>
           <CartDesk staff />
         </section>
       ) : null}
 
       {section === 'commerce' && desk === 'offers' ? (
-        <section className="card admin-section">
-          <h2>Marketplace offers</h2>
-          <p className="muted tiny">
-            Accept a buyer's price. They confirm, then an invoice is created at the offered rate.
-          </p>
+        <section className="mh-desk">
+          <header className="mh-desk-head">
+            <h2>Marketplace offers</h2>
+            <p className="mh-desk-note">
+              Accept a buyer&apos;s price. They confirm, then an invoice is created at the offered rate.
+            </p>
+          </header>
           <OfferDesk staff />
         </section>
       ) : null}
 
       {section === 'commerce' && desk === 'bids' ? (
-        <section className="table-wrap card admin-section">
-          <h2>Recent bids</h2>
-          <table className="auction-table">
-            <thead>
-              <tr>
-                <th>When</th>
-                <th>Lot</th>
-                <th>Quantity</th>
-                <th>Current Price</th>
-                <th>Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[...bids].reverse().slice(0, 40).map((b, i) => (
-                <tr key={`${b.lotId}-${b.at}-${i}`}>
-                  <td>{new Date(b.at).toLocaleString()}</td>
-                  <td className="mono">{b.lotId}</td>
-                  <td>{b.qty}</td>
-                  <td>{usd(b.amount)}</td>
-                  <td className="price-cell">{usd(b.qty * b.amount)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {!bids.length ? <p className="empty">No bids yet.</p> : null}
+        <section className="mh-desk">
+          <header className="mh-desk-head">
+            <h2>
+              Recent bids
+              <em>{Math.min(bids.length, 40)}</em>
+            </h2>
+            <p className="mh-desk-note">Latest auction bids across the desk.</p>
+          </header>
+          {!bids.length ? (
+            <div className="mh-empty">
+              <p>No bids yet.</p>
+            </div>
+          ) : (
+            <div className="mh-table-wrap desk-list-scroll">
+              <table className="gbs-table mh-table">
+                <thead>
+                  <tr>
+                    <th>When</th>
+                    <th>Lot</th>
+                    <th>Quantity</th>
+                    <th>Current Price</th>
+                    <th>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...bids].reverse().slice(0, 40).map((b, i) => (
+                    <tr key={`${b.lotId}-${b.at}-${i}`}>
+                      <td>{new Date(b.at).toLocaleString()}</td>
+                      <td className="mono">{b.lotId}</td>
+                      <td>{b.qty}</td>
+                      <td>{usd(b.amount)}</td>
+                      <td className="price-cell">{usd(b.qty * b.amount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </section>
       ) : null}
 
       {section === 'money' ? (
-        <section className="card admin-section pay-queue-card invoice-super-panel">
-          <p className="muted tiny" style={{ marginTop: 0 }}>
-            Admin stamp for receipts. Super issues drafts and gives the final payment confirm.
-          </p>
+        <section className="mh-desk pay-queue-card invoice-super-panel">
+          <header className="mh-desk-head">
+            <h2>Money</h2>
+            <p className="mh-desk-note">
+              Admin stamp for receipts. Super issues drafts and gives the final payment confirm.
+            </p>
+          </header>
           <InvoiceDesk canAdmin allowCreate={false} />
         </section>
       ) : null}

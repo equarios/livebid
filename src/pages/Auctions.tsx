@@ -201,9 +201,10 @@ function AuctionList() {
   return (
     <div className="auctions-page is-command-bar desk-page">
       <DeskIntro
-        brand={settings.brandName || 'Equarios'}
+        brand={settings.brandName || 'eQuarios'}
         title={settings.copy.auctionsTitle}
         body={settings.copy.auctionsIntro}
+        tone="trade"
       />
       {showCoach ? (
         <div className="coach-panel">
@@ -408,7 +409,9 @@ function AuctionList() {
               />
             </div>
           ) : null}
-          <p className="empty">{settings.copy.emptyFilters}</p>
+          <div className="mh-empty">
+            <p>{settings.copy.emptyFilters}</p>
+          </div>
         </>
       )}
       {compareOpen ? (

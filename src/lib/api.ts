@@ -350,6 +350,41 @@ export const api = {
     req<{ invoice: unknown }>(`/api/commerce/offers/${encodeURIComponent(id)}/confirm`, {
       method: 'POST',
     }),
+  saveInvoice: (invoice: Record<string, unknown>, previousId?: string) =>
+    req<{ invoice: unknown }>('/api/commerce/invoices', {
+      method: 'PUT',
+      body: JSON.stringify({ invoice, previousId }),
+    }),
+  deleteInvoice: (id: string) =>
+    req<{ ok: boolean }>(`/api/commerce/invoices/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    }),
+  issueInvoice: (id: string, side: 'admin' | 'super', decision: 'accepted' | 'declined') =>
+    req<{ invoice: unknown }>(`/api/commerce/invoices/${encodeURIComponent(id)}/issue`, {
+      method: 'POST',
+      body: JSON.stringify({ side, decision }),
+    }),
+  submitInvoicePayment: (id: string, receiptName: string, receiptData: string) =>
+    req<{ invoice: unknown }>(`/api/commerce/invoices/${encodeURIComponent(id)}/pay`, {
+      method: 'POST',
+      body: JSON.stringify({ receiptName, receiptData }),
+    }),
+  reviewInvoicePayment: (id: string, side: 'admin' | 'super', decision: 'accepted' | 'declined') =>
+    req<{ invoice: unknown }>(
+      `/api/commerce/invoices/${encodeURIComponent(id)}/review-payment`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ side, decision }),
+      },
+    ),
+  clearInvoicePayment: (id: string) =>
+    req<{ invoice: unknown }>(`/api/commerce/invoices/${encodeURIComponent(id)}/clear-payment`, {
+      method: 'POST',
+    }),
+  markInvoiceOpened: (id: string) =>
+    req<{ invoice: unknown }>(`/api/commerce/invoices/${encodeURIComponent(id)}/opened`, {
+      method: 'POST',
+    }),
   toggleWatch: (lotId: string) =>
     req<{ watching: boolean }>(`/api/commerce/watch/${encodeURIComponent(lotId)}`, {
       method: 'POST',

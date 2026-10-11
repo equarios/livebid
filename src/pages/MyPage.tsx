@@ -83,9 +83,10 @@ export function MyPage() {
   return (
     <div className="mypage is-command-bar desk-page">
       <DeskIntro
-        brand={settings.brandName || 'Equarios'}
+        brand={settings.brandName || 'eQuarios'}
         title={settings.copy.accountTitle || 'My Page'}
         body={settings.copy.accountIntro}
+        tone="trade"
       />
       <section className="auction-type-block is-solo mypage-desk">
         <AuctionTypeHead>

@@ -15,7 +15,10 @@ export function ConsumerNav({ onNavigate }: { onNavigate?: () => void }) {
     return () => window.removeEventListener('livebid-store-cart', sync)
   }, [])
 
-  const shopOpen = location.pathname === '/' || location.pathname.startsWith('/store/p')
+  const shopOpen =
+    location.pathname === '/' ||
+    location.pathname === '/store' ||
+    location.pathname.startsWith('/store/p')
   const cartOpen = location.pathname.startsWith('/store/cart')
   const ordersOpen = location.pathname.startsWith('/store/orders')
 
@@ -26,7 +29,7 @@ export function ConsumerNav({ onNavigate }: { onNavigate?: () => void }) {
         onNavigate?.()
       }}
     >
-      <NavLink to="/" end className={shopOpen ? 'active' : undefined}>
+      <NavLink to="/store" end className={shopOpen ? 'active' : undefined}>
         {settings.storeLabel || settings.copy.navStore || 'Store'}
       </NavLink>
       <NavLink to="/store/cart" className={cartOpen ? 'active' : undefined}>

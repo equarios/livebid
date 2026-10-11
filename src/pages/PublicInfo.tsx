@@ -6,6 +6,15 @@ import { renderPageBody } from '../lib/pageBody'
 import { useStore } from '../store'
 import type { MarketingPageCopy } from '../types'
 
+const PHOTO = {
+  buyers:
+    'https://images.unsplash.com/photo-1556656793-08538906a9f8?auto=format&fit=crop&w=2000&q=72',
+  sellers:
+    'https://images.unsplash.com/photo-1553413077-190dd305871c?auto=format&fit=crop&w=2000&q=72',
+  support:
+    'https://images.unsplash.com/photo-1486312338219-ce68d2c6f44d?auto=format&fit=crop&w=2000&q=72',
+} as const
+
 function useMarketingPage(key: 'buyers' | 'sellers' | 'support'): MarketingPageCopy {
   const { settings } = useStore()
   return {
@@ -15,13 +24,17 @@ function useMarketingPage(key: 'buyers' | 'sellers' | 'support'): MarketingPageC
 }
 
 export function BuyersPage() {
+  const { settings } = useStore()
   const page = useMarketingPage('buyers')
+  const brand = settings.brandName || 'eQuarios'
   return (
     <PublicShell mode="wholesale">
       <PubArticle
-        kicker={page.kicker}
+        brand={brand}
         title={page.title}
         lead={page.lead}
+        photo={PHOTO.buyers}
+        sectionTitle="How buying works"
         actions={
           <>
             {page.primaryCta ? (
@@ -30,8 +43,8 @@ export function BuyersPage() {
               </Link>
             ) : null}
             {page.secondaryCta ? (
-              <Link className="pub-btn" to="/login">
-                {page.secondaryCta}
+              <Link className="land-hero-secondary" to="/login">
+                {page.secondaryCta} →
               </Link>
             ) : null}
           </>
@@ -44,13 +57,17 @@ export function BuyersPage() {
 }
 
 export function SellersPage() {
+  const { settings } = useStore()
   const page = useMarketingPage('sellers')
+  const brand = settings.brandName || 'eQuarios'
   return (
     <PublicShell mode="wholesale">
       <PubArticle
-        kicker={page.kicker}
+        brand={brand}
         title={page.title}
         lead={page.lead}
+        photo={PHOTO.sellers}
+        sectionTitle="Seller path"
         actions={
           page.primaryCta ? (
             <Link className="pub-btn pub-btn-fill" to="/login">
@@ -66,13 +83,17 @@ export function SellersPage() {
 }
 
 export function SupportPage() {
+  const { settings } = useStore()
   const page = useMarketingPage('support')
+  const brand = settings.brandName || 'eQuarios'
   return (
     <PublicShell mode="wholesale">
       <PubArticle
-        kicker={page.kicker}
+        brand={brand}
         title={page.title}
         lead={page.lead}
+        photo={PHOTO.support}
+        sectionTitle="Quick answers"
         actions={
           <>
             {page.primaryCta ? (
@@ -81,8 +102,8 @@ export function SupportPage() {
               </Link>
             ) : null}
             {page.secondaryCta ? (
-              <Link className="pub-btn" to="/register">
-                {page.secondaryCta}
+              <Link className="land-hero-secondary" to="/register">
+                {page.secondaryCta} →
               </Link>
             ) : null}
           </>

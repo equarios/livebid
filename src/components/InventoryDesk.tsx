@@ -181,36 +181,45 @@ export function InventoryDesk() {
   }
 
   return (
-    <section className="card admin-section">
-      <div className="listing-draft-bar">
+    <section className="mh-desk inv-desk">
+      <header className="mh-desk-head">
         <h2>
           Inventory
           <em>{inventory.length}</em>
         </h2>
-        <div className="listing-draft-add">
+        <p className="mh-desk-note">
+          Pick devices, send to an auction — Super confirms. Specs stay on the SKU; qty and price only. CSV is the
+          bulk path.
+        </p>
+        <div className="mh-desk-actions">
           <input
+            className="inv-search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search devices"
             aria-label="Search inventory"
           />
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowForm((v) => !v)}>
-            {showForm || form.id ? 'Hide new device' : 'New device'}
+            {showForm || form.id ? 'Hide form' : 'New device'}
           </button>
         </div>
-      </div>
-      <p className="muted tiny">
-        Pick devices, send them to an auction, Super confirms. Specs stay on the SKU — qty and price only. CSV is the
-        bulk path for the same queue.
-      </p>
+      </header>
+
       <div className="inventory-csv">
         <ListingCsv />
       </div>
+
       {waitingSuper.length ? (
-        <div className="inventory-queue">
-          <p className="muted tiny">Waiting Super — not live yet. Withdraw here if the batch is wrong.</p>
+        <div className="inv-pending">
+          <header className="mh-desk-head is-sub">
+            <h2>
+              Waiting Super
+              <em>{waitingSuper.length}</em>
+            </h2>
+            <p className="mh-desk-note">Not live yet — withdraw if the batch is wrong.</p>
+          </header>
           {waitingSuper.map((drop) => (
-            <div key={drop.id} className="listing-draft-bar">
+            <div key={drop.id} className="inv-pending-row">
               <strong>
                 {drop.id} · {drop.items.length} item{drop.items.length === 1 ? '' : 's'} ·{' '}
                 {groupDropItems(drop.items, settings)
@@ -232,41 +241,12 @@ export function InventoryDesk() {
         </div>
       ) : null}
 
-      <div className="inventory-target">
-        <label>
-          Send to
-          <select value={list} onChange={(e) => setList(e.target.value)} aria-label="Preferred auction">
-            {settings.auctionTypes.map((t) => (
-              <option key={t.value} value={t.value}>
-                {t.label}
-              </option>
-            ))}
-            <option value="marketplace">{settings.marketplaceLabel}</option>
-          </select>
-        </label>
-        {list === 'marketplace' ? null : (
-          <>
-            <label>
-              Hours
-              <input type="number" min={0} value={hours} onChange={(e) => setHours(e.target.value)} />
-            </label>
-            <label>
-              Minutes
-              <input type="number" min={0} value={minutes} onChange={(e) => setMinutes(e.target.value)} />
-            </label>
-          </>
-        )}
-        <div className="listing-draft-actions">
-          <button type="button" className="btn btn-primary btn-sm" disabled={!queued.length} onClick={sendQueue}>
-            Send {queued.length || ''} to Super
-          </button>
-          {queued.length ? (
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setQueue([])}>
-              Clear
-            </button>
-          ) : null}
-        </div>
-        <p className="muted tiny">
+      <header className="mh-desk-head is-sub">
+        <h2>
+          Send queue
+          <em className={queued.length ? 'is-open' : undefined}>{queued.length}</em>
+        </h2>
+        <p className="mh-desk-note">
           {dropClockHint(
             settings,
             dropListKey({ channel: target.channel, auctionType: target.auctionType }),
@@ -280,55 +260,119 @@ export function InventoryDesk() {
             </>
           ) : null}
         </p>
-      </div>
+        <div className="mh-desk-actions inv-target-actions">
+          <label className="inv-target-field">
+            <span className="sr-only">Send to</span>
+            <select value={list} onChange={(e) => setList(e.target.value)} aria-label="Preferred auction">
+              {settings.auctionTypes.map((t) => (
+                <option key={t.value} value={t.value}>
+                  {t.label}
+                </option>
+              ))}
+              <option value="marketplace">{settings.marketplaceLabel}</option>
+            </select>
+          </label>
+          {list === 'marketplace' ? null : (
+            <>
+              <label className="inv-target-field">
+                <span className="sr-only">Hours</span>
+                <input
+                  type="number"
+                  min={0}
+                  value={hours}
+                  onChange={(e) => setHours(e.target.value)}
+                  aria-label="Hours"
+                  placeholder="Hrs"
+                />
+              </label>
+              <label className="inv-target-field">
+                <span className="sr-only">Minutes</span>
+                <input
+                  type="number"
+                  min={0}
+                  value={minutes}
+                  onChange={(e) => setMinutes(e.target.value)}
+                  aria-label="Minutes"
+                  placeholder="Min"
+                />
+              </label>
+            </>
+          )}
+          <button type="button" className="btn btn-primary btn-sm" disabled={!queued.length} onClick={sendQueue}>
+            Send {queued.length || ''} to Super
+          </button>
+          {queued.length ? (
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setQueue([])}>
+              Clear
+            </button>
+          ) : null}
+        </div>
+      </header>
 
       {queued.length ? (
-        <div className="inventory-queue">
-          <p className="muted tiny">
-            Ready for {targetLabel}: {queued.length} item{queued.length === 1 ? '' : 's'}
-          </p>
-          {queued.map(({ row, sku }) => (
-            <div key={row.key} className="inventory-queue-row">
-              <div>
-                <strong>{skuTitle(sku)}</strong>
-                <p className="muted tiny item-specs">{skuSpecLine(sku)}</p>
-              </div>
-              <label>
-                Quantity
-                <input
-                  type="number"
-                  min={1}
-                  value={row.qty}
-                  onChange={(e) =>
-                    setQueue((rows) => rows.map((r) => (r.key === row.key ? { ...r, qty: e.target.value } : r)))
-                  }
-                />
-              </label>
-              <label>
-                Current Price
-                <input
-                  type="number"
-                  min={1}
-                  value={row.price}
-                  onChange={(e) =>
-                    setQueue((rows) => rows.map((r) => (r.key === row.key ? { ...r, price: e.target.value } : r)))
-                  }
-                />
-              </label>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                onClick={() => setQueue((rows) => rows.filter((r) => r.key !== row.key))}
-              >
-                Remove
-              </button>
-            </div>
-          ))}
+        <div className="mh-table-wrap inv-queue-wrap">
+          <table className="gbs-table mh-table inv-sku-table">
+            <thead>
+              <tr>
+                <th>Queued for {targetLabel}</th>
+                <th className="num">Qty</th>
+                <th className="num">Price</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {queued.map(({ row, sku }) => (
+                <tr key={row.key}>
+                  <td>
+                    <strong>{skuTitle(sku)}</strong>
+                    <p className="muted tiny item-specs">{skuSpecLine(sku)}</p>
+                  </td>
+                  <td className="num">
+                    <input
+                      type="number"
+                      min={1}
+                      className="inv-cell-input"
+                      value={row.qty}
+                      onChange={(e) =>
+                        setQueue((rows) =>
+                          rows.map((r) => (r.key === row.key ? { ...r, qty: e.target.value } : r)),
+                        )
+                      }
+                      aria-label={`Qty ${skuTitle(sku)}`}
+                    />
+                  </td>
+                  <td className="num">
+                    <input
+                      type="number"
+                      min={1}
+                      className="inv-cell-input"
+                      value={row.price}
+                      onChange={(e) =>
+                        setQueue((rows) =>
+                          rows.map((r) => (r.key === row.key ? { ...r, price: e.target.value } : r)),
+                        )
+                      }
+                      aria-label={`Price ${skuTitle(sku)}`}
+                    />
+                  </td>
+                  <td className="inv-actions">
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => setQueue((rows) => rows.filter((r) => r.key !== row.key))}
+                    >
+                      Remove
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       ) : null}
 
       {showForm || form.id ? (
-        <form className="listing-item-grid" onSubmit={onSave}>
+        <form className="listing-item-grid inv-sku-form" onSubmit={onSave}>
           <label>
             Maker
             <input value={form.manufacturer} onChange={(e) => setForm({ ...form, manufacturer: e.target.value })} />
@@ -437,66 +481,92 @@ export function InventoryDesk() {
         </form>
       ) : null}
 
-      {msg ? <p className="ok">{msg}</p> : null}
+      {msg ? <p className="ok tiny">{msg}</p> : null}
 
-      <div className="listing-drop-lots" style={{ marginTop: 12 }}>
-        {shown.map((sku) => (
-          <div key={sku.id} className="listing-drop-lot">
-            <div className="inventory-sku-row">
-              <div>
-                <strong>{skuTitle(sku)}</strong>
-                <p className="muted tiny item-specs">{skuSpecLine(sku)}</p>
-                {sku.lastPrice ? <p className="muted tiny">Last {usd(sku.lastPrice)}</p> : null}
-              </div>
-              <label>
-                Quantity
-                <input
-                  type="number"
-                  min={1}
-                  value={skuQty(sku)}
-                  onChange={(e) => setQtyBySku((m) => ({ ...m, [sku.id]: e.target.value }))}
-                />
-              </label>
-              <label>
-                Current Price
-                <input
-                  type="number"
-                  min={1}
-                  value={skuPrice(sku)}
-                  onChange={(e) => setPriceBySku((m) => ({ ...m, [sku.id]: e.target.value }))}
-                />
-              </label>
-              <div className="listing-draft-add">
-                <button type="button" className="btn btn-primary btn-sm" onClick={() => addToQueue(sku)}>
-                  Add to {targetLabel}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => {
-                    setForm(sku)
-                    setShowForm(true)
-                  }}
-                >
-                  Edit
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => {
-                    const err = removeSku(sku.id)
-                    setMsg(err || `Removed ${skuTitle(sku)}.`)
-                    if (form.id === sku.id) setForm(emptySku())
-                    setQueue((rows) => rows.filter((r) => r.skuId !== sku.id))
-                  }}
-                >
-                  Remove
-                </button>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
+      <header className="mh-desk-head is-sub">
+        <h2>
+          Devices
+          <em>{shown.length}</em>
+        </h2>
+        <p className="mh-desk-note">Set qty and price, then add to the send queue.</p>
+      </header>
+
+      {!shown.length ? (
+        <div className="mh-empty">
+          <p>{query.trim() ? 'No devices match that search.' : 'No inventory SKUs yet.'}</p>
+        </div>
+      ) : (
+        <div className="mh-table-wrap desk-list-scroll">
+          <table className="gbs-table mh-table inv-sku-table">
+            <thead>
+              <tr>
+                <th>Device</th>
+                <th className="num">Qty</th>
+                <th className="num">Price</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map((sku) => (
+                <tr key={sku.id}>
+                  <td>
+                    <strong>{skuTitle(sku)}</strong>
+                    <p className="muted tiny item-specs">{skuSpecLine(sku)}</p>
+                    {sku.lastPrice ? <p className="muted tiny">Last {usd(sku.lastPrice)}</p> : null}
+                  </td>
+                  <td className="num">
+                    <input
+                      type="number"
+                      min={1}
+                      className="inv-cell-input"
+                      value={skuQty(sku)}
+                      onChange={(e) => setQtyBySku((m) => ({ ...m, [sku.id]: e.target.value }))}
+                      aria-label={`Qty ${skuTitle(sku)}`}
+                    />
+                  </td>
+                  <td className="num">
+                    <input
+                      type="number"
+                      min={1}
+                      className="inv-cell-input"
+                      value={skuPrice(sku)}
+                      onChange={(e) => setPriceBySku((m) => ({ ...m, [sku.id]: e.target.value }))}
+                      aria-label={`Price ${skuTitle(sku)}`}
+                    />
+                  </td>
+                  <td className="inv-actions">
+                    <button type="button" className="btn btn-primary btn-sm" onClick={() => addToQueue(sku)}>
+                      Add to {targetLabel}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => {
+                        setForm(sku)
+                        setShowForm(true)
+                      }}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => {
+                        const err = removeSku(sku.id)
+                        setMsg(err || `Removed ${skuTitle(sku)}.`)
+                        if (form.id === sku.id) setForm(emptySku())
+                        setQueue((rows) => rows.filter((r) => r.skuId !== sku.id))
+                      }}
+                    >
+                      Remove
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </section>
   )
 }

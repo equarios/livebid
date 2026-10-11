@@ -40,7 +40,7 @@ export function PaymentSubmitDialog({ invoice, onClose, onDone }: Props) {
     reader.readAsDataURL(picked)
   }
 
-  function submit() {
+  async function submit() {
     if (!acked) {
       setError(copy.warnPayAck)
       return
@@ -49,7 +49,7 @@ export function PaymentSubmitDialog({ invoice, onClose, onDone }: Props) {
       setError(copy.warnReceipt)
       return
     }
-    const err = submitPayment(invoice.id, file.name, file.data)
+    const err = await submitPayment(invoice.id, file.name, file.data)
     if (err) {
       setError(err)
       return
@@ -106,7 +106,7 @@ export function PaymentSubmitDialog({ invoice, onClose, onDone }: Props) {
           <button type="button" className="btn" onClick={onClose}>
             {copy.btnCancel}
           </button>
-          <button type="button" className="btn btn-primary" onClick={submit}>
+          <button type="button" className="btn btn-primary" onClick={() => void submit()}>
             {copy.btnConfirm}
           </button>
         </div>

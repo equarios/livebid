@@ -87,17 +87,22 @@ export function Invoices() {
   }
 
   const awaitingCount = rows.filter((inv) => clientInvoiceLabel(inv) === 'Awaiting Payment').length
+  const noteParts = [
+    company || null,
+    myBuyerNo ? `Buyer # ${myBuyerNo}` : null,
+    'Pay from issue date — unpaid lots can reopen.',
+  ].filter(Boolean)
 
   return (
-    <div className="inv-page">
-      <div className="mypage-toolbar">
-        <div className="mypage-meta">
-          {company ? <span className="mypage-meta-label">{company}</span> : null}
+    <div className="inv-page mh-desk">
+      <header className="mh-desk-head">
+        <h2>
+          Invoices
           <em>{rows.length}</em>
-          {myBuyerNo ? <em className="is-open">Buyer # {myBuyerNo}</em> : null}
           {awaitingCount ? <em className="is-lose">Awaiting {awaitingCount}</em> : null}
-        </div>
-        <div className="mypage-toolbar-flags">
+        </h2>
+        <p className="mh-desk-note">{noteParts.join(' · ')}</p>
+        <div className="mh-desk-actions">
           <label className="auction-command-flag">
             <input type="checkbox" checked={unopened} onChange={(e) => setUnopened(e.target.checked)} />
             Unopened
@@ -107,96 +112,103 @@ export function Invoices() {
             PO only
           </label>
         </div>
-      </div>
+      </header>
 
-      <div className="table-wrap gbs-table-wrap">
-        <table className="gbs-table inv-table">
-          <thead>
-            <tr>
-              <th>Status</th>
-              <th>Date</th>
-              <th>Pay by</th>
-              <th>Items</th>
-              <th>Quantity</th>
-              <th>Total ({currency})</th>
-              <th>Tracking</th>
-              <th>Invoice #</th>
-              <th>Ship</th>
-              <th>Remarks</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((inv) => {
-              const lot = lots.find((l) => l.id === inv.lotId)
-              const { label, steps, lines } = rowMeta(inv)
-              const awaiting = label === 'Awaiting Payment'
-              const totals = invoiceTotals(inv, settings)
-              const auction = inv.auctionLabel || (lot ? `${lot.manufacturer} ${lot.model}` : inv.lotId)
-              return (
-                <tr key={inv.id} className={inv.opened ? '' : 'is-unopened'}>
-                  <td className="inv-status-cell">
-                    <button
-                      type="button"
-                      className={`inv-status ${awaiting ? 'is-await' : 'is-shipped'}`}
-                      onClick={() => openInvoice(inv.id, true)}
-                    >
-                      {label}
-                    </button>
-                    <StepDots steps={steps} />
-                  </td>
-                  <td>{gbsDate(inv.issuedAt || inv.createdAt)}</td>
-                  <td className="inv-due">{invoiceDueLabel(inv, now, settings) || '—'}</td>
-                  <td className="inv-model">
-                    <div>{auction}</div>
-                    <div className="muted tiny">
-                      {lines.length > 1
-                        ? `${lines.length} line items`
-                        : lot
-                          ? [lot.capacity, lot.color, lot.grade ? `Grade ${lot.grade}` : '']
-                              .filter(Boolean)
-                              .join(' · ')
-                          : moneyPlain(inv.unitPrice) + ' / pc'}
-                      {poOnly && inv.poNumber ? ` · PO ${inv.poNumber}` : ''}
-                    </div>
-                  </td>
-                  <td className="inv-qty">{totals.qty.toLocaleString()}</td>
-                  <td className="inv-total">{moneyUsd(totals.total, currency)}</td>
-                  <td>
-                    {inv.trackingNo ? (
-                      <a
-                        className="inv-track"
-                        href={`https://www.dhl.com/en/express/tracking.html?AWB=${inv.trackingNo}`}
-                        target="_blank"
-                        rel="noreferrer"
+      {notice ? <p className="ok tiny">{notice}</p> : null}
+
+      {!rows.length ? (
+        <div className="mh-empty">
+          <p>{copy.emptyInvoices}</p>
+        </div>
+      ) : (
+        <div className="mh-table-wrap desk-list-scroll" role="region" aria-label="Invoices">
+          <table className="gbs-table mh-table inv-table">
+            <thead>
+              <tr>
+                <th>Status</th>
+                <th>Date</th>
+                <th>Pay by</th>
+                <th>Items</th>
+                <th>Quantity</th>
+                <th>Total ({currency})</th>
+                <th>Tracking</th>
+                <th>Invoice #</th>
+                <th>Ship</th>
+                <th>Remarks</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((inv) => {
+                const lot = lots.find((l) => l.id === inv.lotId)
+                const { label, steps, lines } = rowMeta(inv)
+                const awaiting = label === 'Awaiting Payment'
+                const totals = invoiceTotals(inv, settings)
+                const auction = inv.auctionLabel || (lot ? `${lot.manufacturer} ${lot.model}` : inv.lotId)
+                return (
+                  <tr key={inv.id} className={inv.opened ? '' : 'is-unopened'}>
+                    <td className="inv-status-cell">
+                      <button
+                        type="button"
+                        className={`inv-status ${awaiting ? 'is-await' : 'is-shipped'}`}
+                        onClick={() => openInvoice(inv.id, true)}
                       >
-                        {inv.trackingNo}
-                      </a>
-                    ) : (
-                      <span className="muted">—</span>
-                    )}
-                  </td>
-                  <td className="mono">{inv.id}</td>
-                  <td>{inv.shippedAt ? gbsDate(inv.shippedAt) : <span className="muted">—</span>}</td>
-                  <td className="inv-remarks">{inv.remarks || <span className="muted">—</span>}</td>
-                  <td className="inv-docs">
-                    <button
-                      type="button"
-                      className="inv-doc"
-                      title="View invoice"
-                      onClick={() => openInvoice(inv.id)}
-                    >
-                      <EnvelopeIcon />
-                      <span className="sr-only">View invoice</span>
-                    </button>
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-        {!rows.length ? <p className="empty">{copy.emptyInvoices}</p> : null}
-      </div>
+                        {label}
+                      </button>
+                      <StepDots steps={steps} />
+                    </td>
+                    <td>{gbsDate(inv.issuedAt || inv.createdAt)}</td>
+                    <td className="inv-due">{invoiceDueLabel(inv, now, settings) || '—'}</td>
+                    <td className="inv-model">
+                      <div>{auction}</div>
+                      <div className="muted tiny">
+                        {lines.length > 1
+                          ? `${lines.length} line items`
+                          : lot
+                            ? [lot.capacity, lot.color, lot.grade ? `Grade ${lot.grade}` : '']
+                                .filter(Boolean)
+                                .join(' · ')
+                            : moneyPlain(inv.unitPrice) + ' / pc'}
+                        {poOnly && inv.poNumber ? ` · PO ${inv.poNumber}` : ''}
+                      </div>
+                    </td>
+                    <td className="inv-qty">{totals.qty.toLocaleString()}</td>
+                    <td className="inv-total">{moneyUsd(totals.total, currency)}</td>
+                    <td>
+                      {inv.trackingNo ? (
+                        <a
+                          className="inv-track"
+                          href={`https://www.dhl.com/en/express/tracking.html?AWB=${inv.trackingNo}`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {inv.trackingNo}
+                        </a>
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
+                    </td>
+                    <td className="mono">{inv.id}</td>
+                    <td>{inv.shippedAt ? gbsDate(inv.shippedAt) : <span className="muted">—</span>}</td>
+                    <td className="inv-remarks">{inv.remarks || <span className="muted">—</span>}</td>
+                    <td className="inv-docs">
+                      <button
+                        type="button"
+                        className="inv-doc"
+                        title="View invoice"
+                        onClick={() => openInvoice(inv.id)}
+                      >
+                        <EnvelopeIcon />
+                        <span className="sr-only">View invoice</span>
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <div className="inv-cards">
         {rows.map((inv) => {
@@ -235,7 +247,6 @@ export function Invoices() {
         })}
       </div>
 
-      {notice ? <p className="ok">{notice}</p> : null}
       {preview ? <InvoicePreview invoice={preview} onClose={() => setPreviewId(null)} /> : null}
       {paying ? (
         <PaymentSubmitDialog

@@ -206,10 +206,13 @@ export function BidHistory() {
   const lostOnly = filtered.filter((r) => r.outcome === 'lost').length
 
   return (
-    <div className="bid-history-page">
-      <div className="mypage-toolbar">
+    <div className="bid-history-page mypage-listings">
+      <div className="mypage-desk-head">
+        <h2>
+          Bid history
+          <em>{filtered.length}</em>
+        </h2>
         <div className="mypage-meta">
-          <em>{filtered.length} rows</em>
           <button
             type="button"
             className={`bh-chip is-won${statuses.includes('won') ? ' is-on' : ''}`}
@@ -333,7 +336,7 @@ export function BidHistory() {
               <th>End</th>
               <th>Type</th>
               <th>Status</th>
-              <th>Item</th>
+              <th>Items</th>
               <th>Operator</th>
               <th>Grade</th>
               <th>SIM</th>
@@ -407,7 +410,11 @@ export function BidHistory() {
             })}
           </tbody>
         </table>
-        {!filtered.length ? <p className="empty">No bid history for these filters.</p> : null}
+        {!filtered.length ? (
+          <div className="mh-empty mypage-empty">
+            <p>No bid history for these filters.</p>
+          </div>
+        ) : null}
       </div>
 
       <div className="gbs-pager">

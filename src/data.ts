@@ -95,11 +95,9 @@ export const DEFAULT_SETTINGS: SiteSettings = {
     signUpButton: 'Create account',
     pendingApproval: 'Verify your email to activate your account. Wholesale access is a separate application from My Page.',
     auctionsTitle: 'Live auctions',
-    auctionsIntro:
-      'Place a bid for the pcs you want. You only see how many pcs you are winning — other clients’ fills stay private.',
+    auctionsIntro: 'Bid by the piece. You only see your fill — other buyers stay private.',
     marketTitle: 'Marketplace',
-    marketIntro:
-      'Buy at the listed price, or send your best offer. Admin reviews offers; you confirm to create the invoice.',
+    marketIntro: 'Buy at the listed price or send an offer. Staff review, then you confirm the invoice.',
     favouritesTitle: 'Favourites',
     favouritesIntro:
       'Favourites in one place. Bid auction lots here, or add marketplace lots to cart — no need to leave this page.',
@@ -107,7 +105,7 @@ export const DEFAULT_SETTINGS: SiteSettings = {
     invoicesIntro:
       'Pay your invoice, then upload the receipt. It stays unpaid until both an admin and super admin accept.',
     accountTitle: 'My Page',
-    accountIntro: 'Bid history, marketplace orders, invoices, and account settings.',
+    accountIntro: 'Queues, bid history, marketplace cart, and invoices — one desk.',
     searchAuctions: 'Search model, SKU, maker, lot ID',
     searchMarket: 'Search model, SKU, maker, lot ID',
     emptyFilters: 'No lots match those filters.',
@@ -295,29 +293,33 @@ export const DEFAULT_SETTINGS: SiteSettings = {
     wholesaleEmptyMarket: 'No marketplace lots right now.',
     buyers: {
       kicker: 'For buyers',
-      title: 'Source liquidation inventory with Equarios',
-      lead: 'Create a free account, verify your email, then apply for wholesale from My Page. After approval you see prices, bid, and buy.',
+      title: 'Wholesale inventory for approved buyers.',
+      lead: 'Create an account, apply from My Page, then bid and buy once staff unlocks your desk.',
       body: [
-        'Sign up & verify|Retail store access starts after email verification.',
-        'Apply for wholesale|Welcome-pack form + documents on My Page.',
-        'Bid or buy|Auctions and marketplace unlock when staff approve.',
-        'Pay invoices|Receipt review by admin and super before paid.',
+        'Sign up & verify|Retail store opens after email verification.',
+        'Apply for wholesale|Welcome pack and documents on My Page.',
+        'Bid or buy|Auctions and marketplace unlock when approved.',
+        'Pay invoices|Receipts need admin and super acceptance.',
       ].join('\n'),
       primaryCta: 'Create account',
       secondaryCta: 'Sign in',
     },
     sellers: {
       kicker: 'For sellers',
-      title: 'Move excess stock to verified buyers',
-      lead: 'Equarios lists wholesale lots for approved buyers. Catalog and clocks are run from the admin and super desks.',
-      body: 'This build uses admin listing workflows rather than a public seller signup. Contact Equarios ops if you need a seller onboarding path.',
+      title: 'Place excess stock with verified buyers.',
+      lead: 'Lots run on the Equarios wholesale desk — catalog and clocks are managed by ops.',
+      body: [
+        'List with ops|Admin and super desks publish auction and marketplace lots.',
+        'Reach approved buyers|Prices stay gated until wholesale approval.',
+        'Settle cleanly|Invoices and receipts follow the same Equarios flow.',
+      ].join('\n'),
       primaryCta: 'Staff sign in',
       secondaryCta: '',
     },
     support: {
       kicker: 'Support',
-      title: 'Help for Equarios buyers',
-      lead: 'Password resets and account questions start on Sign in. Local demo shows verification codes on screen when mail is not configured.',
+      title: 'Help when you need the desk.',
+      lead: 'Password resets and account questions start on Sign in. My Page holds wholesale status and documents.',
       body: [
         '- Forgot password → request a reset code on Sign in.',
         '- Wholesale status and documents live on My Page.',

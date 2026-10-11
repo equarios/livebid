@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { ItemLink } from './ItemLink'
 import { ConfirmDialog } from './ConfirmDialog'
 import { formatDateTime, usdCents } from '../lib/format'
@@ -43,23 +44,13 @@ export function CartDesk({ staff }: { staff?: boolean }) {
     .slice()
     .sort((a, b) => b.createdAt - a.createdAt)
 
-  if (!rows.length) {
-    return (
-      <p className="muted">
-        {staff
-          ? 'No cart checkouts yet.'
-          : 'No cart checkouts yet. Add items on Marketplace, then send for admin review.'}
-      </p>
-    )
-  }
-
   const confirming = rows.find((o) => o.id === confirmId) || null
   const confirmingQuote = confirming ? orderQuote(confirming, settings) : null
 
   return (
     <>
-      <div className="table-wrap offer-table-wrap">
-        <table className="auction-table">
+      <div className="mh-table-wrap">
+        <table className="gbs-table mh-table">
           <thead>
             <tr>
               <th>When</th>
@@ -158,76 +149,22 @@ export function CartDesk({ staff }: { staff?: boolean }) {
             })}
           </tbody>
         </table>
+        {!rows.length ? (
+          <div className="mh-empty">
+            <p>
+              {staff
+                ? 'No cart checkouts yet.'
+                : 'No checkout requests yet. Fill the cart above, then send for review.'}
+            </p>
+            {!staff ? (
+              <Link to="/marketplace" className="btn btn-sm">
+                Open Marketplace
+              </Link>
+            ) : null}
+          </div>
+        ) : null}
       </div>
-      <div className="auction-cards offer-cards">
-        {rows.map((order) => {
-          const buyer = accounts.find((a) => a.accountId === order.accountId)
-          const first = lots.find((l) => l.id === order.lines[0]?.lotId)
-          return (
-            <article key={order.id} className="auction-card">
-              {first ? (
-                <ItemLink lot={first} showMoq={false} showGrade={false} showLotId />
-              ) : (
-                <strong>{order.id}</strong>
-              )}
-              {staff ? <div className="muted tiny">{buyer?.company || order.accountId}</div> : null}
-              <div className="auction-card-meta">
-                <span>{order.lines.length} line(s)</span>
-                <span>{orderPcs(order).toLocaleString()} pcs</span>
-                <span>{usdCents(orderQuote(order, settings).total)}</span>
-              </div>
-              <span
-                className={`pill pill-${
-                  order.status === 'accepted'
-                    ? 'live'
-                    : order.status === 'confirmed'
-                      ? 'win'
-                      : order.status === 'pending'
-                        ? 'hybrid'
-                        : 'sealed'
-                }`}
-              >
-                {statusLabel(order.status)}
-              </span>
-              <div className="row-actions">
-                {staff && order.status === 'pending' ? (
-                  <>
-                    <button
-                      type="button"
-                      className="btn btn-primary"
-                      onClick={() => void reviewCartOrder(order.id, 'accepted')}
-                    >
-                      {settings.copy.btnAccept}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn"
-                      onClick={() => void reviewCartOrder(order.id, 'declined')}
-                    >
-                      {settings.copy.btnDecline}
-                    </button>
-                  </>
-                ) : null}
-                {!staff && order.status === 'accepted' ? (
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    onClick={() => setConfirmId(order.id)}
-                  >
-                    {settings.copy.btnConfirm}
-                  </button>
-                ) : null}
-                {(order.status === 'pending' || order.status === 'accepted') &&
-                (staff || order.accountId === user?.accountId) ? (
-                  <button type="button" className="btn" onClick={() => cancelCartOrder(order.id)}>
-                    {settings.copy.btnCancel}
-                  </button>
-                ) : null}
-              </div>
-            </article>
-          )
-        })}
-      </div>
+
       {confirming ? (
         <ConfirmDialog
           title={settings.copy.confirmAcceptCartTitle}

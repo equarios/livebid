@@ -1,5 +1,5 @@
-import { useState, type FormEvent, type ReactNode } from 'react'
-import { Link, NavLink, useNavigate } from 'react-router-dom'
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { BrandLogo } from './BrandLogo'
 import { ConsumerNav } from './ConsumerNav'
 import { HelpMenu } from './HelpMenu'
@@ -37,21 +37,32 @@ export function PublicShell({
 }) {
   const { user, settings, isStaff } = useStore()
   const navigate = useNavigate()
-  const [q, setQ] = useState('')
+  const location = useLocation()
+  const [q, setQ] = useState(() => new URLSearchParams(location.search).get('q') || '')
   const [navOpen, setNavOpen] = useState(false)
   const [panel, setPanel] = useState<'help' | 'me' | null>(null)
   const consumer = mode === 'consumer'
   const deskOk = canUseWholesaleDesk(user, isStaff)
 
+  useEffect(() => {
+    setQ(new URLSearchParams(location.search).get('q') || '')
+  }, [location.search])
+
+  /** Same wording family as the app header — only the channel word changes. */
+  const placeholder = consumer
+    ? 'Search model, SKU, maker…'
+    : settings.copy.searchAuctions || 'Search model, SKU, maker, lot ID'
+
   function onSearch(e: FormEvent) {
     e.preventDefault()
     const qs = q.trim()
     if (consumer) {
-      navigate(qs ? `/?q=${encodeURIComponent(qs)}` : '/')
+      navigate(qs ? `/store?q=${encodeURIComponent(qs)}` : '/store')
       return
     }
     if (!user) {
-      navigate(qs ? `/buyers?q=${encodeURIComponent(qs)}` : '/buyers')
+      /* Guests search the wholesale deal board — empty query still goes to For Buyers. */
+      navigate(qs ? `/wholesale?q=${encodeURIComponent(qs)}` : '/buyers')
       return
     }
     if (!deskOk) {
@@ -66,22 +77,16 @@ export function PublicShell({
       <header className="pub-header">
         <div className="pub-header-row">
           <Link
-            to={consumer ? '/' : deskOk ? '/wholesale' : user ? '/account' : '/buyers'}
+            to={consumer ? '/store' : deskOk ? '/wholesale' : user ? '/account' : '/buyers'}
             className="pub-logo"
           >
             <BrandLogo />
           </Link>
-          <form className="pub-search" onSubmit={onSearch}>
+          <form className="pub-search" onSubmit={onSearch} role="search">
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder={
-                consumer
-                  ? 'Search store products…'
-                  : deskOk
-                    ? 'Search wholesale auctions…'
-                    : 'Search…'
-              }
+              placeholder={placeholder}
               aria-label="Search"
             />
             <button type="submit" aria-label="Submit search">

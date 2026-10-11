@@ -195,32 +195,36 @@ export function StoreDesk() {
   }
 
   return (
-    <section className="card admin-section store-desk">
-      <h2>Retail store</h2>
-      <p className="muted tiny">
-        Consumer catalog and orders — separate from wholesale auctions and marketplace. Upload up to{' '}
-        {MAX_IMAGES} photos; the server auto-fits and compresses to WebP.
-      </p>
-
-      <div className="imei-desk-toolbar">
-        <button
-          type="button"
-          className={`btn btn-ghost btn-sm ${tab === 'products' ? 'on' : ''}`}
-          onClick={() => setTab('products')}
-        >
-          Products
-        </button>
-        <button
-          type="button"
-          className={`btn btn-ghost btn-sm ${tab === 'orders' ? 'on' : ''}`}
-          onClick={() => setTab('orders')}
-        >
-          Orders ({orders.length})
-        </button>
-        <button type="button" className="btn btn-ghost btn-sm" onClick={() => void refresh()}>
-          Refresh
-        </button>
-      </div>
+    <section className="mh-desk store-desk">
+      <header className="mh-desk-head">
+        <h2>
+          Retail store
+          <em>{tab === 'products' ? products.length : orders.length}</em>
+        </h2>
+        <p className="mh-desk-note">
+          Consumer catalog and orders — separate from wholesale. Up to {MAX_IMAGES} photos; server
+          compresses to WebP.
+        </p>
+        <div className="mh-desk-actions">
+          <button
+            type="button"
+            className={`btn btn-ghost btn-sm ${tab === 'products' ? 'on' : ''}`}
+            onClick={() => setTab('products')}
+          >
+            Products
+          </button>
+          <button
+            type="button"
+            className={`btn btn-ghost btn-sm ${tab === 'orders' ? 'on' : ''}`}
+            onClick={() => setTab('orders')}
+          >
+            Orders ({orders.length})
+          </button>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => void refresh()}>
+            Refresh
+          </button>
+        </div>
+      </header>
 
       {msg ? <p className="tiny imei-msg">{msg}</p> : null}
       {err ? <p className="tiny imei-err">{err}</p> : null}
@@ -375,20 +379,22 @@ export function StoreDesk() {
                     </td>
                   </tr>
                 ))}
-                {!products.length ? (
-                  <tr>
-                    <td colSpan={5} className="muted">
-                      No retail products yet.
-                    </td>
-                  </tr>
-                ) : null}
               </tbody>
             </table>
+            {!products.length ? (
+              <div className="mh-empty">
+                <p>No retail products yet. Add a SKU to open the consumer catalog.</p>
+              </div>
+            ) : null}
           </div>
         </>
+      ) : !orders.length ? (
+        <div className="mh-empty">
+          <p>No retail orders yet.</p>
+        </div>
       ) : (
-        <div className="table-wrap">
-          <table className="auction-table">
+        <div className="table-wrap desk-list-scroll">
+          <table className="auction-table mh-table">
             <thead>
               <tr>
                 <th>Order</th>
@@ -449,13 +455,6 @@ export function StoreDesk() {
                   </td>
                 </tr>
               ))}
-              {!orders.length ? (
-                <tr>
-                  <td colSpan={6} className="muted">
-                    No retail orders yet.
-                  </td>
-                </tr>
-              ) : null}
             </tbody>
           </table>
         </div>

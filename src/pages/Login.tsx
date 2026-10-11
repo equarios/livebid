@@ -287,15 +287,23 @@ export function Login() {
           Don&apos;t have an account? <Link to="/register">Create Account</Link>
         </p>
       ) : null}
-      <p className="demo-hint">
-        Wholesale: <strong>DEMO-1001</strong> / <strong>livebid</strong>
-        <br />
-        Retail only: <strong>RETAIL-1001</strong> / <strong>retail</strong>
-        <br />
-        Admin: <strong>ops@livebid.example</strong> / <strong>admin</strong>
-        <br />
-        Super: <strong>super@livebid.example</strong> / <strong>super</strong>
-      </p>
+      <details className="auth-demo">
+        <summary>Demo accounts</summary>
+        <ul>
+          <li>
+            Wholesale <strong>DEMO-1001</strong> / <strong>livebid</strong>
+          </li>
+          <li>
+            Retail <strong>RETAIL-1001</strong> / <strong>retail</strong>
+          </li>
+          <li>
+            Admin <strong>ops@livebid.example</strong> / <strong>admin</strong>
+          </li>
+          <li>
+            Super <strong>super@livebid.example</strong> / <strong>super</strong>
+          </li>
+        </ul>
+      </details>
     </AuthFrame>
   )
 }

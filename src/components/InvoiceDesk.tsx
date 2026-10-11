@@ -592,7 +592,7 @@ export function InvoiceDesk({
       issuedAt: Number.isFinite(issuedAt) ? issuedAt : existing?.issuedAt,
       lines: parsedLines,
     }
-    const saveErr = saveInvoice(invoice, editingId || undefined)
+    const saveErr = await saveInvoice(invoice, editingId || undefined)
     if (saveErr) {
       setErr(saveErr)
       setMsg(null)
@@ -626,7 +626,7 @@ export function InvoiceDesk({
     if (!picked) return
     try {
       const next = await readFile(picked)
-      const saveErr = saveInvoice({
+      const saveErr = await saveInvoice({
         ...inv,
         receiptName: next.name,
         receiptData: next.data,
@@ -656,14 +656,24 @@ export function InvoiceDesk({
                 <button
                   type="button"
                   className="btn btn-primary btn-sm"
-                  onClick={() => reviewInvoiceIssue(inv.id, 'admin', 'accepted')}
+                  onClick={() =>
+                    void reviewInvoiceIssue(inv.id, 'admin', 'accepted').then((err) => {
+                      setErr(err)
+                      setMsg(err ? null : `Admin issue stamp on ${inv.id}`)
+                    })
+                  }
                 >
                   Issue (admin)
                 </button>
                 <button
                   type="button"
                   className="btn btn-ghost btn-sm"
-                  onClick={() => reviewInvoiceIssue(inv.id, 'admin', 'declined')}
+                  onClick={() =>
+                    void reviewInvoiceIssue(inv.id, 'admin', 'declined').then((err) => {
+                      setErr(err)
+                      setMsg(err ? null : `Admin declined issue on ${inv.id}`)
+                    })
+                  }
                 >
                   Decline issue
                 </button>
@@ -674,14 +684,24 @@ export function InvoiceDesk({
                 <button
                   type="button"
                   className="btn btn-primary btn-sm"
-                  onClick={() => reviewInvoiceIssue(inv.id, 'super', 'accepted')}
+                  onClick={() =>
+                    void reviewInvoiceIssue(inv.id, 'super', 'accepted').then((err) => {
+                      setErr(err)
+                      setMsg(err ? null : `Super issue stamp on ${inv.id}`)
+                    })
+                  }
                 >
                   Issue (super)
                 </button>
                 <button
                   type="button"
                   className="btn btn-ghost btn-sm"
-                  onClick={() => reviewInvoiceIssue(inv.id, 'super', 'declined')}
+                  onClick={() =>
+                    void reviewInvoiceIssue(inv.id, 'super', 'declined').then((err) => {
+                      setErr(err)
+                      setMsg(err ? null : `Super declined issue on ${inv.id}`)
+                    })
+                  }
                 >
                   Decline issue
                 </button>
@@ -696,14 +716,24 @@ export function InvoiceDesk({
                 <button
                   type="button"
                   className="btn btn-primary btn-sm"
-                  onClick={() => reviewPayment(inv.id, 'admin', 'accepted')}
+                  onClick={() =>
+                    void reviewPayment(inv.id, 'admin', 'accepted').then((err) => {
+                      setErr(err)
+                      setMsg(err ? null : `Admin payment stamp on ${inv.id}`)
+                    })
+                  }
                 >
                   {copy.btnAccept} (admin)
                 </button>
                 <button
                   type="button"
                   className="btn btn-ghost btn-sm"
-                  onClick={() => reviewPayment(inv.id, 'admin', 'declined')}
+                  onClick={() =>
+                    void reviewPayment(inv.id, 'admin', 'declined').then((err) => {
+                      setErr(err)
+                      setMsg(err ? null : `Admin declined payment on ${inv.id}`)
+                    })
+                  }
                 >
                   {copy.btnDecline}
                 </button>
@@ -714,14 +744,24 @@ export function InvoiceDesk({
                 <button
                   type="button"
                   className="btn btn-primary btn-sm"
-                  onClick={() => reviewPayment(inv.id, 'super', 'accepted')}
+                  onClick={() =>
+                    void reviewPayment(inv.id, 'super', 'accepted').then((err) => {
+                      setErr(err)
+                      setMsg(err ? null : `Super payment stamp on ${inv.id}`)
+                    })
+                  }
                 >
                   {copy.btnAccept} (super)
                 </button>
                 <button
                   type="button"
                   className="btn btn-ghost btn-sm"
-                  onClick={() => reviewPayment(inv.id, 'super', 'declined')}
+                  onClick={() =>
+                    void reviewPayment(inv.id, 'super', 'declined').then((err) => {
+                      setErr(err)
+                      setMsg(err ? null : `Super declined payment on ${inv.id}`)
+                    })
+                  }
                 >
                   {copy.btnDecline}
                 </button>
@@ -740,9 +780,12 @@ export function InvoiceDesk({
                 setMsg('No fee configured for this list / marketplace.')
                 return
               }
-              const saveErr = saveInvoice({ ...inv, feePct: on ? 0 : rate }, inv.id)
-              setErr(saveErr)
-              setMsg(saveErr ? null : on ? `Removed fee on ${inv.id}` : `Applied ${rate}% fee on ${inv.id}`)
+              void saveInvoice({ ...inv, feePct: on ? 0 : rate }, inv.id).then((saveErr) => {
+                setErr(saveErr)
+                setMsg(
+                  saveErr ? null : on ? `Removed fee on ${inv.id}` : `Applied ${rate}% fee on ${inv.id}`,
+                )
+              })
             }}
           >
             {appliedFeePct(inv) > 0
@@ -763,9 +806,10 @@ export function InvoiceDesk({
             type="button"
             className="btn btn-ghost btn-sm"
             onClick={() => {
-              const clearErr = clearPaymentConfirmation(inv.id)
-              setErr(clearErr)
-              setMsg(clearErr ? null : `Removed receipt on ${inv.id}`)
+              void clearPaymentConfirmation(inv.id).then((clearErr) => {
+                setErr(clearErr)
+                setMsg(clearErr ? null : `Removed receipt on ${inv.id}`)
+              })
             }}
           >
             Delete receipt
@@ -776,13 +820,14 @@ export function InvoiceDesk({
           className="btn btn-ghost btn-sm"
           onClick={() => {
             if (!window.confirm(`Delete invoice ${inv.id}?`)) return
-            const delErr = removeInvoice(inv.id)
-            setErr(delErr)
-            setMsg(delErr ? null : `Deleted ${inv.id}`)
-            if (editingId === inv.id) {
-              resetForm()
-              closeComposer()
-            }
+            void removeInvoice(inv.id).then((delErr) => {
+              setErr(delErr)
+              setMsg(delErr ? null : `Deleted ${inv.id}`)
+              if (!delErr && editingId === inv.id) {
+                resetForm()
+                closeComposer()
+              }
+            })
           }}
         >
           Delete
@@ -1330,19 +1375,22 @@ export function InvoiceDesk({
 
   return (
     <div className="invoice-desk">
-      <div className="invoice-queue-head">
-        <div>
-          <h3 className="pay-queue-title">Invoice queue</h3>
-          <p className="muted tiny">
-            Create drafts here. Issue needs Admin + Super. Payment needs dual accept after a receipt.
-          </p>
-        </div>
+      <header className="mh-desk-head is-sub invoice-queue-head">
+        <h2 className="pay-queue-title">
+          Invoice queue
+          <em>{rows.length}</em>
+        </h2>
+        <p className="mh-desk-note">
+          Create drafts here. Issue needs Admin + Super. Payment needs dual accept after a receipt.
+        </p>
         {allowCreate ? (
-          <button type="button" className="btn btn-primary btn-sm" onClick={openCreate}>
-            Create invoice
-          </button>
+          <div className="mh-desk-actions">
+            <button type="button" className="btn btn-primary btn-sm" onClick={openCreate}>
+              Create invoice
+            </button>
+          </div>
         ) : null}
-      </div>
+      </header>
 
       {allowCreate && (sourceCarts.length || sourceOffers.length || winDrafts.length) ? (
         <div className="invoice-smart-create">
@@ -1529,11 +1577,13 @@ export function InvoiceDesk({
           </tbody>
         </table>
         {!rows.length ? (
-          <p className="empty">
-            {queueFilter === 'all'
-              ? 'No invoices yet. Create one or prefill from a cart / offer.'
-              : 'Nothing in this filter.'}
-          </p>
+          <div className="mh-empty">
+            <p>
+              {queueFilter === 'all'
+                ? 'No invoices yet. Create one or prefill from a cart / offer.'
+                : 'Nothing in this filter.'}
+            </p>
+          </div>
         ) : null}
       </div>
 

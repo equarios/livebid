@@ -370,9 +370,10 @@ export function Marketplace() {
   return (
     <div className="market-page is-command-bar desk-page">
       <DeskIntro
-        brand={settings.brandName || 'Equarios'}
+        brand={settings.brandName || 'eQuarios'}
         title={settings.copy.marketTitle}
         body={settings.copy.marketIntro}
+        tone="trade"
       />
       {!deskCollapsed ? (
         <div className="auction-desk is-scrollaway">
@@ -420,11 +421,11 @@ export function Marketplace() {
           </div>
         </div>
       ) : null}
-      <section className="auction-type-block is-solo">
+      <section className="auction-type-block is-solo market-listings">
         <AuctionTypeHead>
           <div className="auction-command">
             <h2>
-              {settings.copy.marketTitle}
+              Listings
               <em>{rows.length}</em>
             </h2>
             {cartCount ? (
@@ -469,7 +470,7 @@ export function Marketplace() {
         </AuctionTypeHead>
         {rows.length ? (
           <>
-            <div className="table-wrap card auction-table-wrap">
+            <div className="table-wrap auction-table-wrap">
               <table className="auction-table">
                 <thead>
                   <tr>
@@ -497,9 +498,9 @@ export function Marketplace() {
             </div>
           </>
         ) : (
-          <p className="empty">
-            {marketLots.length ? settings.copy.emptyFilters : settings.copy.emptyMarket}
-          </p>
+          <div className="mh-empty">
+            <p>{marketLots.length ? settings.copy.emptyFilters : settings.copy.emptyMarket}</p>
+          </div>
         )}
       </section>
     </div>

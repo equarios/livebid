@@ -167,7 +167,7 @@ export function AccountOverview() {
   const waiting = cards.filter((c) => c.tone === 'urgent' || (c.count > 0 && c.tone === 'open'))
 
   return (
-    <div className="ops-today account-overview">
+    <div className="ops-today account-overview mypage-overview">
       <header className="ops-today-head">
         <h2>Today</h2>
         <p className="muted tiny">
@@ -176,16 +176,16 @@ export function AccountOverview() {
           {waiting.length
             ? ` · ${waiting.length} queue${waiting.length === 1 ? '' : 's'} need attention.`
             : wholesaleOk
-              ? ' · Nothing waiting. Use the nav for bids, market, invoices, and IMEI.'
+              ? ' · Nothing waiting — open Bids, Marketplace, or Invoice from the bar above.'
               : ` · Wholesale: ${WS_LABEL[ws] || ws}. Apply or upload documents to unlock the desk.`}
         </p>
       </header>
-      <div className="ops-today-grid">
+      <div className="ops-today-grid mypage-overview-grid">
         {cards.map((card) => (
           <button
             key={card.id}
             type="button"
-            className={`ops-today-card is-${card.tone || 'muted'}`}
+            className={`ops-today-card mypage-queue-card is-${card.tone || 'muted'}`}
             onClick={() => {
               if (card.id === 'notices') {
                 const bell = document.querySelector<HTMLButtonElement>('.notice-bell')
