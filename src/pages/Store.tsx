@@ -5,6 +5,7 @@ import { PublicShell } from '../components/PublicShell'
 import { StoreProductCard } from '../components/StoreProductCard'
 import { StoreProductPreview } from '../components/StoreProductPreview'
 import { StoreRail } from '../components/StoreRail'
+import { StoreCatalogSkeleton } from '../components/StoreSkeleton'
 import { DEFAULT_SETTINGS } from '../data'
 import { api, type StoreProductDto } from '../lib/api'
 import { useStore } from '../store'
@@ -58,12 +59,16 @@ export function Store() {
     }
   }, [])
 
+  useEffect(() => {
+    if (!toast) return
+    const id = window.setTimeout(() => setToast(null), 2400)
+    return () => window.clearTimeout(id)
+  }, [toast])
+
   if (!settings.showStore) {
     return (
       <PublicShell mode="consumer">
-        <p className="muted" style={{ padding: 24 }}>
-          Retail store is turned off.
-        </p>
+        <p className="muted store-off-note">Retail store is turned off.</p>
       </PublicShell>
     )
   }
@@ -103,26 +108,34 @@ export function Store() {
           label={storeName}
         />
 
-        {toast ? <p className="tiny retail-toast shop-toast">{toast}</p> : null}
+        {toast ? (
+          <p className="tiny retail-toast shop-toast" role="status">
+            {toast}
+          </p>
+        ) : null}
         {err ? <p className="tiny imei-err">{err}</p> : null}
-        {loading && !products.length ? <p className="muted tiny">Loading…</p> : null}
 
-        <div className="store-lot-grid" aria-label="Store products">
-          {filtered.map((p) => (
-            <StoreProductCard
-              key={p.id}
-              product={p}
-              onOpen={setPreview}
-              onAdded={(title) => setToast(`Added ${title}`)}
-            />
-          ))}
-        </div>
+        {loading && !products.length ? (
+          <StoreCatalogSkeleton />
+        ) : (
+          <div className="store-lot-grid" aria-label="Store products">
+            {filtered.map((p, i) => (
+              <StoreProductCard
+                key={p.id}
+                product={p}
+                index={i}
+                onOpen={setPreview}
+                onAdded={(title) => setToast(`Added ${title}`)}
+              />
+            ))}
+          </div>
+        )}
 
         {!loading && !filtered.length ? (
           <div className="mh-empty shop-empty">
             <p>{q ? 'No products match that search.' : 'No products listed yet.'}</p>
             {q ? (
-              <Link to="/store" className="btn btn-sm">
+              <Link to="/store" className="btn btn-primary btn-sm">
                 Clear search
               </Link>
             ) : null}

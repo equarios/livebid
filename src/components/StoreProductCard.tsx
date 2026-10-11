@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { usd } from '../lib/format'
 import type { StoreProductDto } from '../lib/api'
 import { storeProductBrand } from '../lib/storeBrand'
@@ -8,16 +9,20 @@ type Props = {
   product: StoreProductDto
   onOpen: (product: StoreProductDto) => void
   onAdded?: (title: string) => void
+  index?: number
 }
 
 /** Same visual language as wholesale lot-card tiles. */
-export function StoreProductCard({ product, onOpen, onAdded }: Props) {
+export function StoreProductCard({ product, onOpen, onAdded, index = 0 }: Props) {
   const soldOut = product.stock < 1
   const onSale = Boolean(product.compareAt && product.compareAt > product.price)
   const brand = storeProductBrand(product)
 
   return (
-    <article className="card lot-card store-lot-card">
+    <article
+      className="card lot-card store-lot-card shop-card"
+      style={{ animationDelay: `${Math.min(index, 12) * 35}ms` }}
+    >
       <div className="store-lot-card-media">
         <StoreGallery product={product} variant="card" onOpen={() => onOpen(product)} />
         {onSale ? <span className="grade">Sale</span> : null}
@@ -49,19 +54,22 @@ export function StoreProductCard({ product, onOpen, onAdded }: Props) {
               <small> / unit</small>
             </div>
           </div>
-          <div className="right">
-            <button
-              type="button"
-              className="btn btn-primary btn-sm"
-              disabled={soldOut}
-              onClick={() => {
-                addToStoreCart(product.id, 1)
-                onAdded?.(product.title)
-              }}
-            >
-              {soldOut ? 'Sold out' : 'Add to cart'}
-            </button>
-          </div>
+        </div>
+        <div className="store-card-actions">
+          <Link to={`/store/p/${product.slug}`} className="btn btn-primary btn-sm">
+            Product Details
+          </Link>
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            disabled={soldOut}
+            onClick={() => {
+              addToStoreCart(product.id, 1)
+              onAdded?.(product.title)
+            }}
+          >
+            {soldOut ? 'Sold out' : 'Add to cart'}
+          </button>
         </div>
       </div>
     </article>

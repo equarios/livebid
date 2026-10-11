@@ -48,6 +48,15 @@ export function PublicShell({
     setQ(new URLSearchParams(location.search).get('q') || '')
   }, [location.search])
 
+  /* Warm store chunks so catalog / cart feel instant after first public hit. */
+  useEffect(() => {
+    if (!consumer) return
+    void import('../pages/Store')
+    void import('../pages/StoreCart')
+    void import('../pages/StoreOrders')
+    void import('../pages/StoreProduct')
+  }, [consumer])
+
   /** Same wording family as the app header — only the channel word changes. */
   const placeholder = consumer
     ? 'Search model, SKU, maker…'

@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import { PublicShell } from '../components/PublicShell'
 import { StoreGallery } from '../components/StoreGallery'
 import { StoreRail } from '../components/StoreRail'
+import { StoreBlockSkeleton } from '../components/StoreSkeleton'
 import { api, type StoreProductDto } from '../lib/api'
 import { usd } from '../lib/format'
 import { storeProductBrand } from '../lib/storeBrand'
@@ -20,6 +21,8 @@ export function StoreProductPage() {
 
   useEffect(() => {
     let alive = true
+    setProduct(null)
+    setErr(null)
     void api
       .storeProduct(slug)
       .then((res) => {
@@ -33,12 +36,16 @@ export function StoreProductPage() {
     }
   }, [slug])
 
+  useEffect(() => {
+    if (!msg) return
+    const id = window.setTimeout(() => setMsg(null), 2400)
+    return () => window.clearTimeout(id)
+  }, [msg])
+
   if (!settings.showStore) {
     return (
       <PublicShell mode="consumer">
-        <p className="muted" style={{ padding: 24 }}>
-          Retail store is turned off.
-        </p>
+        <p className="muted store-off-note">Retail store is turned off.</p>
       </PublicShell>
     )
   }
@@ -69,7 +76,7 @@ export function StoreProductPage() {
             </Link>
           </div>
         ) : null}
-        {!product && !err ? <p className="muted tiny">Loading…</p> : null}
+        {!product && !err ? <StoreBlockSkeleton rows={2} /> : null}
 
         {product ? (
           <div className="store-pdp-desk">
@@ -128,22 +135,28 @@ export function StoreProductPage() {
                     onChange={(e) => setQty(Math.max(1, Number(e.target.value) || 1))}
                   />
                 </label>
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  disabled={soldOut}
-                  onClick={() => {
-                    addToStoreCart(product.id, qty)
-                    setMsg(`Added ${qty} to cart`)
-                  }}
-                >
-                  Add to cart
-                </button>
-                <Link to="/store/cart" className="btn btn-ghost">
-                  Checkout
-                </Link>
+                <div className="store-buy-actions">
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    disabled={soldOut}
+                    onClick={() => {
+                      addToStoreCart(product.id, qty)
+                      setMsg(`Added ${qty} to cart`)
+                    }}
+                  >
+                    Add to cart
+                  </button>
+                  <Link to="/store/cart" className="btn btn-primary">
+                    Checkout
+                  </Link>
+                </div>
               </div>
-              {msg ? <p className="tiny retail-toast shop-toast">{msg}</p> : null}
+              {msg ? (
+                <p className="tiny retail-toast shop-toast" role="status">
+                  {msg}
+                </p>
+              ) : null}
             </div>
           </div>
         ) : null}

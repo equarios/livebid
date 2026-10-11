@@ -7,9 +7,10 @@ import { canUseWholesaleDesk, publicHome, wholesaleHome } from './lib/channelAcc
 import { useStore } from './store'
 
 const pageFallback = (
-  <p className="muted tiny" style={{ padding: 16 }}>
-    Loading…
-  </p>
+  <div className="page-fallback" role="status" aria-live="polite">
+    <span className="page-fallback-pulse" />
+    <p className="muted tiny">Loading page…</p>
+  </div>
 )
 
 function lazyNamed<M>(loader: () => Promise<M>, exportName: keyof M & string) {

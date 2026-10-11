@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { PublicShell } from '../components/PublicShell'
 import { StoreRail } from '../components/StoreRail'
+import { StoreBlockSkeleton } from '../components/StoreSkeleton'
 import { api, type StoreProductDto } from '../lib/api'
 import { usd } from '../lib/format'
 import { storeProductFallback, storeProductImage } from '../lib/storePhotos'
@@ -123,9 +124,7 @@ export function StoreCart() {
   if (!settings.showStore) {
     return (
       <PublicShell mode="consumer">
-        <p className="muted" style={{ padding: 24 }}>
-          Retail store is turned off.
-        </p>
+        <p className="muted store-off-note">Retail store is turned off.</p>
       </PublicShell>
     )
   }
@@ -149,7 +148,7 @@ export function StoreCart() {
             </Link>
           </div>
         ) : !catalogReady ? (
-          <p className="muted tiny">Loading cart…</p>
+          <StoreBlockSkeleton rows={3} />
         ) : !rows.length ? (
           <div className="mh-empty shop-empty">
             <p>Cart items are no longer available.</p>
@@ -261,14 +260,14 @@ export function StoreCart() {
               </label>
 
               <h2>Payment</h2>
-              <div className="retail-pay-options">
+              <div className="retail-pay-options" role="radiogroup" aria-label="Payment method">
                 {(
                   [
-                    ['card', 'Card'],
-                    ['paypal', 'PayPal'],
-                    ['bank', 'Bank transfer'],
+                    ['card', 'Card', 'Demo charge'],
+                    ['paypal', 'PayPal', 'Demo wallet'],
+                    ['bank', 'Bank transfer', 'Staff confirms'],
                   ] as const
-                ).map(([id, label]) => (
+                ).map(([id, label, hint]) => (
                   <label key={id} className={pay === id ? 'on' : undefined}>
                     <input
                       type="radio"
@@ -276,13 +275,16 @@ export function StoreCart() {
                       checked={pay === id}
                       onChange={() => setPay(id)}
                     />
-                    {label}
+                    <span className="retail-pay-label">
+                      <strong>{label}</strong>
+                      <em>{hint}</em>
+                    </span>
                   </label>
                 ))}
               </div>
               <p className="muted tiny store-pay-hint">
-                Demo checkout records the order only — card and PayPal keys are not live yet. Bank
-                transfer is marked pending until staff confirms.
+                Demo mode — orders are recorded, not charged. Live card and PayPal keys land at
+                launch. Bank transfer stays pending until staff confirms.
               </p>
 
               {err ? <p className="tiny imei-err" role="alert">{err}</p> : null}

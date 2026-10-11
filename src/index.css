@@ -6509,6 +6509,18 @@ a.ops-subnav-btn.on {
   padding-top: 4px;
   align-items: center;
 }
+.store-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.store-card-actions .btn {
+  flex: 1 1 auto;
+  text-align: center;
+  white-space: nowrap;
+  min-width: 0;
+}
 .store-preview-buy {
   display: flex;
   flex-wrap: wrap;
@@ -6517,6 +6529,91 @@ a.ops-subnav-btn.on {
   margin-top: 16px;
 }
 .store-preview-buy .field { margin: 0; }
+.store-buy-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex: 1 1 220px;
+}
+.store-buy-actions .btn {
+  flex: 1 1 auto;
+  text-align: center;
+  min-width: 7.5rem;
+}
+.store-off-note { padding: 24px; }
+.page-fallback {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 28px 20px;
+  min-height: 120px;
+}
+.page-fallback-pulse {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--teal);
+  animation: store-pulse 1s ease-in-out infinite;
+}
+.store-skeleton-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+  overflow: hidden;
+  animation: shop-card-in 0.4s ease both;
+}
+.store-skeleton-media {
+  height: 150px;
+  background: linear-gradient(110deg, #e8eef3 20%, #f4f7f9 40%, #e8eef3 60%);
+  background-size: 200% 100%;
+  animation: store-shimmer 1.2s ease-in-out infinite;
+}
+.store-skeleton-lines {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+}
+.store-skeleton-line {
+  display: block;
+  height: 10px;
+  border-radius: 6px;
+  background: linear-gradient(110deg, #e8eef3 20%, #f4f7f9 40%, #e8eef3 60%);
+  background-size: 200% 100%;
+  animation: store-shimmer 1.2s ease-in-out infinite;
+}
+.store-skeleton-line.is-sm { width: 36%; height: 8px; }
+.store-skeleton-line.is-md { width: 62%; }
+.store-skeleton-line.is-btn { width: 48%; height: 28px; margin-top: 4px; border-radius: 999px; }
+.store-block-skeleton {
+  display: grid;
+  gap: 10px;
+  margin-top: 4px;
+}
+.store-skeleton-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+  animation: shop-card-in 0.4s ease both;
+}
+.store-skeleton-thumb {
+  width: 64px;
+  height: 64px;
+  border-radius: var(--radius);
+  flex: 0 0 auto;
+  background: linear-gradient(110deg, #e8eef3 20%, #f4f7f9 40%, #e8eef3 60%);
+  background-size: 200% 100%;
+  animation: store-shimmer 1.2s ease-in-out infinite;
+}
+@keyframes store-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+@keyframes store-pulse {
+  0%, 100% { opacity: 0.35; transform: scale(0.9); }
+  50% { opacity: 1; transform: scale(1); }
+}
 .store-pdp-card {
   max-width: 860px;
   margin: 0 auto;
@@ -6637,7 +6734,13 @@ a.ops-subnav-btn.on {
 
 @media (prefers-reduced-motion: reduce) {
   .shop-card,
-  .shop-toast { animation: none; }
+  .shop-toast,
+  .store-skeleton-card,
+  .store-skeleton-row,
+  .store-skeleton-media,
+  .store-skeleton-line,
+  .store-skeleton-thumb,
+  .page-fallback-pulse { animation: none; }
   .shop-card:hover,
   .shop-card:hover .retail-card-media img { transform: none; }
 }
@@ -6786,25 +6889,44 @@ a.ops-subnav-btn.on {
   font-size: 15px;
 }
 .retail-pay-options {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   margin: 4px 0 8px;
 }
 .retail-pay-options label {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 10px;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: #fff;
   cursor: pointer;
   font-size: 13px;
+  transition: border-color 0.15s ease, background 0.15s ease;
 }
 .retail-pay-options label.on {
   border-color: var(--navy);
   background: #eef6f7;
+}
+.retail-pay-label {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.retail-pay-label strong {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--navy-2);
+}
+.retail-pay-label em {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--muted);
+}
+@media (max-width: 560px) {
+  .retail-pay-options { grid-template-columns: 1fr; }
 }
 @media (max-width: 800px) {
   .retail-pdp-grid,

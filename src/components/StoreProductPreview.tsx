@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ModalShell } from './ModalShell'
 import { StoreGallery } from './StoreGallery'
@@ -19,10 +19,16 @@ export function StoreProductPreview({ product, onClose }: Props) {
   const soldOut = product.stock < 1
   const brand = storeProductBrand(product)
 
+  useEffect(() => {
+    if (!msg) return
+    const id = window.setTimeout(() => setMsg(null), 2400)
+    return () => window.clearTimeout(id)
+  }, [msg])
+
   return (
     <ModalShell onClose={onClose} className="lot-backdrop">
       <div
-        className="modal card lot-modal"
+        className="modal card lot-modal store-preview-modal"
         role="dialog"
         aria-modal="true"
         aria-labelledby="store-preview-title"
@@ -90,25 +96,31 @@ export function StoreProductPreview({ product, onClose }: Props) {
               onChange={(e) => setQty(Math.max(1, Number(e.target.value) || 1))}
             />
           </label>
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={soldOut}
-            onClick={() => {
-              addToStoreCart(product.id, qty)
-              setMsg(`Added ${qty} to cart`)
-            }}
-          >
-            Add to cart
-          </button>
-          <Link to="/store/cart" className="btn btn-ghost" onClick={onClose}>
-            Checkout
-          </Link>
-          <Link to={`/store/p/${product.slug}`} className="btn btn-ghost" onClick={onClose}>
-            Full page
-          </Link>
+          <div className="store-buy-actions">
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={soldOut}
+              onClick={() => {
+                addToStoreCart(product.id, qty)
+                setMsg(`Added ${qty} to cart`)
+              }}
+            >
+              Add to cart
+            </button>
+            <Link to="/store/cart" className="btn btn-primary" onClick={onClose}>
+              Checkout
+            </Link>
+            <Link to={`/store/p/${product.slug}`} className="btn btn-primary" onClick={onClose}>
+              Product Details
+            </Link>
+          </div>
         </div>
-        {msg ? <p className="tiny retail-toast">{msg}</p> : null}
+        {msg ? (
+          <p className="tiny retail-toast shop-toast" role="status">
+            {msg}
+          </p>
+        ) : null}
       </div>
     </ModalShell>
   )

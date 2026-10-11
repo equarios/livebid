@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { PublicShell } from '../components/PublicShell'
 import { StoreRail } from '../components/StoreRail'
+import { StoreBlockSkeleton } from '../components/StoreSkeleton'
 import { api, type StoreOrderDto } from '../lib/api'
 import { usd } from '../lib/format'
 import { useStore } from '../store'
@@ -40,9 +41,7 @@ export function StoreOrders() {
   if (!settings.showStore) {
     return (
       <PublicShell mode="consumer">
-        <p className="muted" style={{ padding: 24 }}>
-          Retail store is turned off.
-        </p>
+        <p className="muted store-off-note">Retail store is turned off.</p>
       </PublicShell>
     )
   }
@@ -72,7 +71,7 @@ export function StoreOrders() {
                   : '.'}{' '}
               Thank you.
             </p>
-            <Link to="/store" className="btn btn-ghost btn-sm">
+            <Link to="/store" className="btn btn-primary btn-sm">
               Keep shopping
             </Link>
           </div>
@@ -89,7 +88,7 @@ export function StoreOrders() {
             </Link>
           </div>
         ) : loading ? (
-          <p className="muted tiny">Loading…</p>
+          <StoreBlockSkeleton rows={4} />
         ) : err ? (
           <p className="tiny imei-err">{err}</p>
         ) : !orders.length ? (
