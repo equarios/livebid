@@ -31,6 +31,8 @@ export function StoreCart() {
   const [pay, setPay] = useState<PayMethod>('card')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  const [catalogErr, setCatalogErr] = useState<string | null>(null)
+  const [catalogTick, setCatalogTick] = useState(0)
 
   useEffect(() => {
     const sync = () => setLines(readStoreCart())
@@ -40,19 +42,26 @@ export function StoreCart() {
 
   useEffect(() => {
     let alive = true
+    setCatalogReady(false)
+    setCatalogErr(null)
     void api
       .storeProducts()
       .then((res) => {
         if (alive) setProducts(res.products)
       })
-      .catch(() => {})
+      .catch((e) => {
+        if (alive) {
+          setProducts([])
+          setCatalogErr(e instanceof Error ? e.message : 'Could not load catalog.')
+        }
+      })
       .finally(() => {
         if (alive) setCatalogReady(true)
       })
     return () => {
       alive = false
     }
-  }, [])
+  }, [catalogTick])
 
   useEffect(() => {
     if (user?.email && !email) setEmail(user.email)
@@ -149,6 +158,17 @@ export function StoreCart() {
           </div>
         ) : !catalogReady ? (
           <StoreBlockSkeleton rows={3} />
+        ) : catalogErr ? (
+          <div className="mh-empty shop-empty">
+            <p>{catalogErr}</p>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={() => setCatalogTick((n) => n + 1)}
+            >
+              Retry
+            </button>
+          </div>
         ) : !rows.length ? (
           <div className="mh-empty shop-empty">
             <p>Cart items are no longer available.</p>
@@ -263,8 +283,8 @@ export function StoreCart() {
               <div className="retail-pay-options" role="radiogroup" aria-label="Payment method">
                 {(
                   [
-                    ['card', 'Card', 'Demo charge'],
-                    ['paypal', 'PayPal', 'Demo wallet'],
+                    ['card', 'Card', 'Pay at checkout'],
+                    ['paypal', 'PayPal', 'Pay with PayPal'],
                     ['bank', 'Bank transfer', 'Staff confirms'],
                   ] as const
                 ).map(([id, label, hint]) => (
@@ -283,8 +303,7 @@ export function StoreCart() {
                 ))}
               </div>
               <p className="muted tiny store-pay-hint">
-                Demo mode — orders are recorded, not charged. Live card and PayPal keys land at
-                launch. Bank transfer stays pending until staff confirms.
+                Recorded for demo — not charged. Bank transfer stays pending until staff confirms.
               </p>
 
               {err ? <p className="tiny imei-err" role="alert">{err}</p> : null}
@@ -293,7 +312,7 @@ export function StoreCart() {
                   ? 'Placing order…'
                   : pay === 'bank'
                     ? `Place order · ${usd(total)}`
-                    : `Confirm demo ${pay === 'paypal' ? 'PayPal' : 'card'} · ${usd(total)}`}
+                    : `Pay with ${pay === 'paypal' ? 'PayPal' : 'card'} · ${usd(total)}`}
               </button>
             </form>
           </div>

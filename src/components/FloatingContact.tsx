@@ -9,6 +9,7 @@ export function FloatingContact() {
   const { settings } = useStore()
   const location = useLocation()
   const [open, setOpen] = useState(false)
+  const [wechatCopied, setWechatCopied] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
   const onAuctions =
     location.pathname === '/auctions' || location.pathname.startsWith('/auctions/')
@@ -32,6 +33,12 @@ export function FloatingContact() {
   useEffect(() => {
     if (onAuctions) setOpen(false)
   }, [onAuctions])
+
+  useEffect(() => {
+    if (!wechatCopied) return
+    const id = window.setTimeout(() => setWechatCopied(false), 1800)
+    return () => window.clearTimeout(id)
+  }, [wechatCopied])
 
   useEffect(() => {
     if (!open) return
@@ -90,13 +97,23 @@ export function FloatingContact() {
                 <button
                   type="button"
                   className="float-contact-chip"
-                  onClick={() => void navigator.clipboard?.writeText(wechat).catch(() => undefined)}
+                  onClick={() => {
+                    void navigator.clipboard
+                      ?.writeText(wechat)
+                      .then(() => setWechatCopied(true))
+                      .catch(() => undefined)
+                  }}
                   title={`Copy ${wechat}`}
                 >
-                  WeChat
+                  {wechatCopied ? 'Copied' : 'WeChat'}
                 </button>
               ) : null}
             </div>
+          ) : null}
+          {wechatCopied ? (
+            <p className="tiny ok float-contact-copied" role="status">
+              WeChat ID copied
+            </p>
           ) : null}
 
           <Link

@@ -21,6 +21,7 @@ export function ConsumerNav({ onNavigate }: { onNavigate?: () => void }) {
     location.pathname.startsWith('/store/p')
   const cartOpen = location.pathname.startsWith('/store/cart')
   const ordersOpen = location.pathname.startsWith('/store/orders')
+  const supportOpen = location.pathname.startsWith('/support')
 
   return (
     <nav
@@ -38,6 +39,9 @@ export function ConsumerNav({ onNavigate }: { onNavigate?: () => void }) {
       </NavLink>
       <NavLink to="/store/orders" className={ordersOpen ? 'active' : undefined}>
         Orders
+      </NavLink>
+      <NavLink to="/support" className={supportOpen ? 'active' : undefined}>
+        Support
       </NavLink>
     </nav>
   )

@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { DEFAULT_SETTINGS } from '../data'
 import { useStore } from '../store'
 
@@ -67,7 +68,7 @@ function whatsappHref(socialUrl: string, phoneOrUrl: string) {
 
 /** One store-style footer for the whole app. */
 export function SiteFooter() {
-  const { settings } = useStore()
+  const { settings, user } = useStore()
   const c = {
     ...DEFAULT_SETTINGS.contact,
     ...(settings.contact || {}),
@@ -82,6 +83,7 @@ export function SiteFooter() {
   const waLabel = c.whatsappDisplay.trim() || c.whatsapp.trim() || 'WhatsApp'
   const copyright =
     settings.pages?.footerCopyright?.trim() || DEFAULT_SETTINGS.pages.footerCopyright
+  const canRegister = settings.features?.register !== false
 
   return (
     <footer className="site-footer is-mirror">
@@ -138,6 +140,27 @@ export function SiteFooter() {
           </div>
         </div>
       </div>
+      {/* Public map only — shop, wholesale, help, account. No staff desks. */}
+      <nav className="site-footer-nav" aria-label="Footer">
+        {settings.showStore !== false ? (
+          <Link to="/store">{settings.storeLabel || 'Store'}</Link>
+        ) : null}
+        <Link to="/wholesale">Wholesale</Link>
+        <Link to="/buyers">For buyers</Link>
+        <Link to="/sellers">For sellers</Link>
+        <span className="site-footer-nav-sep" aria-hidden />
+        <Link to="/support">Support</Link>
+        <Link to="/tutorial">How it works</Link>
+        <span className="site-footer-nav-sep" aria-hidden />
+        {user ? (
+          <Link to="/account">My Page</Link>
+        ) : (
+          <>
+            <Link to="/login">Sign in</Link>
+            {canRegister ? <Link to="/register">Apply</Link> : null}
+          </>
+        )}
+      </nav>
       <p className="site-footer-copy">{copyright}</p>
     </footer>
   )

@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { CheckMenu, GRADES, toggleValue } from '../components/CheckMenu'
 import { CommunityListingPreview } from '../components/CommunityListingPreview'
 import { isFilterUiTarget } from '../components/FilterPanel'
+import { StoreBlockSkeleton } from '../components/StoreSkeleton'
 import {
   api,
   type CommunityListingDto,
@@ -677,7 +678,7 @@ export function Community() {
             ) : null}
           </div>
 
-          {loading ? <p className="muted tiny">Loading…</p> : null}
+          {loading ? <StoreBlockSkeleton rows={5} /> : null}
           {!loading ? (
             <ListingTable
               mode="board"
@@ -750,7 +751,7 @@ export function Community() {
               </button>
             </div>
           </header>
-          {loading ? <p className="muted tiny">Loading…</p> : null}
+          {loading ? <StoreBlockSkeleton rows={4} /> : null}
           {!loading ? (
             <ListingTable
               mode="mine"
@@ -790,7 +791,7 @@ export function Community() {
             </h2>
             <p className="mh-desk-note">Listings waiting for staff review.</p>
           </header>
-          {loading ? <p className="muted tiny">Loading…</p> : null}
+          {loading ? <StoreBlockSkeleton rows={4} /> : null}
           {!loading ? (
             <ListingTable
               mode="queue"
@@ -1044,11 +1045,11 @@ export function Community() {
                 />
               </label>
               <div className="cm-inquire-actions">
-                <button type="button" className="btn" onClick={() => setInquire(null)}>
+                <button type="button" className="btn btn-ghost" onClick={() => setInquire(null)}>
                   Cancel
                 </button>
                 <button type="submit" className="btn btn-primary" disabled={saving}>
-                  Send
+                  {saving ? 'Sending…' : 'Send interest'}
                 </button>
               </div>
             </form>

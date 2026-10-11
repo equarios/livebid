@@ -7,6 +7,27 @@ import { api, type StoreOrderDto } from '../lib/api'
 import { usd } from '../lib/format'
 import { useStore } from '../store'
 
+const STATUS_LABEL: Record<string, string> = {
+  pending_payment: 'Awaiting payment',
+  paid: 'Paid',
+  shipped: 'Shipped',
+  cancelled: 'Cancelled',
+}
+
+const PAY_LABEL: Record<string, string> = {
+  card: 'Card',
+  paypal: 'PayPal',
+  bank: 'Bank transfer',
+}
+
+function statusLabel(status: string) {
+  return STATUS_LABEL[status] || status.replace(/_/g, ' ')
+}
+
+function payLabel(method: string) {
+  return PAY_LABEL[method] || method
+}
+
 export function StoreOrders() {
   const { settings, user } = useStore()
   const [params] = useSearchParams()
@@ -15,6 +36,7 @@ export function StoreOrders() {
   const [orders, setOrders] = useState<StoreOrderDto[]>([])
   const [err, setErr] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [openId, setOpenId] = useState<string | null>(() => placed)
 
   useEffect(() => {
     if (!user) {
@@ -63,11 +85,11 @@ export function StoreOrders() {
         {placed ? (
           <div className="retail-toast shop-toast store-order-confirm" role="status">
             <p>
-              Order <strong className="mono">{placed}</strong> recorded
+              Order <strong className="mono">{placed}</strong> placed
               {pay === 'bank'
                 ? ' — awaiting bank transfer confirmation.'
                 : pay === 'paypal' || pay === 'card'
-                  ? ' — demo payment accepted (not charged).'
+                  ? ' — payment recorded (demo).'
                   : '.'}{' '}
               Thank you.
             </p>
@@ -99,31 +121,56 @@ export function StoreOrders() {
             </Link>
           </div>
         ) : (
-          <div className="mh-table-wrap desk-list-scroll">
-            <table className="gbs-table mh-table store-orders-table">
-              <thead>
-                <tr>
-                  <th>Order</th>
-                  <th>Status</th>
-                  <th>Pay</th>
-                  <th className="num">Total</th>
-                  <th>Items</th>
-                </tr>
-              </thead>
-              <tbody>
-                {orders.map((o) => (
-                  <tr key={o.id}>
-                    <td className="mono">{o.id}</td>
-                    <td>{o.status.replace(/_/g, ' ')}</td>
-                    <td>{o.paymentMethod}</td>
-                    <td className="num">{usd(o.total)}</td>
-                    <td className="tiny store-orders-items">
-                      {o.lines.map((l) => `${l.qty}× ${l.title}`).join(', ')}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="store-orders-list">
+            {orders.map((o) => {
+              const open = openId === o.id
+              return (
+                <article key={o.id} className={`store-order-card${open ? ' is-open' : ''}`}>
+                  <button
+                    type="button"
+                    className="store-order-summary"
+                    aria-expanded={open}
+                    onClick={() => setOpenId(open ? null : o.id)}
+                  >
+                    <span className="mono store-order-id">{o.id}</span>
+                    <span className="store-order-badge">{statusLabel(o.status)}</span>
+                    <span className="muted tiny">{payLabel(o.paymentMethod)}</span>
+                    <strong className="store-order-total">{usd(o.total)}</strong>
+                  </button>
+                  {open ? (
+                    <div className="store-order-detail">
+                      <p className="tiny muted">
+                        {o.name} · {o.email}
+                        {o.phone ? ` · ${o.phone}` : ''}
+                      </p>
+                      <p className="store-order-address">{o.address}</p>
+                      {o.note ? <p className="tiny muted">Note: {o.note}</p> : null}
+                      {o.paymentMethod === 'bank' && o.status === 'pending_payment' ? (
+                        <p className="tiny store-order-bank-hint">
+                          Bank transfer — staff will confirm when funds clear. Include order{' '}
+                          <span className="mono">{o.id}</span> in the remittance.
+                        </p>
+                      ) : null}
+                      <ul className="store-order-lines">
+                        {o.lines.map((l) => (
+                          <li key={l.id}>
+                            <span>
+                              {l.qty}× {l.title}
+                            </span>
+                            <span>{usd(l.unitPrice * l.qty)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                      <div className="store-order-totals tiny">
+                        <span>Subtotal {usd(o.subtotal)}</span>
+                        <span>Shipping {usd(o.shippingFee)}</span>
+                        <strong>Total {usd(o.total)}</strong>
+                      </div>
+                    </div>
+                  ) : null}
+                </article>
+              )
+            })}
           </div>
         )}
       </div>

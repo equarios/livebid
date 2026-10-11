@@ -803,7 +803,8 @@ label { display: grid; gap: 6px; font-size: 13px; color: var(--muted); margin-bo
 .float-contact {
   position: fixed;
   right: 20px;
-  bottom: 72px;
+  /* Clear footer bar + social + nav + copyright on the right. */
+  bottom: 128px;
   z-index: 50;
   display: flex;
   flex-direction: column;
@@ -941,6 +942,10 @@ label { display: grid; gap: 6px; font-size: 13px; color: var(--muted); margin-bo
   color: inherit;
   word-break: break-word;
 }
+.float-contact-copied {
+  margin: 8px 0 0;
+  text-align: center;
+}
 .float-contact-support {
   display: block;
   margin-top: 10px;
@@ -956,7 +961,7 @@ label { display: grid; gap: 6px; font-size: 13px; color: var(--muted); margin-bo
 @media (max-width: 720px) {
   .float-contact {
     right: 14px;
-    bottom: 64px;
+    bottom: 118px;
   }
   .float-contact-btn {
     padding: 11px 16px;
@@ -4883,17 +4888,26 @@ a.ops-subnav-btn.on {
 .site-footer-nav {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px 16px;
-  padding-top: 6px;
+  align-items: center;
+  gap: 8px 14px;
+  padding: 10px var(--workbench-gutter) 0;
   border-top: 1px solid rgba(213, 224, 228, 0.7);
 }
 .site-footer-nav a {
   color: var(--sf-ink);
   text-decoration: none;
+  font-size: 13px;
   font-weight: 600;
 }
 .site-footer-nav a:hover {
   color: var(--teal-deep, #0d7377);
+}
+.site-footer-nav-sep {
+  display: inline-block;
+  width: 1px;
+  height: 12px;
+  background: var(--line);
+  margin: 0 2px;
 }
 .site-footer-switch {
   opacity: 0.8;
@@ -5315,6 +5329,118 @@ a.ops-subnav-btn.on {
 .support-enquiry-lead a {
   color: var(--navy);
   font-weight: 650;
+}
+.support-dispute-note {
+  margin: 18px 0 0;
+  max-width: 40rem;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.support-dispute-note a {
+  color: var(--navy);
+  font-weight: 650;
+}
+.complaint-title {
+  margin: 0 0 6px;
+  font-family: var(--display);
+  font-size: 1.15rem;
+  font-weight: 750;
+  color: var(--navy-2);
+}
+.store-orders-list {
+  display: grid;
+  gap: 8px;
+  max-width: 720px;
+}
+.store-order-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+  overflow: hidden;
+}
+.store-order-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) auto auto auto;
+  gap: 8px 12px;
+  align-items: center;
+  width: 100%;
+  padding: 12px 14px;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.store-order-summary:hover {
+  background: #f6fafb;
+}
+.store-order-id {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--navy-2);
+}
+.store-order-badge {
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--navy);
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #eef6f7;
+  white-space: nowrap;
+}
+.store-order-total {
+  justify-self: end;
+  font-size: 14px;
+  color: var(--navy-2);
+}
+.store-order-detail {
+  padding: 0 14px 14px;
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 6px;
+}
+.store-order-address {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+.store-order-bank-hint {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #f3f7fa;
+  color: var(--navy-2);
+}
+.store-order-lines {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.store-order-lines li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+.store-order-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin-top: 4px;
+  color: var(--muted);
+}
+@media (max-width: 640px) {
+  .store-order-summary {
+    grid-template-columns: 1fr 1fr;
+  }
+  .store-order-total {
+    grid-column: 2;
+    grid-row: 1;
+  }
 }
 .support-enquiry-form {
   display: grid;

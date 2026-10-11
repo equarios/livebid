@@ -84,7 +84,7 @@ export function SellersPage() {
 }
 
 export function SupportPage() {
-  const { settings } = useStore()
+  const { settings, user } = useStore()
   const page = useMarketingPage('support')
   const brand = settings.brandName || 'eQuarios'
   return (
@@ -109,6 +109,22 @@ export function SupportPage() {
         }
       >
         {renderPageBody(page.body)}
+        <p className="support-dispute-note">
+          Lot or invoice dispute
+          {user ? (
+            <>
+              {' '}
+              — open{' '}
+              <Link to="/account/complaint">Complaint</Link> on My Page.
+            </>
+          ) : (
+            <>
+              {' '}
+              — <Link to="/login" state={{ from: '/account/complaint' }}>sign in</Link> and use
+              Complaint on My Page.
+            </>
+          )}
+        </p>
       </PubArticle>
       <SupportEnquiry />
     </PublicShell>
