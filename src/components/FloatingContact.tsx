@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { DEFAULT_SETTINGS } from '../data'
 import { useStore } from '../store'
+import { SupportEnquiry } from './SupportEnquiry'
 
-/** Fixed bottom-right Contact Us — stays visible while scrolling (GoDaddy-style). */
+/** Fixed bottom-right Contact Us — enquiry form first, channel shortcuts second. */
 export function FloatingContact() {
   const { settings } = useStore()
   const location = useLocation()
@@ -19,8 +20,6 @@ export function FloatingContact() {
   }
   const brand = settings.brandName || 'us'
   const email = c.emailEnquiry.trim() || c.emailBusiness.trim()
-  const phone = c.phone.trim()
-  const phoneLabel = c.phoneDisplay.trim() || phone
   const wechat = c.wechatId.trim()
   const whatsapp = (c.whatsapp || c.social.whatsapp || '').trim()
   const whatsappHref = whatsapp
@@ -28,6 +27,7 @@ export function FloatingContact() {
       ? whatsapp
       : `https://wa.me/${whatsapp.replace(/\D/g, '')}`
     : ''
+  const hasChannels = Boolean(email || whatsappHref || wechat)
 
   useEffect(() => {
     if (onAuctions) setOpen(false)
@@ -57,44 +57,53 @@ export function FloatingContact() {
         <div className="float-contact-panel" role="dialog" aria-label="Contact us">
           <div className="float-contact-head">
             <strong>Contact {brand}</strong>
-            <button type="button" className="float-contact-x" aria-label="Close" onClick={() => setOpen(false)}>
+            <button
+              type="button"
+              className="float-contact-x"
+              aria-label="Close"
+              onClick={() => setOpen(false)}
+            >
               ×
             </button>
           </div>
-          <p className="float-contact-lead">We usually reply within one business day.</p>
-          <div className="float-contact-actions">
-            {email ? (
-              <a className="float-contact-link" href={`mailto:${email}`}>
-                <span>Email</span>
-                <em>{email}</em>
-              </a>
-            ) : null}
-            {phone ? (
-              <a className="float-contact-link" href={`tel:${phone}`}>
-                <span>Phone</span>
-                <em>{phoneLabel}</em>
-              </a>
-            ) : null}
-            {whatsappHref ? (
-              <a className="float-contact-link" href={whatsappHref} target="_blank" rel="noreferrer">
-                <span>WhatsApp</span>
-                <em>{c.whatsappDisplay.trim() || 'Message us'}</em>
-              </a>
-            ) : null}
-            {wechat ? (
-              <button
-                type="button"
-                className="float-contact-link"
-                onClick={() => void navigator.clipboard?.writeText(wechat).catch(() => undefined)}
-              >
-                <span>WeChat</span>
-                <em>
-                  {wechat} · copy
-                </em>
-              </button>
-            ) : null}
-          </div>
-          <Link className="float-contact-support" to="/support" onClick={() => setOpen(false)}>
+
+          <SupportEnquiry variant="panel" />
+
+          {hasChannels ? (
+            <div className="float-contact-channels" aria-label="Direct channels">
+              {email ? (
+                <a className="float-contact-chip" href={`mailto:${email}`} title={email}>
+                  Email
+                </a>
+              ) : null}
+              {whatsappHref ? (
+                <a
+                  className="float-contact-chip"
+                  href={whatsappHref}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  WhatsApp
+                </a>
+              ) : null}
+              {wechat ? (
+                <button
+                  type="button"
+                  className="float-contact-chip"
+                  onClick={() => void navigator.clipboard?.writeText(wechat).catch(() => undefined)}
+                  title={`Copy ${wechat}`}
+                >
+                  WeChat
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+
+          <Link
+            className="float-contact-support"
+            to="/support#enquiry"
+            onClick={() => setOpen(false)}
+          >
             Support &amp; help centre
           </Link>
         </div>

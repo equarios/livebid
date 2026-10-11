@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { PubArticle } from '../components/PubArticle'
 import { PublicShell } from '../components/PublicShell'
+import { SupportEnquiry } from '../components/SupportEnquiry'
 import { DEFAULT_SETTINGS } from '../data'
 import { renderPageBody } from '../lib/pageBody'
 import { useStore } from '../store'
@@ -96,14 +97,12 @@ export function SupportPage() {
         sectionTitle="Quick answers"
         actions={
           <>
+            <a className="pub-btn pub-btn-fill" href="#enquiry">
+              Quick enquiry
+            </a>
             {page.primaryCta ? (
-              <Link className="pub-btn pub-btn-fill" to="/login">
-                {page.primaryCta}
-              </Link>
-            ) : null}
-            {page.secondaryCta ? (
-              <Link className="land-hero-secondary" to="/register">
-                {page.secondaryCta} →
+              <Link className="land-hero-secondary" to="/login">
+                {page.primaryCta} →
               </Link>
             ) : null}
           </>
@@ -111,6 +110,7 @@ export function SupportPage() {
       >
         {renderPageBody(page.body)}
       </PubArticle>
+      <SupportEnquiry />
     </PublicShell>
   )
 }

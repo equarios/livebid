@@ -803,7 +803,7 @@ label { display: grid; gap: 6px; font-size: 13px; color: var(--muted); margin-bo
 .float-contact {
   position: fixed;
   right: 20px;
-  bottom: 20px;
+  bottom: 72px;
   z-index: 50;
   display: flex;
   flex-direction: column;
@@ -834,7 +834,9 @@ label { display: grid; gap: 6px; font-size: 13px; color: var(--muted); margin-bo
   background: var(--navy-2);
 }
 .float-contact-panel {
-  width: min(320px, calc(100vw - 32px));
+  width: min(360px, calc(100vw - 32px));
+  max-height: min(78vh, 640px);
+  overflow: auto;
   background: #fff;
   color: var(--ink);
   border: 1px solid var(--line);
@@ -872,6 +874,35 @@ label { display: grid; gap: 6px; font-size: 13px; color: var(--muted); margin-bo
   font-size: 13px;
   color: var(--muted);
   line-height: 1.4;
+}
+.float-contact-channels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.float-contact-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #f8fbfc;
+  color: var(--navy);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+  text-decoration: none;
+}
+.float-contact-chip:hover {
+  border-color: #b8c9d0;
+  background: #eef6f7;
+  color: var(--navy-2);
 }
 .float-contact-actions {
   display: grid;
@@ -925,7 +956,7 @@ label { display: grid; gap: 6px; font-size: 13px; color: var(--muted); margin-bo
 @media (max-width: 720px) {
   .float-contact {
     right: 14px;
-    bottom: 14px;
+    bottom: 64px;
   }
   .float-contact-btn {
     padding: 11px 16px;
@@ -5259,6 +5290,66 @@ a.ops-subnav-btn.on {
   font-size: 15px;
   line-height: 1.5;
 }
+.support-enquiry {
+  padding-top: 8px;
+  padding-bottom: 64px;
+  border-top: 1px solid var(--line);
+}
+.support-enquiry.is-panel {
+  padding: 0;
+  border: 0;
+  margin: 0;
+}
+.support-enquiry-lead {
+  margin: -8px 0 18px;
+  max-width: 40rem;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.support-enquiry-lead.is-panel {
+  margin: 0 0 10px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.support-enquiry-lead a {
+  color: var(--navy);
+  font-weight: 650;
+}
+.support-enquiry-form {
+  display: grid;
+  gap: 12px;
+  max-width: 36rem;
+}
+.support-enquiry-form.is-panel {
+  gap: 8px;
+  max-width: none;
+}
+.support-enquiry-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.support-enquiry-form.is-panel .support-enquiry-row {
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+.support-enquiry-form .field { margin: 0; }
+.support-enquiry-form textarea { resize: vertical; min-height: 120px; }
+.support-enquiry-form.is-panel textarea { min-height: 72px; }
+.support-enquiry-form.is-panel .field span {
+  font-size: 11px;
+}
+.support-enquiry-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+@media (max-width: 560px) {
+  .support-enquiry-row { grid-template-columns: 1fr; }
+}
 @media (max-width: 900px) {
   .pub-land-body .pub-steps { grid-template-columns: 1fr 1fr; }
 }
@@ -7877,6 +7968,50 @@ a.ops-subnav-btn.on {
   outline: none;
   border-color: var(--teal);
   box-shadow: 0 0 0 2px rgba(59, 146, 163, 0.15);
+}
+.cm-row-click {
+  cursor: pointer;
+}
+.cm-row-click:hover td {
+  background: color-mix(in srgb, var(--teal) 6%, #fff);
+}
+.cm-listing-modal {
+  max-width: 560px;
+}
+.cm-listing-media {
+  margin: 0 0 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: #e8eef1;
+  aspect-ratio: 16 / 10;
+  display: grid;
+  place-items: center;
+}
+.cm-listing-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.cm-listing-media span {
+  font-family: var(--display);
+  font-size: 2rem;
+  font-weight: 750;
+  color: var(--muted);
+}
+.cm-listing-desc {
+  margin: 0 0 16px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink);
+  white-space: pre-wrap;
+}
+.cm-listing-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
 }
 .cm-table-wrap.desk-list-scroll {
   margin-top: 0;

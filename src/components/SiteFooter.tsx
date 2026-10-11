@@ -56,6 +56,15 @@ const SOCIALS: Array<{ key: SocialKey; label: string }> = [
   { key: 'google', label: 'Google' },
 ]
 
+/** Prefer social URL; fall back to contact WhatsApp number (same as Contact Us). */
+function whatsappHref(socialUrl: string, phoneOrUrl: string) {
+  const raw = (socialUrl || phoneOrUrl || '').trim()
+  if (!raw) return ''
+  if (raw.startsWith('http')) return raw
+  const digits = raw.replace(/\D/g, '')
+  return digits ? `https://wa.me/${digits}` : ''
+}
+
 /** One store-style footer for the whole app. */
 export function SiteFooter() {
   const { settings } = useStore()
@@ -69,6 +78,8 @@ export function SiteFooter() {
   }
   const verifiedFull = c.verifiedMember
   const verifiedShort = shortVerified(verifiedFull)
+  const waHref = whatsappHref(c.social.whatsapp, c.whatsapp)
+  const waLabel = c.whatsappDisplay.trim() || c.whatsapp.trim() || 'WhatsApp'
   const copyright =
     settings.pages?.footerCopyright?.trim() || DEFAULT_SETTINGS.pages.footerCopyright
 
@@ -87,6 +98,14 @@ export function SiteFooter() {
           <a href={`tel:${c.phone}`}>
             <Label>Mobile</Label> {c.phoneDisplay}
           </a>
+          {waHref ? (
+            <>
+              <Dot />
+              <a href={waHref} target="_blank" rel="noreferrer">
+                <Label>WhatsApp</Label> {waLabel}
+              </a>
+            </>
+          ) : null}
           <Dot />
           <span>
             <Label>WeChat</Label> {c.wechatId}
@@ -100,7 +119,7 @@ export function SiteFooter() {
         <div className="site-footer-end">
           <div className="site-footer-social" aria-label="Social">
             {SOCIALS.map((s) => {
-              const href = c.social[s.key]
+              const href = s.key === 'whatsapp' ? waHref : c.social[s.key]
               if (!href) return null
               return (
                 <a

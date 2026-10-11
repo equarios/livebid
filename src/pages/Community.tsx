@@ -1,6 +1,7 @@
 import { startTransition, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { CheckMenu, GRADES, toggleValue } from '../components/CheckMenu'
+import { CommunityListingPreview } from '../components/CommunityListingPreview'
 import { isFilterUiTarget } from '../components/FilterPanel'
 import {
   api,
@@ -81,6 +82,7 @@ function itemLine(listing: CommunityListingDto) {
 function ListingTable({
   listings,
   mode,
+  onOpen,
   onInquire,
   onModerate,
   onOwnerStatus,
@@ -91,6 +93,7 @@ function ListingTable({
 }: {
   listings: CommunityListingDto[]
   mode: 'board' | 'mine' | 'queue'
+  onOpen: (l: CommunityListingDto) => void
   onInquire: (l: CommunityListingDto) => void
   onModerate?: (l: CommunityListingDto, action: 'live' | 'reject' | 'feature' | 'unfeature') => void
   onOwnerStatus?: (l: CommunityListingDto, status: 'paused' | 'closed' | 'pending') => void
@@ -114,7 +117,11 @@ function ListingTable({
         </thead>
         <tbody>
           {listings.map((listing) => (
-            <tr key={listing.id} className={listing.featured ? 'is-featured' : undefined}>
+            <tr
+              key={listing.id}
+              className={`cm-row-click${listing.featured ? ' is-featured' : ''}`}
+              onClick={() => onOpen(listing)}
+            >
               <td className="item-col">
                 <div className="item-cell">
                   <div className="item-thumb cm-thumb" aria-hidden>
@@ -127,7 +134,16 @@ function ListingTable({
                   <div className="item-text">
                     <div className="item-title">
                       {listing.featured ? <em className="cm-feat">★ </em> : null}
-                      {listing.title}
+                      <button
+                        type="button"
+                        className="item-link"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onOpen(listing)
+                        }}
+                      >
+                        {listing.title}
+                      </button>
                     </div>
                     <div className="item-sub">{itemLine(listing)}</div>
                   </div>
@@ -153,7 +169,7 @@ function ListingTable({
               <td>
                 <span className={`cm-pill status-${listing.status}`}>{listing.status}</span>
               </td>
-              <td className="cart-actions-col">
+              <td className="cart-actions-col" onClick={(e) => e.stopPropagation()}>
                 <div className="row-actions">
                   <div className="cm-mod-actions">
                     {mode === 'board' && listing.status === 'live' && !listing.mine ? (
@@ -278,6 +294,7 @@ export function Community() {
   const [filterPrice, setFilterPrice] = useState<PriceFilter[]>([])
   const [featuredOnly, setFeaturedOnly] = useState(false)
   const filtersRef = useRef<HTMLDivElement>(null)
+  const [preview, setPreview] = useState<CommunityListingDto | null>(null)
   const [inquire, setInquire] = useState<CommunityListingDto | null>(null)
   const [interestMsg, setInterestMsg] = useState('')
   const [interestQty, setInterestQty] = useState('1')
@@ -666,6 +683,7 @@ export function Community() {
               mode="board"
               listings={visibleRows}
               isStaff={isStaff}
+              onOpen={setPreview}
               onInquire={setInquire}
               onModerate={isStaff ? moderate : undefined}
               emptyTitle={filtersActive || q.trim() ? 'No matches' : 'Board is quiet'}
@@ -737,6 +755,7 @@ export function Community() {
             <ListingTable
               mode="mine"
               listings={visibleRows}
+              onOpen={setPreview}
               onInquire={setInquire}
               onOwnerStatus={ownerStatus}
               emptyTitle="Nothing posted yet"
@@ -777,6 +796,7 @@ export function Community() {
               mode="queue"
               listings={visibleRows}
               isStaff
+              onOpen={setPreview}
               onInquire={setInquire}
               onModerate={moderate}
               emptyTitle="Queue clear"
@@ -978,6 +998,17 @@ export function Community() {
             </aside>
           </div>
         </section>
+      ) : null}
+
+      {preview ? (
+        <CommunityListingPreview
+          listing={preview}
+          onClose={() => setPreview(null)}
+          onInterest={(listing) => {
+            setPreview(null)
+            setInquire(listing)
+          }}
+        />
       ) : null}
 
       {inquire ? (
