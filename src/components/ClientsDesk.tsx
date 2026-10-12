@@ -42,7 +42,7 @@ const SAMPLE_HTML = `<div style="font-family:Georgia,serif;max-width:560px;margi
   <h1 style="font-size:22px;margin:0 0 12px">Equarios inventory update</h1>
   <p style="line-height:1.5;margin:0 0 12px">Hi {{ contact.FIRSTNAME }},</p>
   <p style="line-height:1.5;margin:0 0 12px">New wholesale lots just landed. Sign in to bid or buy.</p>
-  <p style="margin:20px 0"><a href="https://equarios.com/auctions" style="background:#0b2b3a;color:#fff;padding:10px 16px;text-decoration:none">View auctions</a></p>
+  <p style="margin:20px 0"><a href="https://equarios.com/wholesale" style="background:#0b2b3a;color:#fff;padding:10px 16px;text-decoration:none">Browse wholesale</a></p>
 </div>`
 
 export function ClientsDesk() {

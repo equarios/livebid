@@ -2,17 +2,25 @@ import { useState, type FormEvent } from 'react'
 import { Link, Navigate, useLocation } from 'react-router-dom'
 import { AuthFrame } from '../components/AuthFrame'
 import { canUseWholesaleDesk, wholesaleHome } from '../lib/channelAccess'
+import { sanitizeLoginFrom } from '../lib/safeReturnPath'
 import { useStore } from '../store'
 import type { SiteSettings, User } from '../types'
 
 function postLoginPath(
   user: User,
   isStaff: boolean,
+  isSuperAdmin: boolean,
   settings: Pick<SiteSettings, 'showAuctions' | 'showMarketplace'>,
   fromRaw?: string,
 ) {
-  if (!canUseWholesaleDesk(user, isStaff)) return '/account'
-  if (fromRaw && fromRaw !== '/login' && fromRaw !== '/register') return fromRaw
+  const desk = canUseWholesaleDesk(user, isStaff)
+  const safe = sanitizeLoginFrom(fromRaw, {
+    isStaff,
+    isSuperAdmin,
+    canDesk: desk,
+  })
+  if (!desk) return safe?.startsWith('/account') ? safe : '/account'
+  if (safe) return safe
   return wholesaleHome(settings)
 }
 
@@ -26,6 +34,7 @@ export function Login() {
     resetPassword,
     settings,
     isStaff,
+    isSuperAdmin,
   } = useStore()
   const location = useLocation()
   const fromRaw = (location.state as { from?: string } | null)?.from
@@ -41,7 +50,9 @@ export function Login() {
   const [verifyIdent, setVerifyIdent] = useState('')
 
   if (user) {
-    return <Navigate to={postLoginPath(user, isStaff, settings, fromRaw)} replace />
+    return (
+      <Navigate to={postLoginPath(user, isStaff, isSuperAdmin, settings, fromRaw)} replace />
+    )
   }
 
   function onEmail(e: FormEvent) {

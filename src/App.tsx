@@ -5,6 +5,7 @@ import { Layout } from './components/Layout'
 import { useLangQuerySync } from './components/SeoHead'
 import { ThemeApplier } from './components/ThemeApplier'
 import { canUseWholesaleDesk, publicHome, wholesaleHome } from './lib/channelAccess'
+import { guestLoginFrom } from './lib/safeReturnPath'
 import { useStore } from './store'
 
 const pageFallback = (
@@ -64,7 +65,7 @@ function Guard({ children }: { children: ReactNode }) {
       <Navigate
         to="/login"
         replace
-        state={{ from: location.pathname + location.search + location.hash }}
+        state={{ from: guestLoginFrom(location.pathname, location.search, location.hash) }}
       />
     )
   return children

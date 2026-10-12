@@ -72,6 +72,9 @@ test.describe('L2 public / marketing / SEO', () => {
     expect(res.ok()).toBeTruthy()
     const text = await res.text()
     expect(text).toMatch(/Sitemap:/i)
+    for (const path of ['/admin', '/super', '/account', '/auctions', '/marketplace', '/login', '/register']) {
+      expect(text).toMatch(new RegExp(`Disallow:\\s*${path.replace('/', '\\/')}`))
+    }
   })
 
   test('sitemap.xml served', async ({ page }) => {

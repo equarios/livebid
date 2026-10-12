@@ -37,7 +37,7 @@ Same `sitemap.xml` works for most engines. Register the property and submit the 
 Also:
 
 - [ ] Bing URL submission / IndexNow (if host supports) for faster Bing pickup
-- [ ] Do **not** block bots in `robots.txt` except private desks (`/admin`, `/super`, `/account`, auth)
+- [ ] Do **not** block bots in `robots.txt` except private desks (`/admin`, `/super`, `/account`, `/auctions`, `/marketplace`, auth)
 - [ ] Keep `hreflang` / `?lang=` working for multilingual crawls
 
 ---

@@ -123,11 +123,20 @@ export function Home() {
 
   function go(path: string) {
     if (path === '/register') {
-      navigate(user ? '/account' : '/register', { state: { from: '/auctions' } })
+      navigate(user ? '/account' : '/register')
       return
     }
-    if (user) navigate(path)
-    else navigate('/login', { state: { from: path } })
+    if (user) {
+      navigate(path)
+      return
+    }
+    /* Guests: login only — do not put desk paths (/auctions, /marketplace) in the URL bar. */
+    const desk =
+      path === '/auctions' ||
+      path.startsWith('/auctions') ||
+      path === '/marketplace' ||
+      path.startsWith('/marketplace')
+    navigate('/login', desk ? undefined : { state: { from: path } })
   }
 
   return (

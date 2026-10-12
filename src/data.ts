@@ -311,8 +311,8 @@ export const DEFAULT_SETTINGS: SiteSettings = {
         kicker: 'B2B wholesale',
         title: 'Auctions for approved buyers.',
         body: 'Bid by the piece or buy at listed price — one wholesale desk for verified companies.',
-        cta: 'Enter auctions',
-        to: '/auctions',
+        cta: 'Browse wholesale',
+        to: '/wholesale',
         imageUrl:
           'https://images.unsplash.com/photo-1556656793-08538906a9f8?auto=format&fit=crop&w=2000&q=72',
       },
@@ -320,8 +320,8 @@ export const DEFAULT_SETTINGS: SiteSettings = {
         kicker: 'B2B wholesale',
         title: 'Marketplace at list price.',
         body: 'Cart checkout for verified buyers — staff review, then your confirm.',
-        cta: 'Open marketplace',
-        to: '/marketplace',
+        cta: 'Browse wholesale',
+        to: '/wholesale',
         imageUrl:
           'https://images.unsplash.com/photo-1563986768609-322da13575f3?auto=format&fit=crop&w=2000&q=72',
       },

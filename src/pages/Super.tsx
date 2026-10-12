@@ -470,7 +470,7 @@ export function Super() {
       const base = mergePagesDraft(prev.pages)
       const heroes = [...base.wholesaleHeroes]
       while (heroes.length <= index) {
-        heroes.push({ kicker: '', title: '', body: '', cta: '', to: '/auctions' })
+        heroes.push({ kicker: '', title: '', body: '', cta: '', to: '/wholesale' })
       }
       heroes[index] = { ...heroes[index], ...patch }
       return { ...prev, pages: { ...base, wholesaleHeroes: heroes } }
@@ -1791,7 +1791,7 @@ export function Super() {
                     <input
                       value={hero.to}
                       onChange={(e) => patchWholesaleHero(i, { to: e.target.value })}
-                      placeholder="/auctions"
+                      placeholder="/wholesale"
                     />
                   </label>
                   <label className="admin-span">
@@ -1826,7 +1826,7 @@ export function Super() {
                   patchPages({
                     wholesaleHeroes: [
                       ...pagesDraft.wholesaleHeroes,
-                      { kicker: '', title: '', body: '', cta: 'Enter', to: '/auctions', imageUrl: '' },
+                      { kicker: '', title: '', body: '', cta: 'Enter', to: '/wholesale', imageUrl: '' },
                     ],
                   })
                 }

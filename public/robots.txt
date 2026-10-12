@@ -4,7 +4,9 @@ Allow: /wholesale/c
 Disallow: /admin
 Disallow: /super
 Disallow: /account
+Disallow: /auctions
+Disallow: /marketplace
 Disallow: /login
 Disallow: /register
 
-Sitemap: http://localhost:8088/sitemap.xml
+Sitemap: https://equarios.com/sitemap.xml

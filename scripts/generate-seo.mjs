@@ -95,6 +95,8 @@ Allow: /wholesale/c
 Disallow: /admin
 Disallow: /super
 Disallow: /account
+Disallow: /auctions
+Disallow: /marketplace
 Disallow: /login
 Disallow: /register
 
