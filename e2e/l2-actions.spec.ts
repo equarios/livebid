@@ -51,6 +51,23 @@ test.describe('L2 buyer actions', () => {
     expect(action).toBeGreaterThan(0)
   })
 
+  test('marketplace offer path + history desk', async ({ page }) => {
+    await page.goto('/marketplace')
+    await dismissWarn(page)
+    const offerBtn = page.getByRole('button', { name: /^Offer$/i }).first()
+    await expect(offerBtn).toBeVisible({ timeout: 20_000 })
+    await offerBtn.click()
+    const confirm = page.getByRole('button', { name: /^Confirm$/i })
+    if (await confirm.isVisible().catch(() => false)) {
+      await confirm.click()
+      // Dialog should close; don't wait forever if API rejects duplicate offer
+      await page.locator('[role="dialog"]').waitFor({ state: 'hidden', timeout: 8_000 }).catch(() => {})
+    }
+    await page.goto('/account/marketplace-history')
+    await expect(page).toHaveURL(/marketplace-history/)
+    await expect(page.getByText(/offer|history|marketplace|pending|accepted|empty/i).first()).toBeVisible()
+  })
+
   test('store add to cart then open cart', async ({ page }) => {
     await page.goto('/store')
     await dismissWarn(page)

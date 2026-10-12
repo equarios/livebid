@@ -17,6 +17,7 @@
     "test:e2e": "playwright test --project=chromium",
     "test:e2e:ui": "playwright test --ui --project=chromium",
     "test:e2e:browsers": "playwright test --project=chromium --project=firefox e2e/l2-gates.spec.ts e2e/l4-security.spec.ts e2e/l2-public.spec.ts",
+    "test:e2e:webkit": "playwright test --project=webkit e2e/l2-gates.spec.ts e2e/l4-security.spec.ts",
     "verify:all": "node scripts/verify-all.mjs && playwright test --project=chromium",
     "verify:depth": "node scripts/verify-security-depth.mjs",
     "staging:check": "node scripts/staging-spa-check.mjs",

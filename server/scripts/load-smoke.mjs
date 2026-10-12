@@ -65,6 +65,13 @@ async function bidStorm() {
   }
   const cookie = [...jar.entries()].map(([k, v]) => `${k}=${v}`).join('; ')
 
+  const boot = await fetch(`${BASE}/api/commerce/bootstrap`, { headers: { cookie } }).then((r) =>
+    r.json().catch(() => ({})),
+  )
+  const lot = (boot.lots || []).find((l) => l.id === lotId)
+  const baseAmount = Math.max(1, Number(lot?.currentPrice) || 1) + 1
+  const qty = Math.max(1, Number(lot?.moq) || 1)
+
   const results = []
   for (let r = 0; r < ROUNDS; r++) {
     const batch = Array.from({ length: Math.min(CONCURRENCY, 20) }, (_, i) =>
@@ -78,8 +85,8 @@ async function bidStorm() {
           },
           body: JSON.stringify({
             lotId,
-            amount: 1 + r + i * 0.01,
-            qty: 1,
+            amount: baseAmount + r + i * 0.01,
+            qty,
           }),
         }),
       ),

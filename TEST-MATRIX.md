@@ -65,5 +65,11 @@ Or: `npm run verify:all` (= verify + Playwright chromium).
 - `l2-desks` / `l2-gates` / `l2-actions` / `l2-account`
 - `l2-public` / `l2-staff` / `l2-i18n` / `l2-money`
 - `l4-security` — logout, retail community, admin vs retail admin URL
+- `l2-actions` includes marketplace **Offer → history**
+
+Security-depth also covers: document IDOR, marketplace offer gates, store order IDOR, duplicate register 409, payment-review staff-only, HttpOnly cookie, trailing-slash health, no tracked `.env`.
+
+Cross-browser: Chromium + Firefox (`test:e2e:browsers`) + WebKit gates (`test:e2e:webkit`).
+Load: health + bootstrap; optional `BID=1 LOT=…` bid storm.
 
 Launch day still only needs keys — see `LAUNCH-ONLY.md`.
