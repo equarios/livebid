@@ -36,10 +36,21 @@ app.use('*', async (c, next) => {
 })
 
 app.use('*', logger())
+const defaultCorsOrigins = [
+  'http://localhost:5173',
+  'http://localhost:5174',
+  'http://127.0.0.1:5173',
+  'http://127.0.0.1:5174',
+  'http://localhost:8088',
+]
+const corsOrigins = (process.env.CORS_ORIGINS || '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean)
 app.use(
   '*',
   cors({
-    origin: ['http://localhost:5173', 'http://localhost:5174', 'http://127.0.0.1:5173', 'http://127.0.0.1:5174'],
+    origin: corsOrigins.length ? corsOrigins : defaultCorsOrigins,
     credentials: true,
   }),
 )

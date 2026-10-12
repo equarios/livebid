@@ -10,7 +10,19 @@
     "dev:ui": "vite",
     "server:seed": "npm --prefix server run db:seed",
     "server:reset": "npm --prefix server run db:reset",
-    "build": "tsc -b && vite build",
+    "seo:generate": "node scripts/generate-seo.mjs",
+    "seo:prerender": "node scripts/prerender-seo.mjs",
+    "verify": "node scripts/verify-all.mjs",
+    "verify:i18n": "node scripts/verify-i18n-seo.mjs",
+    "test:e2e": "playwright test --project=chromium",
+    "test:e2e:ui": "playwright test --ui --project=chromium",
+    "test:e2e:browsers": "playwright test --project=chromium --project=firefox e2e/l2-gates.spec.ts e2e/l4-security.spec.ts e2e/l2-public.spec.ts",
+    "verify:all": "node scripts/verify-all.mjs && playwright test --project=chromium",
+    "verify:depth": "node scripts/verify-security-depth.mjs",
+    "staging:check": "node scripts/staging-spa-check.mjs",
+    "staging:up": "docker compose -f docker-compose.staging.yml up -d --build",
+    "staging:down": "docker compose -f docker-compose.staging.yml down",
+    "build": "npm run seo:generate && tsc -b && vite build && npm run seo:prerender",
     "lint": "oxlint",
     "preview": "vite preview"
   },
@@ -20,6 +32,7 @@
     "react-router-dom": "^7.18.4"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.0",
     "@types/node": "^24.13.3",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",

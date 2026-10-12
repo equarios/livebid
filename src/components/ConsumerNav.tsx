@@ -31,17 +31,19 @@ export function ConsumerNav({ onNavigate }: { onNavigate?: () => void }) {
       }}
     >
       <NavLink to="/store" end className={shopOpen ? 'active' : undefined}>
-        {settings.storeLabel || settings.copy.navStore || 'Store'}
+        {settings.storeLabel && settings.storeLabel !== 'Store'
+          ? settings.storeLabel
+          : settings.copy.navStore}
       </NavLink>
       <NavLink to="/store/cart" className={cartOpen ? 'active' : undefined}>
-        Cart
+        {settings.copy.navCart}
         {cartN > 0 ? <span className="gd-count">{cartN}</span> : null}
       </NavLink>
       <NavLink to="/store/orders" className={ordersOpen ? 'active' : undefined}>
-        Orders
+        {settings.copy.navOrders}
       </NavLink>
       <NavLink to="/support" className={supportOpen ? 'active' : undefined}>
-        Support
+        {settings.copy.navSupport}
       </NavLink>
     </nav>
   )

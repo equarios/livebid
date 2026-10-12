@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
+import { useStore } from '../store'
 
 export function HelpMenu({
   onNavigate,
@@ -13,9 +14,11 @@ export function HelpMenu({
   /** When true, force the help panel closed (e.g. notifications opened). */
   closeWhen?: boolean
 }) {
+  const { settings } = useStore()
   const location = useLocation()
   const [open, setOpen] = useState(false)
   const helpOn = ['/device-spec', '/info', '/tutorial'].includes(location.pathname)
+  const helpLabel = settings.copy.navHelp
 
   useEffect(() => {
     if (closeWhen) setOpen(false)
@@ -26,9 +29,9 @@ export function HelpMenu({
       <button
         type="button"
         className={`gd-util-btn ${helpOn || open ? 'active' : ''}`}
-        aria-label="Help"
+        aria-label={helpLabel}
         aria-expanded={open}
-        title="Help"
+        title={helpLabel}
         onClick={(e) => {
           e.stopPropagation()
           if (open) {
@@ -40,7 +43,7 @@ export function HelpMenu({
           }
         }}
       >
-        Help
+        {helpLabel}
         <span className="gd-chevron" aria-hidden>
           ▾
         </span>

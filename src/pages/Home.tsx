@@ -184,6 +184,38 @@ export function Home() {
               </p>
             ))}
           </section>
+
+          <section className="seo-cat-section is-hub-strip">
+            <div className="pub-section-head is-rail">
+              <h2>Browse by category</h2>
+              <Link className="linkish" to="/wholesale/c">
+                All categories
+              </Link>
+            </div>
+            <ul className="seo-cat-chips">
+              <li>
+                <Link to="/wholesale/c/phones">Phones</Link>
+              </li>
+              <li>
+                <Link to="/wholesale/c/tablets">Tablets</Link>
+              </li>
+              <li>
+                <Link to="/wholesale/c/laptops">Laptops</Link>
+              </li>
+              <li>
+                <Link to="/wholesale/c/consoles">Consoles</Link>
+              </li>
+              <li>
+                <Link to="/wholesale/c/phones/unlocked">Unlocked</Link>
+              </li>
+              <li>
+                <Link to="/wholesale/c/phones/refurbished">Refurbished</Link>
+              </li>
+              <li>
+                <Link to="/wholesale/c/phones/scrap">Scrap</Link>
+              </li>
+            </ul>
+          </section>
         </>
       ) : null}
 

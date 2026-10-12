@@ -1,0 +1,77 @@
+# Staging dry-run: built SPA + single API + Postgres + Redis behind nginx SPA fallback.
+#
+#   # 1) Build frontend with a throwaway SITE_URL (or localhost for local-only)
+#   $env:SITE_URL="https://staging.example.com"; npm run build
+#
+#   # 2) Start stack
+#   docker compose -f docker-compose.staging.yml up -d --build
+#
+#   # 3) Smoke deep links
+#   npm run staging:check
+#
+# Open http://localhost:8088  (API via same origin /api)
+# For real HTTPS throwaway URL: see STAGING.md (Cloudflare Tunnel).
+
+name: equarios-staging
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: equarios
+      POSTGRES_PASSWORD: equarios
+      POSTGRES_DB: equarios
+    volumes:
+      - staging_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U equarios -d equarios']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ['redis-server', '--save', '', '--appendonly', 'no']
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      PORT: '8787'
+      CARE_INLINE: '1'
+      DATABASE_URL: postgresql://equarios:equarios@postgres:5432/equarios?schema=public
+      REDIS_URL: redis://redis:6379
+      SEED_ON_BOOT: ${SEED_ON_BOOT:-1}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8088}
+    volumes:
+      - staging_uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ['api']
+
+  web:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - '8088:80'
+    volumes:
+      - ./dist:/usr/share/nginx/html:ro
+      - ./deploy/nginx-spa.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - api
+
+volumes:
+  staging_pg:
+  staging_uploads:

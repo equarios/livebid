@@ -99,12 +99,67 @@ function report(label, results) {
   )
 }
 
+async function bootstrapStorm() {
+  const ident = process.env.IDENT || 'DEMO-1001'
+  const password = process.env.PASS || 'livebid'
+  const jar = new Map()
+  const login = await fetch(`${BASE}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ ident, password }),
+  })
+  for (const c of login.headers.getSetCookie?.() || []) {
+    const [pair] = c.split(';')
+    const [k, v] = pair.split('=')
+    if (k && v) jar.set(k.trim(), v.trim())
+  }
+  if (!login.ok) {
+    console.log('bootstrap storm: login failed', login.status)
+    return []
+  }
+  const cookie = [...jar.entries()].map(([k, v]) => `${k}=${v}`).join('; ')
+  const results = []
+  const rounds = Math.min(ROUNDS, 5)
+  const conc = Math.min(CONCURRENCY, 15)
+  for (let r = 0; r < rounds; r++) {
+    const batch = Array.from({ length: conc }, () =>
+      timed(() =>
+        fetch(`${BASE}/api/commerce/bootstrap`, {
+          headers: { cookie },
+        }),
+      ),
+    )
+    results.push(...(await Promise.all(batch)))
+  }
+  return results
+}
+
 console.log(`load-smoke BASE=${BASE} CONCURRENCY=${CONCURRENCY} ROUNDS=${ROUNDS}`)
 const health = await healthStorm()
 report('health', health)
+
+const boot = await bootstrapStorm()
+if (boot.length) {
+  report('commerce/bootstrap', boot)
+  const bootOk = boot.filter((r) => r.ok).length
+  if (bootOk < boot.length * 0.95) {
+    console.error(`load-smoke FAIL: bootstrap success ${bootOk}/${boot.length} < 95%`)
+    process.exit(1)
+  }
+}
+
 if (DO_BID) {
   const bids = await bidStorm()
   if (bids.length) report('bids', bids)
 }
+
+const healthOk = health.filter((r) => r.ok).length
+if (healthOk < health.length) {
+  console.error(`load-smoke FAIL: health ${healthOk}/${health.length}`)
+  process.exit(1)
+}
+
 const metrics = await fetch(`${BASE}/api/metrics`).then((r) => r.json()).catch(() => null)
 if (metrics) console.log('\nserver metrics', JSON.stringify(metrics, null, 2))
+console.log('\nOK load-smoke')
+

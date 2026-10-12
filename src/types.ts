@@ -63,6 +63,28 @@ export type CopySettings = {
   navAccount: string
   navAdmin: string
   navSuper: string
+  navWholesale: string
+  navBuyers: string
+  navSellers: string
+  navSupport: string
+  navApply: string
+  navApplyWholesale: string
+  navOrders: string
+  navCart: string
+  navMenu: string
+  navHelp: string
+  navNotifications: string
+  navTutorial: string
+  navContact: string
+  navLanguage: string
+  searchGeneric: string
+  ariaSearch: string
+  ariaSubmitSearch: string
+  footerVerified: string
+  footerEmail: string
+  footerMobile: string
+  footerSocial: string
+  footerNav: string
   signOut: string
   signInTitle: string
   signInButton: string
@@ -378,6 +400,12 @@ export type Lot = {
   activationLocked?: boolean
   /** Market / ship-from region for international catalogs. */
   origin?: string
+  /** SEO / filter taxonomy — optional; inferred from model text when omitted. */
+  deviceClass?: string
+  /** new | used | refurbished | recycled | scrap — separate from cosmetic grade. */
+  condition?: string
+  /** ios | android | other-os */
+  osFamily?: string
 }
 
 /** Master device record. Auction lots copy specs from here; listing only needs qty and price. */

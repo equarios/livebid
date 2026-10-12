@@ -10,6 +10,13 @@ import {
 } from 'react'
 import { DEFAULT_SETTINGS, SEED_ACCOUNTS, SEED_LOTS, SUPER_USER } from './data'
 import {
+  applyDocumentLocale,
+  readStoredLocale,
+  resolveCopy,
+  writeStoredLocale,
+  type AppLocale,
+} from './i18n'
+import {
   applyDropClocks,
   ensureAuctionClocks,
   isSealedLot,
@@ -77,7 +84,12 @@ type Store = {
   listingDrops: ListingDrop[]
   inventory: InventorySku[]
   accounts: Account[]
+  /** Localized settings for UI (copy follows `locale`). */
   settings: SiteSettings
+  /** English settings source — Super Copy edits and persistence use this. */
+  settingsSource: SiteSettings
+  locale: AppLocale
+  setLocale: (locale: AppLocale) => void
   isSuperAdmin: boolean
   isStaff: boolean
   apiMode: boolean
@@ -782,6 +794,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [authReady, setAuthReady] = useState(false)
   const [emailPrefs, setEmailPrefs] = useState<EmailPrefs | null>(null)
   const [data, setData] = useState<Persisted>(loadData)
+  const [locale, setLocaleState] = useState<AppLocale>(() =>
+    typeof window !== 'undefined' ? readStoredLocale() : 'en',
+  )
   const [now, setNow] = useState(Date.now())
   const dataRef = useRef(data)
   dataRef.current = data
@@ -789,6 +804,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   userIdRef.current = user?.accountId
   const apiModeRef = useRef(false)
   apiModeRef.current = apiMode
+
+  const setLocale = useCallback((next: AppLocale) => {
+    setLocaleState(next)
+    writeStoredLocale(next)
+    applyDocumentLocale(next)
+  }, [])
+
+  useEffect(() => {
+    applyDocumentLocale(locale)
+  }, [locale])
+
+  const localizedSettings = useMemo(
+    () => ({
+      ...data.settings,
+      copy: resolveCopy(locale, data.settings.copy),
+    }),
+    [data.settings, locale],
+  )
 
   const pushServerNotice = useCallback(
     async (input: {
@@ -2667,7 +2700,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       listingDrops: data.listingDrops || [],
       inventory: data.inventory || [],
       accounts: data.accounts,
-      settings: data.settings,
+      settings: localizedSettings,
+      settingsSource: data.settings,
+      locale,
+      setLocale,
       isSuperAdmin: user?.role === 'superadmin',
       isStaff: user?.role === 'admin' || user?.role === 'superadmin',
       login,
@@ -2727,6 +2763,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       authReady,
       user,
       data,
+      localizedSettings,
+      locale,
+      setLocale,
       emailPrefs,
       login,
       register,

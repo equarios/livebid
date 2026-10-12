@@ -90,15 +90,15 @@ export function SiteFooter() {
       <div className="site-footer-bar">
         <div className="site-footer-meta is-labeled">
           <span title={verifiedFull}>
-            <Label>Verified</Label> {verifiedShort}
+            <Label>{settings.copy.footerVerified}</Label> {verifiedShort}
           </span>
           <Dot />
           <a href={`mailto:${c.emailEnquiry}`}>
-            <Label>Email</Label> {c.emailEnquiry}
+            <Label>{settings.copy.footerEmail}</Label> {c.emailEnquiry}
           </a>
           <Dot />
           <a href={`tel:${c.phone}`}>
-            <Label>Mobile</Label> {c.phoneDisplay}
+            <Label>{settings.copy.footerMobile}</Label> {c.phoneDisplay}
           </a>
           {waHref ? (
             <>
@@ -119,7 +119,7 @@ export function SiteFooter() {
         </div>
 
         <div className="site-footer-end">
-          <div className="site-footer-social" aria-label="Social">
+          <div className="site-footer-social" aria-label={settings.copy.footerSocial}>
             {SOCIALS.map((s) => {
               const href = s.key === 'whatsapp' ? waHref : c.social[s.key]
               if (!href) return null
@@ -141,23 +141,28 @@ export function SiteFooter() {
         </div>
       </div>
       {/* Public map only — shop, wholesale, help, account. No staff desks. */}
-      <nav className="site-footer-nav" aria-label="Footer">
+      <nav className="site-footer-nav" aria-label={settings.copy.footerNav}>
         {settings.showStore !== false ? (
-          <Link to="/store">{settings.storeLabel || 'Store'}</Link>
+          <Link to="/store">
+            {settings.storeLabel && settings.storeLabel !== 'Store'
+              ? settings.storeLabel
+              : settings.copy.navStore}
+          </Link>
         ) : null}
-        <Link to="/wholesale">Wholesale</Link>
-        <Link to="/buyers">For buyers</Link>
-        <Link to="/sellers">For sellers</Link>
+        <Link to="/wholesale">{settings.copy.navWholesale}</Link>
+        <Link to="/wholesale/c">Categories</Link>
+        <Link to="/buyers">{settings.copy.navBuyers}</Link>
+        <Link to="/sellers">{settings.copy.navSellers}</Link>
         <span className="site-footer-nav-sep" aria-hidden />
-        <Link to="/support">Support</Link>
-        <Link to="/tutorial">How it works</Link>
+        <Link to="/support">{settings.copy.navSupport}</Link>
+        <Link to="/tutorial">{settings.copy.navTutorial}</Link>
         <span className="site-footer-nav-sep" aria-hidden />
         {user ? (
-          <Link to="/account">My Page</Link>
+          <Link to="/account">{settings.copy.navAccount}</Link>
         ) : (
           <>
-            <Link to="/login">Sign in</Link>
-            {canRegister ? <Link to="/register">Apply</Link> : null}
+            <Link to="/login">{settings.copy.signInButton}</Link>
+            {canRegister ? <Link to="/register">{settings.copy.navApply}</Link> : null}
           </>
         )}
       </nav>

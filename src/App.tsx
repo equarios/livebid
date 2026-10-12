@@ -2,6 +2,7 @@ import { lazy, Suspense, type ComponentType, type ReactNode } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { FloatingContact } from './components/FloatingContact'
 import { Layout } from './components/Layout'
+import { useLangQuerySync } from './components/SeoHead'
 import { ThemeApplier } from './components/ThemeApplier'
 import { canUseWholesaleDesk, publicHome, wholesaleHome } from './lib/channelAccess'
 import { useStore } from './store'
@@ -47,6 +48,7 @@ const WholesaleApply = lazyNamed(() => import('./pages/WholesaleApply'), 'Wholes
 const BuyersPage = lazyNamed(() => import('./pages/PublicInfo'), 'BuyersPage')
 const SellersPage = lazyNamed(() => import('./pages/PublicInfo'), 'SellersPage')
 const SupportPage = lazyNamed(() => import('./pages/PublicInfo'), 'SupportPage')
+const WholesaleCategoryPage = lazyNamed(() => import('./pages/WholesaleCategory'), 'WholesaleCategoryPage')
 const DeviceSpec = lazyNamed(() => import('./pages/InfoPages'), 'DeviceSpec')
 const InfoPage = lazyNamed(() => import('./pages/InfoPages'), 'InfoPage')
 const Tutorial = lazyNamed(() => import('./pages/InfoPages'), 'Tutorial')
@@ -167,15 +169,25 @@ function AdminGuard() {
   return <Admin />
 }
 
+function LangQueryBridge() {
+  useLangQuerySync()
+  return null
+}
+
 export default function App() {
   return (
     <>
       <ThemeApplier />
+      <LangQueryBridge />
       <FloatingContact />
       <Suspense fallback={pageFallback}>
         <Routes>
           <Route path="/" element={<RootPage />} />
           <Route path="/wholesale" element={<WholesaleHubPage />} />
+          <Route path="/wholesale/c" element={<WholesaleCategoryPage />} />
+          <Route path="/wholesale/c/:a" element={<WholesaleCategoryPage />} />
+          <Route path="/wholesale/c/:a/:b" element={<WholesaleCategoryPage />} />
+          <Route path="/wholesale/c/:a/:b/:c" element={<WholesaleCategoryPage />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/buyers" element={<BuyersPage />} />

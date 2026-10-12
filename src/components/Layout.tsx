@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { BrandLogo } from './BrandLogo'
 import { HelpMenu } from './HelpMenu'
+import { LanguageMenu } from './LanguageMenu'
 import { LotPreviewProvider } from './LotPreview'
 import { MeMenu } from './MeMenu'
 import { SiteFooter } from './SiteFooter'
@@ -93,9 +94,9 @@ export function Layout() {
                   if (onShopList) goSearch(next, true)
                 }}
                 placeholder={placeholder}
-                aria-label="Search"
+                aria-label={settings.copy.ariaSearch}
               />
-              <button type="submit" aria-label="Submit search">
+              <button type="submit" aria-label={settings.copy.ariaSubmitSearch}>
                 ⌕
               </button>
             </form>
@@ -103,10 +104,10 @@ export function Layout() {
               type="button"
               className="nav-toggle"
               aria-expanded={navOpen}
-              aria-label="Menu"
+              aria-label={settings.copy.navMenu}
               onClick={() => setNavOpen((v) => !v)}
             >
-              Menu
+              {settings.copy.navMenu}
             </button>
             <div className={navOpen ? 'is-open site-nav-wrap' : 'site-nav-wrap'}>
               <SiteNav onNavigate={() => setNavOpen(false)} />
@@ -124,7 +125,7 @@ export function Layout() {
                 <button
                   type="button"
                   className="notice-bell"
-                  aria-label="Notifications"
+                  aria-label={settings.copy.navNotifications}
                   onClick={() => {
                     setNotesOpen((v) => !v)
                     setMenuOpen(false)
@@ -136,7 +137,7 @@ export function Layout() {
                 </button>
                 {notesOpen ? (
                   <div className="notice-panel">
-                    <strong>Notifications</strong>
+                    <strong>{settings.copy.navNotifications}</strong>
                     {myNotices.length ? (
                       myNotices.map((n) => (
                         <button
@@ -153,7 +154,7 @@ export function Layout() {
                         </button>
                       ))
                     ) : (
-                      <p className="muted tiny">No notifications yet.</p>
+                      <p className="muted tiny">—</p>
                     )}
                   </div>
                 ) : null}
@@ -166,6 +167,13 @@ export function Layout() {
                   setNotesOpen(false)
                 }}
                 onClose={() => setMenuOpen(false)}
+              />
+              <LanguageMenu
+                closeWhen={notesOpen || menuOpen}
+                onOpen={() => {
+                  setNotesOpen(false)
+                  setMenuOpen(false)
+                }}
               />
             </div>
           </div>

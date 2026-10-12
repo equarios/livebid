@@ -1,0 +1,19 @@
+---
+description: Remind Earthvi of worldwide publish + launch-only keys checklists when going live
+alwaysApply: true
+---
+
+# Publish / launch reminder (Equarios / LiveBid)
+
+When the user mentions **publish**, **launch**, **go live**, **production deploy**, **go online**, or **release the app**, you MUST:
+
+1. Remind them to open **`LAUNCH-ONLY.md`** (keys, API, mail, Brevo, prod DB/Redis/S3, `SITE_URL`) and **`PUBLISH-CHECKLIST.md`** (search engines + B2B discovery).
+2. Summarize the critical path in a few bullets:
+   - Production secrets only (not new features) — mail, storage, DB, Redis, optional Brevo
+   - `SITE_URL` → `seo:generate` → `build` → HTTPS + SPA fallback
+   - Submit **sitemap.xml** to **Google, Bing, Yandex, Baidu, Naver** (not Google only)
+   - Seed **B2B directories, social/brand pages, trade groups**
+   - Confirm `/wholesale/c` + run `npm run verify` / `npm run test:e2e` on staging if possible
+3. Remind: SEO category tagging is **automatic on upload**; 22 languages and Playwright L2 are already built.
+
+Do not nag every turn — only when publish/launch/deploy-to-prod intent is clear.

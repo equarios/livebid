@@ -61,13 +61,15 @@ export function FloatingContact() {
   return (
     <div ref={rootRef} className={`float-contact ${open ? 'is-open' : ''}`}>
       {open ? (
-        <div className="float-contact-panel" role="dialog" aria-label="Contact us">
+        <div className="float-contact-panel" role="dialog" aria-label={settings.copy.navContact}>
           <div className="float-contact-head">
-            <strong>Contact {brand}</strong>
+            <strong>
+              {settings.copy.navContact} · {brand}
+            </strong>
             <button
               type="button"
               className="float-contact-x"
-              aria-label="Close"
+              aria-label={settings.copy.btnCancel}
               onClick={() => setOpen(false)}
             >
               ×
@@ -121,7 +123,7 @@ export function FloatingContact() {
             to="/support#enquiry"
             onClick={() => setOpen(false)}
           >
-            Support &amp; help centre
+            {settings.copy.navSupport}
           </Link>
         </div>
       ) : null}
@@ -129,10 +131,10 @@ export function FloatingContact() {
         type="button"
         className="float-contact-btn"
         aria-expanded={open}
-        aria-label={open ? 'Close contact' : 'Contact us'}
+        aria-label={open ? settings.copy.btnCancel : settings.copy.navContact}
         onClick={() => setOpen((v) => !v)}
       >
-        {open ? 'Close' : 'Contact Us'}
+        {open ? settings.copy.btnCancel : settings.copy.navContact}
       </button>
     </div>
   )

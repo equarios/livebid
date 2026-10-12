@@ -49,7 +49,7 @@ export function SiteNav({ onNavigate }: { onNavigate?: () => void }) {
       {deskOk ? (
         <>
           <NavLink to="/wholesale" className={wholesaleOpen ? 'active' : undefined}>
-            Wholesale
+            {settings.copy.navWholesale}
           </NavLink>
           {settings.showAuctions ? (
             <NavLink to="/auctions" className={auctionsOpen ? 'active' : undefined}>
@@ -58,13 +58,23 @@ export function SiteNav({ onNavigate }: { onNavigate?: () => void }) {
             </NavLink>
           ) : null}
           {settings.showMarketplace ? (
-            <NavLink to="/marketplace">{settings.marketplaceLabel}</NavLink>
+            <NavLink to="/marketplace">
+              {settings.marketplaceLabel && settings.marketplaceLabel !== 'Marketplace'
+                ? settings.marketplaceLabel
+                : settings.copy.marketTitle}
+            </NavLink>
           ) : null}
         </>
       ) : (
         <>
-          {settings.showStore ? <NavLink to="/">Store</NavLink> : null}
-          <NavLink to="/account/wholesale">Apply wholesale</NavLink>
+          {settings.showStore ? (
+            <NavLink to="/">
+              {settings.storeLabel && settings.storeLabel !== 'Store'
+                ? settings.storeLabel
+                : settings.copy.navStore}
+            </NavLink>
+          ) : null}
+          <NavLink to="/account/wholesale">{settings.copy.navApplyWholesale}</NavLink>
         </>
       )}
       <NavLink

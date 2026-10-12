@@ -3,6 +3,7 @@ import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { BrandLogo } from './BrandLogo'
 import { ConsumerNav } from './ConsumerNav'
 import { HelpMenu } from './HelpMenu'
+import { LanguageMenu } from './LanguageMenu'
 import { MeMenu } from './MeMenu'
 import { SiteFooter } from './SiteFooter'
 import { SiteNav } from './SiteNav'
@@ -21,9 +22,10 @@ function GuestWholesaleNav({ onNavigate }: { onNavigate?: () => void }) {
         onNavigate?.()
       }}
     >
-      <NavLink to="/buyers">For Buyers</NavLink>
-      {settings.features.register ? <NavLink to="/register">Apply</NavLink> : null}
-      <NavLink to="/support">Support</NavLink>
+      <NavLink to="/buyers">{settings.copy.navBuyers}</NavLink>
+      <NavLink to="/wholesale/c">Categories</NavLink>
+      {settings.features.register ? <NavLink to="/register">{settings.copy.navApply}</NavLink> : null}
+      <NavLink to="/support">{settings.copy.navSupport}</NavLink>
     </nav>
   )
 }
@@ -59,8 +61,8 @@ export function PublicShell({
 
   /** Same wording family as the app header — only the channel word changes. */
   const placeholder = consumer
-    ? 'Search model, SKU, maker…'
-    : settings.copy.searchAuctions || 'Search model, SKU, maker, lot ID'
+    ? settings.copy.searchGeneric
+    : settings.copy.searchAuctions || settings.copy.searchGeneric
 
   function onSearch(e: FormEvent) {
     e.preventDefault()
@@ -96,9 +98,9 @@ export function PublicShell({
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder={placeholder}
-              aria-label="Search"
+              aria-label={settings.copy.ariaSearch}
             />
-            <button type="submit" aria-label="Submit search">
+            <button type="submit" aria-label={settings.copy.ariaSubmitSearch}>
               ⌕
             </button>
           </form>
@@ -106,10 +108,10 @@ export function PublicShell({
             type="button"
             className="nav-toggle"
             aria-expanded={navOpen}
-            aria-label="Menu"
+            aria-label={settings.copy.navMenu}
             onClick={() => setNavOpen((v) => !v)}
           >
-            Menu
+            {settings.copy.navMenu}
           </button>
           <div className={`pub-links ${navOpen ? 'is-open' : ''}`}>
             {consumer ? (
@@ -131,6 +133,10 @@ export function PublicShell({
               onOpen={() => setPanel('me')}
               onClose={() => setPanel((p) => (p === 'me' ? null : p))}
               closeWhen={panel === 'help'}
+            />
+            <LanguageMenu
+              onOpen={() => setPanel(null)}
+              closeWhen={panel === 'help' || panel === 'me'}
             />
           </div>
         </div>
