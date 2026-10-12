@@ -546,6 +546,8 @@ label { display: grid; gap: 6px; font-size: 13px; color: var(--muted); margin-bo
   border-bottom: 1px solid var(--line);
   backdrop-filter: blur(10px);
   box-shadow: var(--shadow-sm);
+  /* Notch / Dynamic Island — paired with viewport-fit=cover */
+  padding-top: env(safe-area-inset-top, 0px);
 }
 .topbar {
   display: flex; align-items: center; gap: 12px;
@@ -802,9 +804,9 @@ label { display: grid; gap: 6px; font-size: 13px; color: var(--muted); margin-bo
 /* Floating Contact Us (GoDaddy-style — fixed bottom-right) */
 .float-contact {
   position: fixed;
-  right: 20px;
+  right: max(20px, calc(20px + env(safe-area-inset-right, 0px)));
   /* Clear footer bar + social + nav + copyright on the right. */
-  bottom: 128px;
+  bottom: max(128px, calc(128px + env(safe-area-inset-bottom, 0px)));
   z-index: 50;
   display: flex;
   flex-direction: column;
@@ -960,8 +962,8 @@ label { display: grid; gap: 6px; font-size: 13px; color: var(--muted); margin-bo
 
 @media (max-width: 720px) {
   .float-contact {
-    right: 14px;
-    bottom: 118px;
+    right: max(14px, calc(14px + env(safe-area-inset-right, 0px)));
+    bottom: max(118px, calc(118px + env(safe-area-inset-bottom, 0px)));
   }
   .float-contact-btn {
     padding: 11px 16px;
@@ -6273,7 +6275,16 @@ html[dir='rtl'] .lang-menu-panel button {
 @media (max-width: 900px) {
   .how-strip ol { grid-template-columns: 1fr 1fr; }
   .page { padding: 14px 12px 88px; }
-  input, select, textarea { font-size: 16px; }
+  /* Beat more-specific form rules (e.g. .bstock-auth-main input { font: inherit }) so iOS won’t zoom on focus */
+  input,
+  select,
+  textarea,
+  .bstock-auth-main input,
+  .bstock-auth-main select,
+  .bstock-auth-main textarea,
+  .app-search input {
+    font-size: 16px;
+  }
   .nav-toggle {
     display: inline-flex;
     min-height: 32px;

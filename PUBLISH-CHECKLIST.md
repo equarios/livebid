@@ -4,7 +4,7 @@
 
 Goal: appear in **all major search engines and discovery channels**, not Google alone. Category URLs under `/wholesale/c/...` + `sitemap.xml` + prerender are the technical base; this checklist is what to do on publish day.
 
-**Launch day is mostly keys/API/hosting** — see `LAUNCH-ONLY.md` (mail, Brevo, prod DB/Redis/S3, `SITE_URL`). Features/tests are already in the repo.
+**Launch day is mostly keys/API/hosting** — see `LAUNCH-ONLY.md` (mail, Brevo, prod DB/Redis/S3, `SITE_URL`). Features/tests are already in the repo. Before go-live, prefer `npm run verify` + `npm run test:e2e` + `npm run test:e2e:mobile` green (or `npm run verify:all`).
 
 ---
 

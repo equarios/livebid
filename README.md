@@ -38,7 +38,8 @@ Header language switcher: 22 locales (see `src/i18n/locales.ts`). Preference in 
 ```bash
 npm run verify          # health + security + full-smoke + money + i18n/SEO + tsc
 npm run test:e2e        # L2 Playwright (desks + access gates) — Vite + API must be up
-npm run verify:all      # verify + e2e
+npm run test:e2e:mobile # Phone + tablet smoke (Pixel / iPhone / iPad)
+npm run verify:all      # verify + desktop e2e + mobile smoke
 ```
 
 See [`TEST-MATRIX.md`](./TEST-MATRIX.md) for the full layered plan (API → desks → SEO → security → scale).

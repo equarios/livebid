@@ -63,4 +63,5 @@ Real prod secrets — see `LAUNCH-ONLY.md`: Postgres/Redis/S3, mail, Brevo, fina
 ```powershell
 $env:PLAYWRIGHT_BASE_URL="http://localhost:8088"
 npm run test:e2e
+npm run test:e2e:mobile   # Pixel / iPhone / iPad smoke
 ```

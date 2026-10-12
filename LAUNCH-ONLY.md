@@ -31,6 +31,7 @@ npm run build
 # deploy dist/ + run API/worker against prod DB/Redis/S3
 npm run verify          # against staging if available
 npm run test:e2e        # optional smoke on staging URL: PLAYWRIGHT_BASE_URL=...
+npm run test:e2e:mobile # phone + tablet overflow / menu (same PLAYWRIGHT_BASE_URL)
 ```
 
 ## Then discovery (not Google only)
@@ -45,5 +46,5 @@ Optional throwaway HTTPS: Cloudflare Tunnel (`….trycloudflare.com`).
 ## Do NOT wait for launch to finish
 
 - Languages / SEO taxonomy / category pages — **already done**
-- `npm run verify` + `npm run test:e2e` — **run anytime locally**
+- `npm run verify` + `npm run test:e2e` + `npm run test:e2e:mobile` — **run anytime locally**
 - Filling real lots — can start before or after DNS
