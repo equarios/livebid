@@ -1217,7 +1217,10 @@ th, td { text-align: left; padding: 12px; border-bottom: 1px solid var(--line); 
   font-weight: 750;
   color: var(--navy);
 }
-.auction-card.has-bid { outline: 1px solid #b7ddd4; }
+.auction-card.has-bid {
+  outline: none;
+  box-shadow: var(--shadow-sm), 0 0 0 1px #b7ddd4;
+}
 .auction-table td { padding: 12px 12px; vertical-align: middle; white-space: nowrap; }
 .auction-table .mono {
   font-variant-numeric: tabular-nums;
@@ -3262,7 +3265,7 @@ button.auction-close-count {
   display: grid;
   gap: 7px;
   padding: 9px 11px;
-  border-radius: 10px;
+  border-radius: var(--radius);
   border: 1px solid var(--line);
   background: #f6f9fb;
   min-width: 0;
@@ -5902,13 +5905,15 @@ html[dir='rtl'] .lang-menu-panel button {
 .auction-card {
   border: 1px solid var(--line);
   background: #fff;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
   padding: 14px;
   display: grid;
   gap: 12px;
 }
 .auction-card .item-title,
 .auction-card .item-name { font-size: 16px; font-weight: 800; }
-.auction-card .item-thumb { width: 56px; height: 56px; }
+.auction-card .item-thumb { width: 56px; height: 56px; border-radius: var(--radius); }
 .auction-card-meta, .auction-card-prices {
   display: flex;
   flex-wrap: wrap;
@@ -5919,11 +5924,16 @@ html[dir='rtl'] .lang-menu-panel button {
 .auction-card .item-sub { font-size: 13px; }
 .auction-card .item-chip { font-size: 12px; }
 .auction-card-prices strong { font-size: 16px; }
+.auction-card .win-panel {
+  border-radius: var(--radius);
+}
 
 .inv-cards { display: none; gap: 12px; margin-top: 12px; }
 .inv-card {
   border: 1px solid var(--line);
   background: #fff;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
   padding: 12px;
   display: grid;
   gap: 8px;
@@ -6044,7 +6054,8 @@ html[dir='rtl'] .lang-menu-panel button {
 }
 .auctions-page .auction-desk.is-scrollaway,
 .market-page .auction-desk.is-scrollaway {
-  border-radius: var(--radius-lg);
+  /* Match lot cards / type heads — same workbench radius token */
+  border-radius: var(--radius);
   padding: 10px 12px;
   margin-bottom: 12px;
   background: #fff;
