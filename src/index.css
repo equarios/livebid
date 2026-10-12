@@ -548,6 +548,12 @@ label { display: grid; gap: 6px; font-size: 13px; color: var(--muted); margin-bo
   box-shadow: var(--shadow-sm);
   /* Notch / Dynamic Island — paired with viewport-fit=cover */
   padding-top: env(safe-area-inset-top, 0px);
+  /* Open Menu / dropdowns must stack above sticky desks + warn toast */
+  overflow: visible;
+}
+.site-nav-wrap.is-open {
+  position: relative;
+  z-index: 70;
 }
 .topbar {
   display: flex; align-items: center; gap: 12px;
@@ -971,8 +977,8 @@ label { display: grid; gap: 6px; font-size: 13px; color: var(--muted); margin-bo
   }
 }
 .notice-panel {
-  position: absolute; right: 0; top: calc(100% + 6px); z-index: 22;
-  width: 320px; max-height: 360px; overflow: auto;
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 60;
+  width: min(320px, calc(100vw - 16px)); max-height: 360px; overflow: auto;
   background: #fff; color: var(--ink); border: 1px solid var(--line);
   border-radius: var(--radius); padding: 10px; box-shadow: var(--shadow);
   display: grid; gap: 6px; text-align: left;
@@ -3877,8 +3883,8 @@ html[dir='rtl'] .lang-menu-panel button {
 
 .help-menu { position: relative; display: inline-flex; }
 .help-menu-panel {
-  position: absolute; right: 0; top: calc(100% + 6px); z-index: 22;
-  background: #fff; min-width: 168px;
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 60;
+  background: #fff; min-width: 168px; max-width: min(280px, calc(100vw - 16px));
   border: 1px solid var(--line); border-radius: var(--radius); padding: 8px;
   box-shadow: var(--shadow);
   display: grid; gap: 2px;
@@ -6315,18 +6321,31 @@ html[dir='rtl'] .lang-menu-panel button {
     align-items: stretch;
     width: 100%;
   }
-  .site-nav a, .pub-links a, .pub-btn, .gd-util-btn, .gd-util-link, .gd-cta {
+  /* Full-width tap targets only inside the open Menu / pub drawer — not topbar Help/Account. */
+  .site-nav a,
+  .pub-links a,
+  .pub-links .pub-btn,
+  .pub-links .gd-util-btn,
+  .pub-links .gd-util-link,
+  .pub-links .gd-cta {
     min-height: 44px;
     width: 100%;
     justify-content: flex-start;
   }
   .pub-links .gd-util,
-  .pub-links .gd-auth-cluster,
-  .topbar-user {
+  .pub-links .gd-auth-cluster {
     margin-left: 0;
     padding-left: 0;
     border-left: 0;
     width: 100%;
+  }
+  /* Keep Help / Notifications / Account on the right so dropdowns (right:0) stay on-screen. */
+  .topbar-user {
+    margin-left: auto;
+    width: auto;
+    max-width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-end;
   }
   .gd-auth-cluster {
     flex-direction: column;
@@ -6335,6 +6354,18 @@ html[dir='rtl'] .lang-menu-panel button {
   }
   .gd-cta { justify-content: center; }
   .pub-links .help-menu { width: auto; }
+  /* Pin header dropdowns to the viewport so they never open off-screen on phones. */
+  .topbar-user .help-menu-panel,
+  .topbar-user .me-menu-panel,
+  .topbar-user .notice-panel,
+  .topbar-user .lang-menu-panel {
+    position: fixed;
+    top: calc(var(--app-header-h, 64px) + 6px);
+    right: max(8px, env(safe-area-inset-right, 0px));
+    left: auto;
+    width: min(320px, calc(100vw - 16px));
+    max-width: calc(100vw - 16px);
+  }
   .pub-links .help-menu-panel {
     right: 0;
     left: auto;

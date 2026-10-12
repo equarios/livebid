@@ -117,7 +117,7 @@ export function PublicShell({
             {consumer ? (
               <ConsumerNav onNavigate={() => setNavOpen(false)} />
             ) : deskOk ? (
-              <SiteNav onNavigate={() => setNavOpen(false)} />
+              <SiteNav open={navOpen} onNavigate={() => setNavOpen(false)} />
             ) : (
               <GuestWholesaleNav onNavigate={() => setNavOpen(false)} />
             )}

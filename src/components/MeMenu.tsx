@@ -27,7 +27,7 @@ export function MeMenu({
   onClose?: () => void
   closeWhen?: boolean
 }) {
-  const { user, settings, logout, isStaff } = useStore()
+  const { user, settings, logout, isStaff, isSuperAdmin } = useStore()
   const location = useLocation()
   const [open, setOpen] = useState(false)
   const meOn =
@@ -130,6 +130,16 @@ export function MeMenu({
           >
             {settings.copy.signOut || 'Sign out'}
           </button>
+          {isStaff ? (
+            <NavLink to="/admin" onClick={close}>
+              {settings.copy.navAdmin}
+            </NavLink>
+          ) : null}
+          {isSuperAdmin ? (
+            <NavLink to="/super" onClick={close}>
+              {settings.copy.navSuper}
+            </NavLink>
+          ) : null}
           {isStaff && settings.showStore && mode !== 'consumer' ? (
             <NavLink to="/" className="me-menu-switch" onClick={close}>
               Consumer store

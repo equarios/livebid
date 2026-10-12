@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { useStore } from '../store'
 
@@ -17,6 +17,7 @@ export function HelpMenu({
   const { settings } = useStore()
   const location = useLocation()
   const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
   const helpOn = ['/device-spec', '/info', '/tutorial'].includes(location.pathname)
   const helpLabel = settings.copy.navHelp
 
@@ -24,8 +25,20 @@ export function HelpMenu({
     if (closeWhen) setOpen(false)
   }, [closeWhen])
 
+  useEffect(() => {
+    if (!open) return
+    function onDoc(e: MouseEvent) {
+      if (!rootRef.current?.contains(e.target as Node)) {
+        setOpen(false)
+        onClose?.()
+      }
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [open, onClose])
+
   return (
-    <div className={`help-menu gd-util ${open ? 'open' : ''}`}>
+    <div className={`help-menu gd-util ${open ? 'open' : ''}`} ref={rootRef}>
       <button
         type="button"
         className={`gd-util-btn ${helpOn || open ? 'active' : ''}`}

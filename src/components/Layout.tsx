@@ -110,7 +110,8 @@ export function Layout() {
               {settings.copy.navMenu}
             </button>
             <div className={navOpen ? 'is-open site-nav-wrap' : 'site-nav-wrap'}>
-              <SiteNav onNavigate={() => setNavOpen(false)} />
+              {/* Pass open state onto <nav> too — mobile CSS hides `.topbar nav` unless `.is-open`. */}
+              <SiteNav open={navOpen} onNavigate={() => setNavOpen(false)} />
             </div>
             <div className="topbar-user">
               <HelpMenu

@@ -3,7 +3,14 @@ import { canUseWholesaleDesk } from '../lib/channelAccess'
 import { useNow, useStore } from '../store'
 
 /** App shell nav — wholesale desk when approved; retail members see store + My Page. */
-export function SiteNav({ onNavigate }: { onNavigate?: () => void }) {
+export function SiteNav({
+  onNavigate,
+  open = false,
+}: {
+  onNavigate?: () => void
+  /** When true, adds `.is-open` so narrow-viewport CSS un-hides this nav. */
+  open?: boolean
+}) {
   const {
     lots,
     invoices,
@@ -41,7 +48,7 @@ export function SiteNav({ onNavigate }: { onNavigate?: () => void }) {
 
   return (
     <nav
-      className="site-nav"
+      className={open ? 'site-nav is-open' : 'site-nav'}
       onClick={() => {
         onNavigate?.()
       }}

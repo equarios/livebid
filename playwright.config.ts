@@ -3,7 +3,7 @@ import { defineConfig, devices } from '@playwright/test'
 const baseURL = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:5173'
 
 const desktopIgnore = [/mobile-smoke\.spec\.ts/]
-const mobileMatch = /mobile-smoke\.spec\.ts/
+const mobileMatch = /mobile-smoke\.spec\.ts|header-chrome\.spec\.ts/
 
 export default defineConfig({
   testDir: './e2e',
