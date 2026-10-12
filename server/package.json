@@ -9,6 +9,8 @@
     "start": "tsx src/index.ts",
     "worker:start": "tsx src/worker.ts",
     "load:smoke": "node scripts/load-smoke.mjs",
+    "smoke": "node scripts/full-smoke.mjs",
+    "smoke:money": "node scripts/money-path-smoke.mjs",
     "ha:up": "docker compose -f ../docker-compose.ha.yml up -d --build",
     "ha:down": "docker compose -f ../docker-compose.ha.yml down",
     "ha:logs": "docker compose -f ../docker-compose.ha.yml logs -f --tail=80",
@@ -22,6 +24,7 @@
     "@hono/node-server": "^1.14.4",
     "@prisma/client": "^6.16.2",
     "bcryptjs": "^3.0.2",
+    "dotenv": "^16.6.1",
     "hono": "^4.9.8",
     "redis": "^6.3.0",
     "sharp": "^0.35.5",
@@ -35,5 +38,11 @@
     "prisma": "^6.16.2",
     "tsx": "^4.20.5",
     "typescript": "~6.0.2"
+  },
+  "allowScripts": {
+    "@prisma/client@6.19.3": true,
+    "@prisma/engines@6.19.3": true,
+    "prisma@6.19.3": true,
+    "esbuild@0.28.2": true
   }
 }

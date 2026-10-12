@@ -5,7 +5,7 @@ import { prisma } from '../db'
 import { mapNotice } from '../map'
 import { DEFAULT_EMAIL_PREFS, notify, parseEmailPrefs, type NoticeKind } from '../notify'
 
-export const noticeRoutes = new Hono<AuthedEnv>()
+export const noticeRoutes = new Hono<AuthedEnv>({ strict: false })
 
 noticeRoutes.get('/', requireUser, async (c) => {
   const user = c.get('user')

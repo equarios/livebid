@@ -9,6 +9,7 @@
  *   CARE_INLINE=0 npm start
  *   npm run worker:start
  */
+import './loadEnv'
 import { startCareLoop } from './careLoop'
 
 console.log('[worker] equarios care worker starting')

@@ -5,6 +5,9 @@
 # Postgres: set schema provider to postgresql + DATABASE_URL below
 # Redis:    REDIS_URL=redis://localhost:6379
 # MinIO:    S3_* vars below (S3-compatible CDN origin)
+#
+# Note: upstream minio/minio and quay.io/minio/* no longer allow anonymous pulls.
+# Silo is a MinIO-compatible fork that preserves the S3 API and MINIO_* env vars.
 
 services:
   postgres:
@@ -37,7 +40,7 @@ services:
       retries: 10
 
   minio:
-    image: minio/minio:latest
+    image: pgsty/silo:RELEASE.2026-09-16T00-00-00Z
     restart: unless-stopped
     command: ['server', '/data', '--console-address', ':9001']
     ports:
@@ -55,17 +58,21 @@ services:
       retries: 6
       start_period: 15s
 
-  # One-shot bucket create for MinIO
+  # One-shot bucket create (aws-cli — upstream minio/mc is no longer anonymously pullable)
   minio-init:
-    image: minio/mc:latest
+    image: amazon/aws-cli:2.27.25
     depends_on:
       - minio
+    environment:
+      AWS_ACCESS_KEY_ID: equarios
+      AWS_SECRET_ACCESS_KEY: equariossecret
+      AWS_DEFAULT_REGION: us-east-1
     entrypoint: >
       /bin/sh -c "
-      sleep 3;
-      mc alias set local http://minio:9000 equarios equariossecret;
-      mc mb -p local/equarios || true;
-      mc anonymous set download local/equarios || true;
+      sleep 5;
+      aws --endpoint-url http://minio:9000 s3 mb s3://equarios || true;
+      printf '%s' '{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":{\"AWS\":[\"*\"]},\"Action\":[\"s3:GetObject\"],\"Resource\":[\"arn:aws:s3:::equarios/*\"]}]}' > /tmp/equarios-public.json;
+      aws --endpoint-url http://minio:9000 s3api put-bucket-policy --bucket equarios --policy file:///tmp/equarios-public.json || true;
       exit 0;
       "
 

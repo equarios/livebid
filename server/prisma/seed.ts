@@ -2,6 +2,7 @@
  * Seeds demo accounts + a slice of catalog lots for local full-stack testing.
  * Run: npm run db:seed (from server/)
  */
+import '../src/loadEnv'
 import { PrismaClient } from '@prisma/client'
 import { createHash, randomBytes } from 'node:crypto'
 import { createRequire } from 'node:module'

@@ -11,7 +11,12 @@ export type PayReview = {
 export type InvoiceLike = {
   status: string
   issuedAt?: number
+  accountId?: string
+  trackingNo?: string
+  receiptName?: string
   receiptData?: string
+  paidDeclaredAt?: number
+  opened?: boolean
   issueAdmin?: PayReview
   issueSuper?: PayReview
   adminReview?: PayReview

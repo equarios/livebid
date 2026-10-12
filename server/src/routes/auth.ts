@@ -344,7 +344,7 @@ authRoutes.get('/accounts', requireUser, requireStaffGate, async (c) => {
 })
 
 authRoutes.patch('/accounts/:id', requireUser, requireStaffGate, async (c) => {
-  const id = c.req.param('id').toUpperCase()
+  const id = (c.req.param('id') ?? '').toUpperCase()
   const body = z
     .object({
       status: z.enum(['pending', 'active', 'disabled']).optional(),

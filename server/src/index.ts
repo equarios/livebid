@@ -1,3 +1,4 @@
+import './loadEnv'
 import { serve } from '@hono/node-server'
 import { serveStatic } from '@hono/node-server/serve-static'
 import type { Server as HttpServer } from 'node:http'
@@ -21,7 +22,18 @@ import { metricsPrometheus, metricsSnapshot, trackRequest } from './metrics'
 import { storageBackend } from './objectStorage'
 import { attachRealtime, realtimeClientCount } from './realtime'
 
-const app = new Hono()
+const app = new Hono({ strict: false })
+
+/** Nested routers ignore parent `strict`; normalize so `/api/foo/` matches `/api/foo`. */
+app.use('*', async (c, next) => {
+  const path = c.req.path
+  if (path.length > 1 && path.endsWith('/')) {
+    const url = new URL(c.req.url)
+    url.pathname = path.replace(/\/+$/, '') || '/'
+    return app.fetch(new Request(url, c.req.raw), c.env, c.executionCtx)
+  }
+  await next()
+})
 
 app.use('*', logger())
 app.use(

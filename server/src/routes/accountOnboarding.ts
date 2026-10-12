@@ -207,7 +207,7 @@ accountOnboardingRoutes.get('/staff/wholesale-applications', requireUser, requir
 
 accountOnboardingRoutes.post('/staff/wholesale-applications/:accountId', requireUser, requireStaff, async (c) => {
   const staff = c.get('user')
-  const accountId = c.req.param('accountId').toUpperCase()
+  const accountId = (c.req.param('accountId') ?? '').toUpperCase()
   const body = z
     .object({
       action: z.enum(['approve', 'reject', 'needs_docs', 'under_review', 'note', 'send_notice']),
