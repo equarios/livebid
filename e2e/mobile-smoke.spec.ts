@@ -82,7 +82,12 @@ test.describe('Mobile / tablet smoke', () => {
     const menu = page.getByRole('button', { name: /^menu$/i })
     await expect(menu).toBeVisible()
     await menu.click()
-    await expect(page.getByRole('link', { name: /^store$/i }).first()).toBeVisible()
+    // Open wrap must un-hide inner <nav> (regression: wrap was flex while site-nav stayed display:none).
+    const openNav = page.locator('.site-nav-wrap.is-open .site-nav, .pub-links.is-open .site-nav').first()
+    await expect(openNav).toBeVisible()
+    const display = await openNav.evaluate((el) => getComputedStyle(el).display)
+    expect(display, 'open Menu must show inner site-nav').not.toBe('none')
+    await expect(openNav.locator('a').first()).toBeVisible()
     await assertNoPageOverflow(page)
   })
 

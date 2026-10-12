@@ -6305,7 +6305,12 @@ html[dir='rtl'] .lang-menu-panel button {
     gap: 4px;
     padding: 8px 0 4px;
   }
-  .site-nav, .pub-links.is-open .site-nav {
+  /* Wrap gets .is-open; inner <nav class="site-nav"> must un-hide too (otherwise Menu looks open but dead). */
+  .site-nav-wrap.is-open .site-nav,
+  .site-nav-wrap.is-open nav,
+  .topbar nav.is-open,
+  .pub-links.is-open .site-nav {
+    display: flex;
     flex-direction: column;
     align-items: stretch;
     width: 100%;
