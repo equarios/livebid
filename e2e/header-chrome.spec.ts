@@ -31,6 +31,11 @@ test.describe('Header chrome — Help / Notifications / Super', () => {
     const box = await panelOnScreen(page, '.help-menu-panel')
     expect(box.inView, `Help panel off-screen: left=${box.left} right=${box.right}`).toBe(true)
 
+    // Click outside — panel should dismiss (not stay stuck open).
+    await page.locator('main').click({ position: { x: 20, y: 20 } })
+    await expect(panel).toBeHidden()
+
+    await page.getByRole('button', { name: /^help$/i }).click()
     await page.getByRole('link', { name: /^device spec$/i }).click()
     await expect(page).toHaveURL(/\/device-spec/)
   })

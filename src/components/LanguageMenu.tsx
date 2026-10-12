@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { APP_LOCALES, LOCALE_META } from '../i18n'
+import { useDismissOnOutside } from '../lib/useDismissOnOutside'
 import { useStore } from '../store'
 
 /** Compact language picker — native labels, no flag clutter. */
@@ -20,17 +21,10 @@ export function LanguageMenu({
     if (closeWhen) setOpen(false)
   }, [closeWhen])
 
-  useEffect(() => {
-    if (!open) return
-    function onDoc(e: MouseEvent) {
-      if (!rootRef.current?.contains(e.target as Node)) {
-        setOpen(false)
-        onClose?.()
-      }
-    }
-    document.addEventListener('mousedown', onDoc)
-    return () => document.removeEventListener('mousedown', onDoc)
-  }, [open, onClose])
+  useDismissOnOutside(open, rootRef, () => {
+    setOpen(false)
+    onClose?.()
+  })
 
   return (
     <div className={`lang-menu ${open ? 'open' : ''}`} ref={rootRef}>

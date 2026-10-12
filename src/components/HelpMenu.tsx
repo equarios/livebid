@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
+import { useDismissOnOutside } from '../lib/useDismissOnOutside'
 import { useStore } from '../store'
 
 export function HelpMenu({
@@ -25,17 +26,10 @@ export function HelpMenu({
     if (closeWhen) setOpen(false)
   }, [closeWhen])
 
-  useEffect(() => {
-    if (!open) return
-    function onDoc(e: MouseEvent) {
-      if (!rootRef.current?.contains(e.target as Node)) {
-        setOpen(false)
-        onClose?.()
-      }
-    }
-    document.addEventListener('mousedown', onDoc)
-    return () => document.removeEventListener('mousedown', onDoc)
-  }, [open, onClose])
+  useDismissOnOutside(open, rootRef, () => {
+    setOpen(false)
+    onClose?.()
+  })
 
   return (
     <div className={`help-menu gd-util ${open ? 'open' : ''}`} ref={rootRef}>

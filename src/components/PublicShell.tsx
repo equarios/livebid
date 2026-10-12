@@ -50,6 +50,35 @@ export function PublicShell({
     setQ(new URLSearchParams(location.search).get('q') || '')
   }, [location.search])
 
+  /* Route change — collapse Menu / panels so they don’t stay “stuck” open. */
+  useEffect(() => {
+    setNavOpen(false)
+    setPanel(null)
+  }, [location.pathname])
+
+  useEffect(() => {
+    if (!navOpen) return
+    function onPointer(e: PointerEvent) {
+      const root = document.querySelector('.pub-header')
+      if (!root) return
+      const t = e.target
+      if (!(t instanceof Node)) return
+      const toggle = root.querySelector('.nav-toggle')
+      const links = root.querySelector('.pub-links')
+      if (toggle?.contains(t) || links?.contains(t)) return
+      setNavOpen(false)
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setNavOpen(false)
+    }
+    document.addEventListener('pointerdown', onPointer, true)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('pointerdown', onPointer, true)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [navOpen])
+
   /* Warm store chunks so catalog / cart feel instant after first public hit. */
   useEffect(() => {
     if (!consumer) return

@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, NavLink, useLocation } from 'react-router-dom'
 import { publicHome, wholesaleHome } from '../lib/channelAccess'
+import { useDismissOnOutside } from '../lib/useDismissOnOutside'
 import { useStore } from '../store'
 import type { User } from '../types'
 
@@ -30,6 +31,7 @@ export function MeMenu({
   const { user, settings, logout, isStaff, isSuperAdmin } = useStore()
   const location = useLocation()
   const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
   const meOn =
     location.pathname.startsWith('/account') ||
     location.pathname === '/login' ||
@@ -41,6 +43,11 @@ export function MeMenu({
   useEffect(() => {
     if (closeWhen) setOpen(false)
   }, [closeWhen])
+
+  useDismissOnOutside(open, rootRef, () => {
+    setOpen(false)
+    onClose?.()
+  })
 
   function close() {
     setOpen(false)
@@ -74,7 +81,7 @@ export function MeMenu({
   }
 
   return (
-    <div className={`help-menu me-menu gd-util ${open ? 'open' : ''}`}>
+    <div className={`help-menu me-menu gd-util ${open ? 'open' : ''}`} ref={rootRef}>
       <button
         type="button"
         className={`gd-util-btn ${meOn || open ? 'active' : ''}`}
