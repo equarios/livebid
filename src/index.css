@@ -8745,6 +8745,75 @@ html[dir='rtl'] .lang-menu-panel button {
   margin: 0 auto;
   padding: 8px 20px 28px;
 }
+
+/* Wholesale hub — category browse bar (auction filter-chip language, SEO nav job) */
+.wholesale-cat-bar {
+  /* Match .pub-section / .how-strip horizontal inset so rails line up */
+  max-width: min(var(--workbench-max), 100%);
+  margin: 0 auto;
+  padding: 8px 16px 12px;
+}
+.wholesale-cat-bar > .pub-section-head.is-rail {
+  margin-bottom: 8px;
+}
+.wholesale-cat-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+.wholesale-cat-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+}
+.wholesale-cat-row-label {
+  flex: 0 0 auto;
+  min-width: 4.5rem;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.wholesale-cat-chips {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1 1 200px;
+}
+.wholesale-cat-chips a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  background: #fff;
+  text-decoration: none;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 650;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.wholesale-cat-chips a:hover {
+  border-color: var(--teal);
+  color: var(--navy);
+  background: #eef6f7;
+}
+@media (max-width: 640px) {
+  .wholesale-cat-row-label {
+    min-width: 100%;
+  }
+}
 .seo-cat-grid {
   list-style: none;
   margin: 0;

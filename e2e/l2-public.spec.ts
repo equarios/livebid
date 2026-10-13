@@ -33,6 +33,14 @@ test.describe('L2 public / marketing / SEO', () => {
   test('wholesale hub guest', async ({ page }) => {
     await page.goto('/wholesale')
     await expect(page).toHaveURL(/\/wholesale/)
+    await expect(page.getByRole('heading', { name: /browse by category/i })).toBeVisible()
+    const cat = page.getByRole('navigation', { name: /browse by category/i })
+    await cat.scrollIntoViewIfNeeded()
+    await expect(cat).toBeVisible()
+    await expect(cat.getByText(/^Device$/i)).toBeVisible()
+    await expect(cat.getByText(/^Condition$/i)).toBeVisible()
+    await expect(cat.getByRole('link', { name: /^Phones$/i })).toBeVisible()
+    await expect(cat.getByRole('link', { name: /^Unlocked$/i })).toBeVisible()
   })
 
   test('SEO hub /wholesale/c', async ({ page }) => {

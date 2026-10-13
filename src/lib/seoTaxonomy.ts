@@ -321,6 +321,25 @@ export function hubDeviceLinks() {
   }))
 }
 
+/** Short chip labels for the wholesale hub filter-style bar. */
+const DEVICE_CHIP_LABELS: Record<DeviceClass, string> = {
+  phones: 'Phones',
+  tablets: 'Tablets',
+  pcs: 'PCs',
+  laptops: 'Laptops',
+  chromebooks: 'Chromebooks',
+  consoles: 'Consoles',
+  other: 'Other',
+}
+
+export function hubDeviceChipLinks() {
+  return DEVICE_CLASSES.map((id) => ({
+    id,
+    label: DEVICE_CHIP_LABELS[id],
+    to: categoryPath({ deviceClass: id }),
+  }))
+}
+
 export function hubConditionLinks(deviceClass?: DeviceClass) {
   return CONDITIONS.map((id) => ({
     id,

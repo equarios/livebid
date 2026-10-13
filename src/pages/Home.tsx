@@ -6,6 +6,7 @@ import { groupLotsByType, isSealedLot, listPath } from '../lib/auctionLists'
 import { usd } from '../lib/format'
 import { lotThumb, photoFallback } from '../lib/photos'
 import { DEFAULT_SETTINGS } from '../data'
+import { hubConditionLinks, hubDeviceChipLinks } from '../lib/seoTaxonomy'
 import { useNow, useStore } from '../store'
 import type { Lot } from '../types'
 
@@ -194,36 +195,35 @@ export function Home() {
             ))}
           </section>
 
-          <section className="seo-cat-section is-hub-strip">
+          <section className="wholesale-cat-bar">
             <div className="pub-section-head is-rail">
               <h2>Browse by category</h2>
               <Link className="linkish" to="/wholesale/c">
                 All categories
               </Link>
             </div>
-            <ul className="seo-cat-chips">
-              <li>
-                <Link to="/wholesale/c/phones">Phones</Link>
-              </li>
-              <li>
-                <Link to="/wholesale/c/tablets">Tablets</Link>
-              </li>
-              <li>
-                <Link to="/wholesale/c/laptops">Laptops</Link>
-              </li>
-              <li>
-                <Link to="/wholesale/c/consoles">Consoles</Link>
-              </li>
-              <li>
-                <Link to="/wholesale/c/phones/unlocked">Unlocked</Link>
-              </li>
-              <li>
-                <Link to="/wholesale/c/phones/refurbished">Refurbished</Link>
-              </li>
-              <li>
-                <Link to="/wholesale/c/phones/scrap">Scrap</Link>
-              </li>
-            </ul>
+            <nav className="wholesale-cat-panel" aria-label="Browse by category">
+              <div className="wholesale-cat-row">
+                <span className="wholesale-cat-row-label">Device</span>
+                <ul className="wholesale-cat-chips">
+                  {hubDeviceChipLinks().map((d) => (
+                    <li key={d.id}>
+                      <Link to={d.to}>{d.label}</Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className="wholesale-cat-row">
+                <span className="wholesale-cat-row-label">Condition</span>
+                <ul className="wholesale-cat-chips">
+                  {hubConditionLinks().map((c) => (
+                    <li key={c.id}>
+                      <Link to={c.to}>{c.label}</Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </nav>
           </section>
         </>
       ) : null}
