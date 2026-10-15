@@ -39,3 +39,30 @@ export function myPcs(lot: Lot, bids: Bid[], accountId: string) {
     .filter((s) => s.accountId === accountId)
     .reduce((n, s) => n + s.qty, 0)
 }
+
+/**
+ * True when the buyer has 0 fill now, but +$increment on their last bid
+ * would get them at least 1 pc (live auctions use $1 steps).
+ */
+export function isCloseToFill(
+  lot: Lot,
+  bids: Bid[],
+  accountId: string,
+  increment = 1,
+): boolean {
+  if (myPcs(lot, bids, accountId) > 0) return false
+  const last = lastBidsForLot(bids, lot.id).find((b) => b.accountId === accountId)
+  if (!last) return false
+  const others = bids.filter((b) => b.accountId !== accountId)
+  const trial: Bid[] = [
+    ...others,
+    {
+      lotId: lot.id,
+      accountId,
+      amount: last.amount + increment,
+      qty: last.qty,
+      at: last.at + 1,
+    },
+  ]
+  return myPcs(lot, trial, accountId) > 0
+}

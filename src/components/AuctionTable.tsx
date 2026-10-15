@@ -4,7 +4,15 @@ import { FillBar } from './FillBar'
 import { InlineBid } from './InlineBid'
 import { ItemLink } from './ItemLink'
 import { bidStatus, fillStats, type FillStats } from '../lib/allocate'
-import { auctionClockRows, isSealedLot, listPath } from '../lib/auctionLists'
+import {
+  auctionClockRows,
+  effectiveEndsAt,
+  hideAuctionHigh,
+  isAuctionOpen,
+  isInExtraSealed,
+  isSealedLot,
+  listPath,
+} from '../lib/auctionLists'
 import { timeLeft, usd } from '../lib/format'
 import { moqLabel } from '../lib/moq'
 import { useNow, useStore } from '../store'
@@ -24,7 +32,7 @@ type Row = {
 function statusRank(st: ReturnType<typeof bidStatus>) {
   if (st.label === 'Winning') return 0
   if (st.label.startsWith('Partial')) return 1
-  if (st.label === 'Bid in') return 2
+  if (st.label === 'Bid in' || st.label === 'Sealed') return 2
   if (st.label === 'Outbid') return 3
   if (st.label === 'Closed') return 4
   return 5
@@ -41,8 +49,8 @@ function buildRows(
   return lots.map((lot) => {
     const last = myLastBid(lot.id)
     const stats = fillStats(lot, bids, me)
-    const closed = lot.endsAt <= now
-    const sealedOpen = isSealedLot(lot, settings) && !closed
+    const closed = !isAuctionOpen(lot, now)
+    const sealedOpen = isSealedLot(lot, settings, now) && !closed
     const st = bidStatus(lot, stats.myPcs, last?.qty, now, settings)
     return {
       lot,
@@ -63,7 +71,7 @@ function orderFocusRows(rows: Row[]) {
     if (aBid !== bBid) return aBid - bBid
     const byStatus = statusRank(a.st) - statusRank(b.st)
     if (byStatus) return byStatus
-    return a.lot.endsAt - b.lot.endsAt
+    return effectiveEndsAt(a.lot) - effectiveEndsAt(b.lot)
   })
 }
 
@@ -110,7 +118,7 @@ export function bidDeskSummary(
   now: number,
 ) {
   const hideWin =
-    lots.length > 0 && lots.every((lot) => isSealedLot(lot, settings) && lot.endsAt > now)
+    lots.length > 0 && lots.every((lot) => isSealedLot(lot, settings, now) && isAuctionOpen(lot, now))
   let totalBid = 0
   let winningAmount = 0
   for (const lot of lots) {
@@ -260,15 +268,27 @@ export function BidTotals({
               row.closing,
             )
             const heat = row.closing ? closeHeat(pct) : 'ok'
+            const extraMins =
+              row.extraEndsAt && row.extraEndsAt > row.liveEndsAt
+                ? Math.max(1, Math.round((row.extraEndsAt - row.liveEndsAt) / 60000))
+                : 0
+            const extraNote =
+              extraMins > 0
+                ? row.phase === 'extra'
+                  ? `${row.label} · Sealed · prior bidders only`
+                  : `${row.label} · then ${extraMins}m Sealed`
+                : row.label
             return (
               <Link
                 key={row.value}
                 to={listPath(row.value)}
-                className={`filter-trigger is-close-chip is-${heat}`}
+                className={`filter-trigger is-close-chip is-${heat}${row.phase === 'extra' ? ' is-extra' : ''}`}
                 style={{ ['--close-pct' as string]: `${Math.round(pct * 100)}%` }}
-                title={`${row.label} · ${row.count} lots · ${timeLeft(row.endsAt, now)} left`}
+                title={`${extraNote} · ${row.count} lots · ${timeLeft(row.endsAt, now)} left`}
               >
-                <span className="filter-trigger-title">{row.label}</span>
+                <span className="filter-trigger-title">
+                  {row.phase === 'extra' ? 'Sealed' : row.label}
+                </span>
                 <span className="filter-trigger-value">
                   <TimeLeft endsAt={row.endsAt} />
                   <em>{row.count === 1 ? '1' : row.count}</em>
@@ -286,6 +306,7 @@ function YouWin({ row }: { row: Row }) {
   const { settings } = useStore()
   const { lot, last, stats, st, closed, winTotal } = row
   const sealedOpen = isSealedLot(lot, settings) && !closed
+  const extraSealed = isInExtraSealed(lot)
   const myPcs = sealedOpen ? last?.qty ?? 0 : stats.myPcs
   return (
     <FillBar
@@ -293,10 +314,14 @@ function YouWin({ row }: { row: Row }) {
       myPcs={myPcs}
       sealed={sealedOpen}
       status={st}
-      endsAt={lot.endsAt}
+      endsAt={effectiveEndsAt(lot)}
       amount={winTotal == null ? 'Hidden' : usd(winTotal)}
       amountNote={
-        !sealedOpen && stats.myPcs > 0 ? `${stats.myPcs.toLocaleString()} pcs allocated` : null
+        extraSealed
+          ? 'Sealed · prior bidders only'
+          : !sealedOpen && stats.myPcs > 0
+            ? `${stats.myPcs.toLocaleString()} pcs allocated`
+            : null
       }
     />
   )
@@ -339,7 +364,7 @@ function LotCells({
         </div>
       </td>
       <td className="price-cell">
-        {isSealedLot(lot, settings) && !row.closed ? (
+        {hideAuctionHigh(lot, settings) && !row.closed ? (
           <div className="cell-stack cell-stack-end">
             <span className="cell-chip soft">Hidden</span>
           </div>
@@ -347,6 +372,9 @@ function LotCells({
           <div className="cell-stack cell-stack-end">
             <span className="cell-primary">{usd(lot.currentPrice)}</span>
             <span className="cell-secondary">/pc</span>
+            {isInExtraSealed(lot) && !row.closed ? (
+              <span className="cell-chip soft">High</span>
+            ) : null}
           </div>
         )}
       </td>
@@ -409,12 +437,15 @@ function LotCardBlock({
       <div className="auction-card-prices">
         <div className="cell-stack">
           <span className="cell-secondary">Current Price</span>
-          {isSealedLot(lot, settings) && !closed ? (
+          {hideAuctionHigh(lot, settings) && !closed ? (
             <span className="cell-chip soft">Hidden</span>
           ) : (
             <>
               <span className="cell-primary">{usd(lot.currentPrice)}</span>
               <span className="cell-secondary">/pc</span>
+              {isInExtraSealed(lot) && !closed ? (
+                <span className="cell-chip soft">High</span>
+              ) : null}
             </>
           )}
         </div>

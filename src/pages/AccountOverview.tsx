@@ -1,4 +1,7 @@
 import { useNavigate } from 'react-router-dom'
+import { WholesaleDeskPulseBar } from '../components/WholesaleDeskPulseBar'
+import { WholesaleOnboardChecklist } from '../components/WholesaleOnboardChecklist'
+import { WholesaleStatusCard } from '../components/WholesaleStatusCard'
 import { canUseWholesaleDesk } from '../lib/channelAccess'
 import { usd } from '../lib/format'
 import { invoiceTotals, invoiceVisibleToBuyer } from '../lib/invoices'
@@ -168,6 +171,8 @@ export function AccountOverview() {
 
   return (
     <div className="ops-today account-overview mypage-overview">
+      {!wholesaleOk ? <WholesaleStatusCard /> : <WholesaleDeskPulseBar hideWhenEmpty />}
+      {wholesaleOk ? <WholesaleOnboardChecklist /> : null}
       <header className="ops-today-head">
         <h2>Today</h2>
         <p className="muted tiny">
@@ -177,7 +182,7 @@ export function AccountOverview() {
             ? ` · ${waiting.length} queue${waiting.length === 1 ? '' : 's'} need attention.`
             : wholesaleOk
               ? ' · Nothing waiting — open Bids, Marketplace, or Invoice from the bar above.'
-              : ` · Wholesale: ${WS_LABEL[ws] || ws}. Apply or upload documents to unlock the desk.`}
+              : ` · Wholesale: ${WS_LABEL[ws] || ws}. Continue from the status card above.`}
         </p>
       </header>
       <div className="ops-today-grid mypage-overview-grid">

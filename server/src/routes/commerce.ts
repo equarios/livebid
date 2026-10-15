@@ -1,8 +1,8 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { requireStaff, requireUser, requireWholesale, type AuthedEnv } from '../auth'
-import { feeForMarketplace, withFee } from '../feeConfig'
-import { myPcs } from '../allocate'
+import { feeForMarketplace, minOfferUnitPrice, offerFloorPct, withFee } from '../feeConfig'
+import { isCloseToFill, myPcs } from '../allocate'
 import { prisma } from '../db'
 import { mapLotRow } from '../lotDto'
 import {
@@ -20,6 +20,7 @@ import { trackBid } from '../metrics'
 import { notify, notifyStaff } from '../notify'
 import { rateLimitOrRetryAfter } from '../rateLimit'
 import { broadcastLotTick } from '../realtime'
+import { isAuctionOpen, isInExtraSealed } from '../auctionPhase'
 import {
   invoiceUpdateData,
   settleInvoice,
@@ -41,11 +42,41 @@ function clampLimit(raw: string | undefined, fallback: number) {
   return Math.min(PAGE_MAX, Math.floor(n))
 }
 
-/** Active desk lots: open auctions + marketplace listings. */
+/** Active desk lots: open auctions (live or Extra sealed) + marketplace listings. */
 function activeLotWhere(now: bigint) {
   return {
-    OR: [{ channel: 'marketplace' as const }, { channel: 'auction' as const, endsAt: { gt: now } }],
+    OR: [
+      { channel: 'marketplace' as const },
+      { channel: 'auction' as const, endsAt: { gt: now } },
+      {
+        channel: 'auction' as const,
+        endsAt: { lte: now },
+        extraSealedEndsAt: { gt: now },
+      },
+    ],
   }
+}
+
+/** Extra sealed: hide lots from buyers who never bid (staff always see all). */
+async function filterLotsForViewer<T extends { id: string; endsAt: bigint; extraSealedEndsAt: bigint | null }>(
+  lots: T[],
+  accountId: string,
+  staff: boolean,
+  now = Date.now(),
+): Promise<T[]> {
+  if (staff || !lots.length) return lots
+  const overtime = lots.filter((l) => isInExtraSealed(l, now))
+  if (!overtime.length) return lots
+  const prior = await prisma.bid.findMany({
+    where: {
+      accountId,
+      lotId: { in: overtime.map((l) => l.id) },
+    },
+    select: { lotId: true },
+    distinct: ['lotId'],
+  })
+  const allowed = new Set(prior.map((b) => b.lotId))
+  return lots.filter((l) => !isInExtraSealed(l, now) || allowed.has(l.id))
 }
 
 commerceRoutes.get('/bootstrap', requireUser, async (c) => {
@@ -96,7 +127,10 @@ commerceRoutes.get('/bootstrap', requireUser, async (c) => {
       staff ? prisma.inventorySku.findMany({ orderBy: { id: 'asc' }, take: 2000 }) : Promise.resolve([]),
     ])
 
-  const lotIds = lots.map((l) => l.id)
+  const visibleLots = wholesaleOk
+    ? await filterLotsForViewer(lots, user.accountId, staff, Date.now())
+    : []
+  const lotIds = visibleLots.map((l) => l.id)
   const [bids, bidsTotal] = wholesaleOk
     ? await Promise.all([
         lotIds.length
@@ -116,7 +150,7 @@ commerceRoutes.get('/bootstrap', requireUser, async (c) => {
     lots.length === BOOT_LOT_CAP && lotsTotal > lots.length ? lots[lots.length - 1]?.id : null
 
   return c.json({
-    lots: lots.map(mapLotRow),
+    lots: visibleLots.map(mapLotRow),
     bids: bids.map(mapBid),
     cart: cartItems.map(mapCartItem),
     cartOrders: cartOrders.map(mapCartOrder),
@@ -186,8 +220,11 @@ commerceRoutes.get('/lots', requireUser, requireWholesale, async (c) => {
   })
   const hasMore = rows.length > limit
   const page = hasMore ? rows.slice(0, limit) : rows
+  const user = c.get('user')
+  const staff = user.role === 'admin' || user.role === 'superadmin'
+  const visible = await filterLotsForViewer(page, user.accountId, staff, Date.now())
   return c.json({
-    lots: page.map(mapLotRow),
+    lots: visible.map(mapLotRow),
     nextCursor: hasMore ? page[page.length - 1]?.id ?? null : null,
   })
 })
@@ -269,10 +306,10 @@ commerceRoutes.post('/bids', requireUser, requireWholesale, async (c) => {
     result = await prisma.$transaction(async (tx) => {
       const lot = await tx.lot.findUnique({ where: { id: body.data.lotId } })
       if (!lot || lot.channel !== 'auction') throw new Error('LOT_NOT_FOUND')
-      if (Number(lot.endsAt) <= Date.now()) throw new Error('AUCTION_CLOSED')
+      const nowMs = Date.now()
+      if (!isAuctionOpen(lot, nowMs)) throw new Error('AUCTION_CLOSED')
       if (body.data.qty > lot.qty) throw new Error('QTY')
       if (lot.moq && body.data.qty < lot.moq) throw new Error(`MOQ:${lot.moq}`)
-      if (body.data.amount < lot.currentPrice) throw new Error(`MIN:${lot.currentPrice}`)
 
       const priorBids = await tx.bid.findMany({ where: { lotId: lot.id } })
       priorRows = priorBids.map((b) => ({
@@ -282,6 +319,32 @@ commerceRoutes.post('/bids', requireUser, requireWholesale, async (c) => {
         qty: b.qty,
         at: Number(b.at),
       }))
+      const overtime = isInExtraSealed(lot, nowMs)
+      if (overtime) {
+        const hadBid = priorRows.some((b) => b.accountId === user.accountId)
+        if (!hadBid) throw new Error('EXTRA_SEALED')
+      }
+      const own = priorRows.filter((b) => b.accountId === user.accountId)
+      const lastOwn = own.length ? own.reduce((a, b) => (a.at >= b.at ? a : b)) : null
+      // Cannot reduce price or qty after a bid; same price needs higher qty.
+      if (lastOwn) {
+        if (body.data.amount < lastOwn.amount) throw new Error(`MIN:${lastOwn.amount}`)
+        if (body.data.qty < lastOwn.qty) throw new Error(`QTY_FLOOR:${lastOwn.qty}`)
+        if (body.data.amount === lastOwn.amount && body.data.qty <= lastOwn.qty) {
+          throw new Error('NO_IMPROVE')
+        }
+      }
+      const sealedSlug =
+        lot.auctionType === 'offline' || lot.auctionType === 'sealed' || lot.auctionType === 'hybrid'
+      const independent = overtime || sealedSlug
+      if (independent) {
+        const floor = lastOwn?.amount ?? lot.startPrice
+        if (body.data.amount < floor) throw new Error(`MIN:${floor}`)
+      } else if (!lastOwn || body.data.amount > lastOwn.amount) {
+        // Live: first bid or price raise must clear market high + $1.
+        const marketMin = Math.round(Math.max(lot.startPrice, lot.currentPrice)) + 1
+        if (body.data.amount < marketMin) throw new Error(`MIN:${marketMin}`)
+      }
       priorFill = new Map<string, number>()
       for (const accountId of new Set(priorRows.map((b) => b.accountId))) {
         priorFill.set(accountId, myPcs({ id: lot.id, qty: lot.qty }, priorRows, accountId))
@@ -323,16 +386,36 @@ commerceRoutes.post('/bids', requireUser, requireWholesale, async (c) => {
     if (
       msg === 'LOT_NOT_FOUND' ||
       msg === 'AUCTION_CLOSED' ||
+      msg === 'EXTRA_SEALED' ||
       msg === 'QTY' ||
+      msg === 'NO_IMPROVE' ||
       msg.startsWith('MOQ:') ||
-      msg.startsWith('MIN:')
+      msg.startsWith('MIN:') ||
+      msg.startsWith('QTY_FLOOR:')
     ) {
       trackBid(false)
     }
     if (msg === 'LOT_NOT_FOUND') return c.json({ error: 'Lot not found.' }, 404)
     if (msg === 'AUCTION_CLOSED') return c.json({ error: 'Auction closed.' }, 400)
+    if (msg === 'EXTRA_SEALED') {
+      return c.json({ error: 'Extra sealed: only prior bidders can bid on this lot.' }, 403)
+    }
     if (msg === 'QTY') return c.json({ error: 'Qty exceeds available.' }, 400)
+    if (msg === 'NO_IMPROVE') {
+      return c.json(
+        { error: 'Same price as your last bid. Raise qty or price to update.' },
+        400,
+      )
+    }
     if (msg.startsWith('MOQ:')) return c.json({ error: `MOQ is ${msg.slice(4)}.` }, 400)
+    if (msg.startsWith('QTY_FLOOR:')) {
+      return c.json(
+        {
+          error: `Your previous bid was ${msg.slice(10)} pcs. You cannot reduce qty — enter the same or more.`,
+        },
+        400,
+      )
+    }
     if (msg.startsWith('MIN:')) return c.json({ error: `Bid must be at least ${msg.slice(4)}.` }, 400)
     throw e
   }
@@ -355,12 +438,14 @@ commerceRoutes.post('/bids', requireUser, requireWholesale, async (c) => {
     if (before <= 0) continue
     const after = myPcs({ id: lotMeta.id, qty: lotMeta.qty }, afterBids, accountId)
     if (after > 0) continue
+    /* Only ping when +$1 would restore fill — full outbid stays on the desk / digest. */
+    if (!isCloseToFill({ id: lotMeta.id, qty: lotMeta.qty }, afterBids, accountId, 1)) continue
     await notify({
-      id: `N-OUTBID-${lotMeta.id}-${accountId}-${at}`,
+      id: `N-CLOSEFILL-${lotMeta.id}-${accountId}-${at}`,
       accountId,
       kind: 'outbid',
-      title: 'You were outbid',
-      body: `${lotMeta.manufacturer} ${lotMeta.model} — raise price or qty to get units`,
+      title: 'Close to fill — +$1 may win units',
+      body: `${lotMeta.manufacturer} ${lotMeta.model} — raise by $1 (or more qty) to get back in`,
       href: `/auctions#${lotMeta.auctionType || 'live'}`,
     })
   }
@@ -604,15 +689,51 @@ commerceRoutes.post('/offers', requireUser, requireWholesale, async (c) => {
     return c.json({ error: 'Listing not available.' }, 404)
   }
   if (body.data.qty > lot.qty) return c.json({ error: 'Qty exceeds stock.' }, 400)
+  if (lot.moq && body.data.qty < lot.moq) {
+    return c.json({ error: `MOQ is ${lot.moq}.` }, 400)
+  }
+  const rounded = Math.round(body.data.unitPrice)
+  const floorPct = offerFloorPct()
+  const offerFloor = minOfferUnitPrice(lot.buyNowPrice, floorPct)
+  if (rounded < offerFloor) {
+    return c.json(
+      { error: `Offer must be at least ${offerFloor} (${floorPct}% of list).` },
+      400,
+    )
+  }
 
-  const open = await prisma.marketOffer.findFirst({
-    where: {
-      accountId: user.accountId,
-      lotId: lot.id,
-      status: { in: ['pending', 'accepted'] },
-    },
+  const accepted = await prisma.marketOffer.findFirst({
+    where: { accountId: user.accountId, lotId: lot.id, status: 'accepted' },
   })
-  if (open) return c.json({ error: 'You already have an open offer on this listing.' }, 400)
+  if (accepted) {
+    return c.json({ error: 'You already have an accepted offer on this listing.' }, 400)
+  }
+
+  const pending = await prisma.marketOffer.findFirst({
+    where: { accountId: user.accountId, lotId: lot.id, status: 'pending' },
+  })
+  if (pending) {
+    // Price may move down to Super offer-floor % of list; only block below offerFloor (checked above).
+    if (body.data.qty < pending.qty) {
+      return c.json(
+        {
+          error: `Your previous offer was ${pending.qty} pcs. You cannot reduce qty — enter the same or more.`,
+        },
+        400,
+      )
+    }
+    if (rounded === pending.unitPrice && body.data.qty <= pending.qty) {
+      return c.json(
+        { error: 'Same price as your last offer. Raise qty or offer price to update.' },
+        400,
+      )
+    }
+    const updated = await prisma.marketOffer.update({
+      where: { id: pending.id },
+      data: { qty: body.data.qty, unitPrice: rounded },
+    })
+    return c.json({ offer: mapOffer(updated) })
+  }
 
   const offer = await prisma.marketOffer.create({
     data: {
@@ -620,7 +741,7 @@ commerceRoutes.post('/offers', requireUser, requireWholesale, async (c) => {
       lotId: lot.id,
       accountId: user.accountId,
       qty: body.data.qty,
-      unitPrice: body.data.unitPrice,
+      unitPrice: rounded,
       listedPrice: lot.buyNowPrice,
       status: 'pending',
       createdAt: BigInt(Date.now()),

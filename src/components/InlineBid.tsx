@@ -3,9 +3,15 @@ import { ConfirmBidDialog } from './ConfirmBidDialog'
 import { ConfirmDialog } from './ConfirmDialog'
 import { FavHeart } from './FavHeart'
 import { fillCopy, usd, usdCents } from '../lib/format'
-import { isSealedLot } from '../lib/auctionLists'
+import { isAuctionOpen, isSealedLot } from '../lib/auctionLists'
 import { feePctForLot, quoteMoney } from '../lib/invoices'
-import { checkBidPrice, checkOrderQty, lotMoq, minBidPrice, moqLabel } from '../lib/moq'
+import {
+  checkBidPrice,
+  checkOrderQty,
+  minBidPrice,
+  minBidQty,
+  moqLabel,
+} from '../lib/moq'
 import { useNow, useStore } from '../store'
 import type { Lot } from '../types'
 
@@ -21,24 +27,36 @@ export function InlineBid({
   const now = useNow()
   const { placeBid, myLastBid, settings } = useStore()
   const copy = settings.copy
-  const closed = lot.endsAt <= now
+  const closed = lot.channel === 'auction' && !isAuctionOpen(lot, now)
   const last = myLastBid(lot.id)
-  const independent = isSealedLot(lot, settings)
-  const priceCtx = { independent, lastOwnAmount: last?.amount }
+  const independent = isSealedLot(lot, settings, now)
+  const priceCtx = {
+    independent,
+    lastOwnAmount: last?.amount,
+    lastOwnQty: last?.qty,
+  }
   const minNext = minBidPrice(lot, priceCtx)
-  const [qty, setQty] = useState(String(lotMoq(lot)))
+  const minQty = minBidQty(lot, last?.qty)
+  const [qty, setQty] = useState(String(minQty))
   const [amount, setAmount] = useState(String(minNext))
   const [msg, setMsg] = useState<string | null>(null)
   const [pending, setPending] = useState<{ qty: number; unitPrice: number } | null>(null)
   const [takeAllOpen, setTakeAllOpen] = useState(false)
 
+  // After a successful bid, put that qty/price back in the boxes (no refresh).
   useEffect(() => {
-    setAmount((prev) => {
-      const n = Number(prev)
-      if (!Number.isFinite(n) || n < minNext) return String(minNext)
-      return prev
-    })
-  }, [minNext])
+    if (!last) return
+    setQty(String(last.qty))
+    setAmount(String(last.amount))
+  }, [lot.id, last?.at, last?.qty, last?.amount])
+
+  function restoreQty() {
+    setQty(String(last?.qty ?? minQty))
+  }
+
+  function restoreAmount() {
+    setAmount(String(last?.amount ?? minNext))
+  }
 
   function currentAmount() {
     const n = Number(amount)
@@ -58,11 +76,21 @@ export function InlineBid({
   function parseEntry() {
     const q = Number(qty)
     const p = Number(amount)
-    const qtyErr = checkOrderQty(lot, q, copy)
+    const qtyErr = checkOrderQty(lot, q, copy, {
+      lastOwnQty: last?.qty,
+      lastOwnAmount: last?.amount,
+      amount: p,
+    })
     if (qtyErr) return qtyErr
     const priceErr = checkBidPrice(lot, p, copy, priceCtx)
     if (priceErr) return priceErr
     return { qty: q, unitPrice: p }
+  }
+
+  function afterBidOk(parsed: { qty: number; unitPrice: number }) {
+    setQty(String(parsed.qty))
+    setAmount(String(parsed.unitPrice))
+    setMsg(null)
   }
 
   function onBid(e?: FormEvent) {
@@ -77,7 +105,7 @@ export function InlineBid({
     if (!settings.features.confirmBid) {
       void placeBid(lot.id, parsed.unitPrice, parsed.qty).then((err) => {
         if (err) setMsg(err)
-        else setMsg(null)
+        else afterBidOk(parsed)
       })
       return
     }
@@ -90,7 +118,7 @@ export function InlineBid({
     setPending(null)
     void placeBid(lot.id, pendingBid.unitPrice, pendingBid.qty).then((err) => {
       if (err) setMsg(err)
-      else setMsg(null)
+      else afterBidOk(pendingBid)
     })
   }
 
@@ -115,13 +143,34 @@ export function InlineBid({
             <span>Qty · {moqLabel(lot, copy.noMoq)}</span>
             <input
               type="number"
-              min={lotMoq(lot)}
+              min={minQty}
               max={lot.qty}
               step={1}
               disabled={closed}
               value={closed ? '' : qty}
+              placeholder={String(last?.qty ?? minQty)}
               aria-label={`Quantity for ${lot.id}`}
-              onChange={(e) => setQty(e.target.value)}
+              onChange={(e) => {
+                setQty(e.target.value)
+                const q = Number(e.target.value)
+                const p = currentAmount()
+                if (e.target.value !== '' && Number.isFinite(q)) {
+                  setMsg(
+                    checkOrderQty(lot, q, copy, {
+                      lastOwnQty: last?.qty,
+                      lastOwnAmount: last?.amount,
+                      amount: p,
+                    }) || null,
+                  )
+                } else {
+                  setMsg(null)
+                }
+              }}
+              onBlur={() => {
+                if (qty.trim() === '' || !Number.isFinite(Number(qty)) || Number(qty) < minQty) {
+                  restoreQty()
+                }
+              }}
             />
           </label>
           <label className="inline-field">
@@ -132,14 +181,35 @@ export function InlineBid({
               step={1}
               disabled={closed}
               value={closed ? '' : amount}
+              placeholder={String(last?.amount ?? minNext)}
               aria-label={`Unit price for ${lot.id}`}
               onChange={(e) => {
                 setAmount(e.target.value)
                 const n = Number(e.target.value)
-                if (e.target.value !== '' && Number.isFinite(n) && n < minNext) {
-                  setMsg(checkBidPrice(lot, n, copy, priceCtx) || '')
-                } else {
+                const q = Number(qty)
+                if (e.target.value === '' || !Number.isFinite(n)) {
                   setMsg(null)
+                  return
+                }
+                setMsg(
+                  checkBidPrice(lot, n, copy, priceCtx) ||
+                    (Number.isFinite(q)
+                      ? checkOrderQty(lot, q, copy, {
+                          lastOwnQty: last?.qty,
+                          lastOwnAmount: last?.amount,
+                          amount: n,
+                        })
+                      : null) ||
+                    null,
+                )
+              }}
+              onBlur={() => {
+                if (
+                  amount.trim() === '' ||
+                  !Number.isFinite(Number(amount)) ||
+                  Number(amount) < minNext
+                ) {
+                  restoreAmount()
                 }
               }}
             />

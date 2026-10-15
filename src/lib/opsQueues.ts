@@ -8,6 +8,13 @@ export type OpsQueueCounts = {
   issueWait: number
   payRequests: number
   pendingAccounts: number
+  /** submitted + under_review */
+  wholesaleSubmitted: number
+  wholesaleNeedsDocs: number
+  /** Apps waiting on staff (submitted / under review / needs docs). */
+  wholesaleApps: number
+  /** Approved buyers idle (no bids in ~7d) — filled by staff desk when known. */
+  wholesaleStuck: number
   commerce: number
   money: number
   total: number
@@ -19,6 +26,7 @@ export function opsQueueCounts(input: {
   listingDrops?: ListingDrop[]
   invoices?: Invoice[]
   accounts?: Account[]
+  wholesaleStuck?: number
 }): OpsQueueCounts {
   const pendingCarts = (input.cartOrders || []).filter((o) => o.status === 'pending').length
   const pendingOffers = (input.offers || []).filter((o) => o.status === 'pending').length
@@ -28,6 +36,14 @@ export function opsQueueCounts(input: {
   const issueWait = (input.invoices || []).filter((i) => i.status === 'draft').length
   const payRequests = (input.invoices || []).filter((i) => i.status === 'pending_review').length
   const pendingAccounts = (input.accounts || []).filter((a) => a.status === 'pending').length
+  const wholesaleSubmitted = (input.accounts || []).filter(
+    (a) => a.wholesaleStatus === 'submitted' || a.wholesaleStatus === 'under_review',
+  ).length
+  const wholesaleNeedsDocs = (input.accounts || []).filter(
+    (a) => a.wholesaleStatus === 'needs_docs',
+  ).length
+  const wholesaleApps = wholesaleSubmitted + wholesaleNeedsDocs
+  const wholesaleStuck = input.wholesaleStuck || 0
   const commerce = pendingCarts + pendingOffers
   const money = issueWait + payRequests
   return {
@@ -38,8 +54,12 @@ export function opsQueueCounts(input: {
     issueWait,
     payRequests,
     pendingAccounts,
+    wholesaleSubmitted,
+    wholesaleNeedsDocs,
+    wholesaleApps,
+    wholesaleStuck,
     commerce,
     money,
-    total: commerce + catalogWaitItems + money + pendingAccounts,
+    total: commerce + catalogWaitItems + money + pendingAccounts + wholesaleApps + wholesaleStuck,
   }
 }

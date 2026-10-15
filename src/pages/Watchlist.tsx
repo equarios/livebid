@@ -1,10 +1,18 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { LotCard } from '../components/LotCard'
+import {
+  loadWatchFilters,
+  removeWatchFilter,
+  type WatchFilter,
+} from '../lib/watchFilters'
 import { useStore } from '../store'
 
 export function Watchlist() {
-  const { lots, watchlist, settings, myLastBid } = useStore()
+  const { lots, watchlist, settings, myLastBid, user } = useStore()
+  const [filters, setFilters] = useState<WatchFilter[]>(() =>
+    user ? loadWatchFilters(user.accountId) : [],
+  )
   const rows = useMemo(() => {
     const list = lots.filter((l) => watchlist.includes(l.id))
     return [...list].sort((a, b) => {
@@ -19,6 +27,31 @@ export function Watchlist() {
 
   return (
     <div className="watchlist-page">
+      {user && filters.length ? (
+        <section className="watch-filters-panel" aria-label="Saved filters">
+          <div className="mypage-meta">
+            <em>{filters.length} saved filter{filters.length === 1 ? '' : 's'}</em>
+            <span className="muted tiny">
+              Matching open lots show on Your desk as watch hits.
+            </span>
+          </div>
+          <ul className="watch-filters-list">
+            {filters.map((f) => (
+              <li key={f.id}>
+                <Link to={f.to}>{f.label}</Link>
+                <button
+                  type="button"
+                  className="linkish"
+                  onClick={() => setFilters(removeWatchFilter(user.accountId, f.id))}
+                >
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       <div className="mypage-meta">
         <em>{rows.length} saved</em>
         {withBids ? <em className="is-yours">Your bids {withBids}</em> : null}

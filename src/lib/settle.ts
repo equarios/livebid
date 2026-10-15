@@ -1,6 +1,6 @@
 import { allocate, fillStats } from './allocate'
 import { isEndingSoon, moneyPlain } from './format'
-import { isSealedLot } from './auctionLists'
+import { effectiveEndsAt, isInExtraSealed, isSealedLot } from './auctionLists'
 import { buildInvoice, invoiceCoversLot } from './invoices'
 import type { Bid, Invoice, InvoiceLine, Lot, Notice, SiteSettings } from '../types'
 
@@ -39,7 +39,7 @@ export function settleClosedAuctions(
   >()
 
   for (const lot of lots) {
-    if (lot.channel !== 'auction' || lot.endsAt > nowTs) continue
+    if (lot.channel !== 'auction' || effectiveEndsAt(lot) > nowTs) continue
     const slices = allocate(lot, bids)
     for (const slice of slices) {
       if (!slice.qty || isBot(slice.accountId)) continue
@@ -77,13 +77,15 @@ export function settleClosedAuctions(
       sampleLot ? [sampleLot] : lots,
     )
     extraInv.push(inv)
+    const items = [...new Set(group.models)].slice(0, 4).join(', ')
+    const more = group.models.length > 4 ? ` +${group.models.length - 4} more` : ''
     extraNotes.push({
       id: `N-${uniqueId}`,
       accountId: group.accountId,
       kind: 'win',
       title: 'You won an auction',
-      body: `${inv.qty} pcs · ${moneyPlain(inv.amount)} USD. Invoice ${inv.id} is with staff to issue.`,
-      href: '/account',
+      body: `${inv.qty} pcs · ${moneyPlain(inv.amount)} USD · ${items}${more}. Invoice ${inv.id} — open for line details.`,
+      href: '/account/invoices',
       at: nowTs,
       read: false,
     })
@@ -101,9 +103,34 @@ export function settleClosedAuctions(
     }
   }
 
-  if (!extraInv.length) return { invoices, notices }
+  const THANKS_WINDOW_MS = 48 * 60 * 60 * 1000
+  const thanksSeen = (id: string) =>
+    notices.some((n) => n.id === id) || extraNotes.some((n) => n.id === id)
+  for (const lot of lots) {
+    if (lot.channel !== 'auction' || effectiveEndsAt(lot) > nowTs) continue
+    if (effectiveEndsAt(lot) <= nowTs - THANKS_WINDOW_MS) continue
+    const bidders = new Set(
+      bids.filter((b) => b.lotId === lot.id && !isBot(b.accountId)).map((b) => b.accountId),
+    )
+    for (const accountId of bidders) {
+      const id = `N-THANKS-${lot.id}-${accountId}`
+      if (thanksSeen(id)) continue
+      extraNotes.push({
+        id,
+        accountId,
+        kind: 'thanks',
+        title: 'Thanks for joining',
+        body: `${lot.manufacturer} ${lot.model} has closed. Thanks for bidding — check wins and invoices in your account.`,
+        href: '/account/bids',
+        at: nowTs,
+        read: false,
+      })
+    }
+  }
+
+  if (!extraInv.length && !extraNotes.length) return { invoices, notices }
   return {
-    invoices: [...extraInv, ...invoices],
+    invoices: extraInv.length ? [...extraInv, ...invoices] : invoices,
     notices: [...extraNotes, ...notices],
   }
 }
@@ -123,8 +150,52 @@ export function buyerCareNotices(
   const seen = (id: string) => notices.some((n) => n.id === id) || extra.some((n) => n.id === id)
 
   for (const lot of lots) {
-    if (lot.channel !== 'auction' || lot.endsAt <= nowTs) continue
-    if (watchlist.includes(lot.id) && isEndingSoon(lot.endsAt, nowTs, endingSoonMinutes)) {
+    if (lot.channel !== 'auction' || effectiveEndsAt(lot) <= nowTs) continue
+    const hasBid = bids.some((b) => b.lotId === lot.id && b.accountId === accountId)
+    const overtime = isInExtraSealed(lot, nowTs)
+    const href = `/auctions#${lot.auctionType || 'live'}`
+    const label = `${lot.manufacturer} ${lot.model}`
+
+    if (overtime && hasBid) {
+      const startId = `N-SEALED-START-${lot.id}-${accountId}`
+      if (!seen(startId)) {
+        const left = Math.max(1, Math.round((effectiveEndsAt(lot) - nowTs) / 60_000))
+        extra.push({
+          id: startId,
+          accountId,
+          kind: 'closing',
+          title: 'Sealed started',
+          body: `${label} · ${left}m left · prior bidders only`,
+          href,
+          at: nowTs,
+          read: false,
+        })
+      }
+    }
+
+    if (
+      overtime &&
+      hasBid &&
+      isEndingSoon(effectiveEndsAt(lot), nowTs, endingSoonMinutes)
+    ) {
+      const id = `N-SEALED-CLOSE-${lot.id}-${accountId}`
+      if (!seen(id)) {
+        extra.push({
+          id,
+          accountId,
+          kind: 'closing',
+          title: 'Sealed closing soon',
+          body: `${label} · ${lot.id}`,
+          href,
+          at: nowTs,
+          read: false,
+        })
+      }
+    } else if (
+      !overtime &&
+      watchlist.includes(lot.id) &&
+      isEndingSoon(lot.endsAt, nowTs, endingSoonMinutes)
+    ) {
       const id = `N-CLOSE-${lot.id}-${accountId}`
       if (!seen(id)) {
         extra.push({
@@ -132,16 +203,16 @@ export function buyerCareNotices(
           accountId,
           kind: 'closing',
           title: 'Watchlist lot closing soon',
-          body: `${lot.manufacturer} ${lot.model} · ${lot.id}`,
-          href: `/auctions#${lot.auctionType || 'live'}`,
+          body: `${label} · ${lot.id}`,
+          href,
           at: nowTs,
           read: false,
         })
       }
     }
+
     const stats = fillStats(lot, bids, accountId)
-    const hasBid = bids.some((b) => b.lotId === lot.id && b.accountId === accountId)
-    if (hasBid && stats.myPcs === 0 && !isSealedLot(lot, settings)) {
+    if (hasBid && stats.myPcs === 0 && !isSealedLot(lot, settings, nowTs)) {
       const id = `N-FILL-${lot.id}-${accountId}`
       if (!seen(id)) {
         extra.push({
@@ -149,8 +220,8 @@ export function buyerCareNotices(
           accountId,
           kind: 'fill',
           title: 'You are out of fill',
-          body: `${lot.manufacturer} ${lot.model} — raise price or qty to get units`,
-          href: `/auctions#${lot.auctionType || 'live'}`,
+          body: `${label} — raise price or qty to get units`,
+          href,
           at: nowTs,
           read: false,
         })

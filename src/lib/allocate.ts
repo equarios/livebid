@@ -1,5 +1,5 @@
 import type { Bid, Lot, SiteSettings } from '../types'
-import { isSealedLot } from './auctionLists'
+import { isAuctionOpen, isInExtraSealed, isSealedLot } from './auctionLists'
 
 export type BidOutcome = 'won' | 'partial' | 'lost'
 
@@ -16,8 +16,11 @@ export function bidOutcome(
 }
 
 export function bidStatus(lot: Lot, myPcs: number, desired: number | undefined, now: number, settings?: SiteSettings) {
-  if (lot.endsAt <= now) return { label: 'Closed', className: 'muted' }
-  if (isSealedLot(lot, settings)) {
+  if (!isAuctionOpen(lot, now)) return { label: 'Closed', className: 'muted' }
+  if (isInExtraSealed(lot, now)) {
+    return { label: 'Sealed', className: 'status sealed' }
+  }
+  if (isSealedLot(lot, settings, now)) {
     return desired != null ? { label: 'Bid in', className: 'status sealed' } : { label: '—', className: 'muted' }
   }
   if (desired == null) return { label: '—', className: 'muted' }
@@ -86,6 +89,24 @@ export function fillStats(lot: Lot, bids: Bid[], me?: string) {
     smallHighPrice,
     takeAllPrice,
   }
+}
+
+/** True when buyer has 0 fill but +$1 on their last bid would get ≥1 pc. */
+export function isCloseToFill(lot: Lot, bids: Bid[], accountId: string, increment = 1): boolean {
+  const stats = fillStats(lot, bids, accountId)
+  if (stats.myPcs > 0) return false
+  const last = lastBidsForLot(bids, lot.id).find((b) => b.accountId === accountId)
+  if (!last) return false
+  const others = bids.filter((b) => b.accountId !== accountId)
+  const trial: Bid[] = [
+    ...others,
+    {
+      ...last,
+      amount: last.amount + increment,
+      at: last.at + 1,
+    },
+  ]
+  return fillStats(lot, trial, accountId).myPcs > 0
 }
 
 export type FillStats = ReturnType<typeof fillStats>

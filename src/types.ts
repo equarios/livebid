@@ -8,10 +8,15 @@ export type AuctionTypeDef = {
   label: string
   fillMode: AuctionFillMode
   intro?: string
-  /** Shared close clock for every lot on this list. */
+  /** Shared close clock for every lot on this list (end of open / live phase). */
   closesAt?: number
   /** Used when closesAt is not set yet. */
   closeMinutes?: number
+  /**
+   * After the live clock, prior bidders only get this many more minutes (sealed).
+   * 0 / unset = no Extra sealed phase.
+   */
+  extraSealedMinutes?: number
   /**
    * Optional system / auction fee % on winning goods for this list.
    * 0 = no fee. Undefined falls back to invoice.feePct.
@@ -34,7 +39,31 @@ export type ThemeSettings = {
   lose: string
   live: string
   font: string
+  /** Headings / display stack (CSS --display). */
+  displayFont: string
   radius: string
+  /** Base body size in px. */
+  fontSize: number
+  fontSizeTiny: number
+  fontSizeLabel: number
+  fontSizePrice: number
+  fontSizeH1: number
+  fontSizeH2: number
+  fontWeightBody: number
+  fontWeightBold: number
+  fontWeightHeading: number
+  /** Unitless line-heights. */
+  lineHeight: number
+  lineHeightTiny: number
+  lineHeightHeading: number
+  /** Letter-spacing in em. */
+  letterSpacing: number
+  letterSpacingLabel: number
+  fontSizeButton: number
+  fontWeightButton: number
+  fontWeightLink: number
+  /** Link underline: none | hover | always */
+  linkUnderline: 'none' | 'hover' | 'always'
 }
 
 export type FeatureFlags = {
@@ -324,6 +353,22 @@ export type SitePages = {
   wholesaleBrandsTitle: string
   wholesaleEmptyDeals: string
   wholesaleEmptyMarket: string
+  /** Use `{brand}` for the site brand name. */
+  wholesaleSeoTitle: string
+  /** Use `{brand}` for the site brand name. */
+  wholesaleSeoDescription: string
+  wholesaleEndingSoonTitle: string
+  wholesaleEndingSoonViewAll: string
+  wholesaleMyDeskLabel: string
+  wholesaleMyDeskGo: string
+  wholesaleCatDeviceLabel: string
+  wholesaleCatConditionLabel: string
+  wholesaleCatAllLabel: string
+  wholesaleEmptyHub: string
+  wholesaleBrowseMarketCta: string
+  wholesaleOpenAuctionsCta: string
+  wholesaleViewAllAuctions: string
+  wholesaleViewAllMarket: string
   buyers: MarketingPageCopy
   sellers: MarketingPageCopy
   support: MarketingPageCopy
@@ -356,6 +401,11 @@ export type SiteSettings = {
    * 0 = no fee. Undefined falls back to invoice.feePct.
    */
   marketplaceFeePct?: number
+  /**
+   * Lowest marketplace offer as % of list price (Super-editable).
+   * Default 30. 0 = $1 floor only.
+   */
+  offerFloorPct?: number
   defaultMoq: number
   reopenHours: number
   extendHours: number
@@ -393,6 +443,8 @@ export type Lot = {
   buyNowPrice?: number
   bidCount: number
   endsAt: number
+  /** Final close when Extra sealed is enabled; after endsAt only prior bidders may see/bid. */
+  extraSealedEndsAt?: number
   description: string
   accent: string
   operator?: string
@@ -425,12 +477,18 @@ export type InventorySku = {
   description: string
   defaultMoq?: number
   lastPrice?: number
+  /** Warehouse stock (pcs on hand). */
+  onHand?: number
 }
 
 export type ListingDropStatus = 'pending' | 'approved' | 'declined'
 
 /** Admin-built lots waiting Super confirmation. Clock starts on approve. */
-export type ListingDropItem = Lot & { durationMins: number }
+export type ListingDropItem = Lot & {
+  durationMins: number
+  /** Optional Extra sealed overtime for this item’s list when the drop starts a new clock. */
+  extraSealedMinutes?: number
+}
 
 export type ListingDrop = {
   id: string
@@ -519,12 +577,16 @@ export type NoticeKind =
   | 'invoice'
   | 'outbid'
   | 'closing'
+  | 'thanks'
   | 'fill'
   | 'offer'
   | 'cart'
   | 'payment'
   | 'shipping'
   | 'auth'
+  | 'watch'
+  | 'digest'
+  | 'sealed'
 
 export type EmailPrefs = {
   win: boolean
@@ -536,7 +598,14 @@ export type EmailPrefs = {
   auth: boolean
   outbid: boolean
   closing: boolean
+  thanks: boolean
   fill: boolean
+  /** Saved category filter matches a new open lot. */
+  watch: boolean
+  /** Once-daily desk summary (outbid · invoices · watch hits). */
+  digest: boolean
+  /** Extra sealed overtime started on a lot you already bid. */
+  sealed: boolean
 }
 
 export type MarketOfferStatus = 'pending' | 'accepted' | 'declined' | 'confirmed' | 'cancelled'

@@ -24,6 +24,10 @@ export function mapLot(lot: Lot) {
     buyNowPrice: lot.buyNowPrice ?? undefined,
     bidCount: lot.bidCount,
     endsAt: Number(lot.endsAt),
+    extraSealedEndsAt:
+      lot.extraSealedEndsAt != null && Number(lot.extraSealedEndsAt) > 0
+        ? Number(lot.extraSealedEndsAt)
+        : undefined,
     description: lot.description,
     accent: lot.accent,
     operator: lot.operator ?? undefined,
@@ -142,5 +146,6 @@ export function mapSku(s: InventorySku) {
     description: s.description,
     defaultMoq: s.defaultMoq ?? undefined,
     lastPrice: s.lastPrice ?? undefined,
+    onHand: 'onHand' in s && typeof (s as { onHand?: number }).onHand === 'number' ? (s as { onHand: number }).onHand : 0,
   }
 }

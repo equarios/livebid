@@ -5,12 +5,15 @@ import { fileURLToPath } from 'node:url'
 export type FeeConfig = {
   marketplaceFeePct: number
   invoiceFeePct: number
+  /** Lowest marketplace offer as % of list (0–100). */
+  offerFloorPct: number
   auctionTypeFees: Record<string, number>
 }
 
 const DEFAULT: FeeConfig = {
   marketplaceFeePct: 2,
   invoiceFeePct: 2,
+  offerFloorPct: 30,
   auctionTypeFees: { live: 2, offline: 2 },
 }
 
@@ -23,12 +26,18 @@ function clampPct(n: unknown, fallback: number) {
   return Math.round(v * 100) / 100
 }
 
+function clampOfferFloorPct(n: unknown, fallback: number) {
+  const v = clampPct(n, fallback)
+  return Math.min(100, Math.max(0, v))
+}
+
 export function readFees(): FeeConfig {
   try {
     const raw = JSON.parse(fs.readFileSync(FILE, 'utf8')) as Partial<FeeConfig>
     return {
       marketplaceFeePct: clampPct(raw.marketplaceFeePct, DEFAULT.marketplaceFeePct),
       invoiceFeePct: clampPct(raw.invoiceFeePct, DEFAULT.invoiceFeePct),
+      offerFloorPct: clampOfferFloorPct(raw.offerFloorPct, DEFAULT.offerFloorPct),
       auctionTypeFees: {
         ...DEFAULT.auctionTypeFees,
         ...(raw.auctionTypeFees && typeof raw.auctionTypeFees === 'object' ? raw.auctionTypeFees : {}),
@@ -38,6 +47,7 @@ export function readFees(): FeeConfig {
     return {
       marketplaceFeePct: DEFAULT.marketplaceFeePct,
       invoiceFeePct: DEFAULT.invoiceFeePct,
+      offerFloorPct: DEFAULT.offerFloorPct,
       auctionTypeFees: { ...DEFAULT.auctionTypeFees },
     }
   }
@@ -47,6 +57,7 @@ export function writeFees(next: FeeConfig) {
   const clean: FeeConfig = {
     marketplaceFeePct: clampPct(next.marketplaceFeePct, 0),
     invoiceFeePct: clampPct(next.invoiceFeePct, 2),
+    offerFloorPct: clampOfferFloorPct(next.offerFloorPct, DEFAULT.offerFloorPct),
     auctionTypeFees: {},
   }
   for (const [k, v] of Object.entries(next.auctionTypeFees || {})) {
@@ -74,6 +85,17 @@ export function feeForMarketplace() {
     return clampPct(f.marketplaceFeePct, 0)
   }
   return clampPct(f.invoiceFeePct, 2)
+}
+
+export function offerFloorPct() {
+  return clampOfferFloorPct(readFees().offerFloorPct, DEFAULT.offerFloorPct)
+}
+
+/** Min unit price for a marketplace offer given list and Super %. */
+export function minOfferUnitPrice(listedPrice: number, pct = offerFloorPct()) {
+  const list = Math.max(0, Number(listedPrice) || 0)
+  const rate = clampOfferFloorPct(pct, DEFAULT.offerFloorPct) / 100
+  return Math.max(1, Math.round(list * rate))
 }
 
 export function roundMoney(n: number) {

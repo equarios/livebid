@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
+import { WholesaleStatusCard } from '../components/WholesaleStatusCard'
 import { api } from '../lib/api'
 import { canUseWholesaleDesk } from '../lib/channelAccess'
 import { useStore } from '../store'
@@ -73,20 +74,24 @@ export function WholesaleApply() {
   if (canUseWholesaleDesk(user, isStaff) || wholesaleStatus === 'approved') {
     return (
       <div className="wholesale-apply">
-        <p className="muted tiny mypage-intro">
-          Approved — desk is active. Bid, buy marketplace, and pay invoices.
-        </p>
-        <div className="account-overview-actions">
-          <Link className="btn btn-primary" to="/auctions">
-            Open auctions
-          </Link>
-          <Link className="btn" to="/marketplace">
-            Marketplace
-          </Link>
-          <Link className="btn" to="/account/documents">
-            Documents
-          </Link>
-        </div>
+        <section className="wholesale-status-card is-approved" aria-label="Wholesale approved">
+          <div className="wholesale-status-card-copy">
+            <span className="wholesale-status-card-pill">approved</span>
+            <h2>Wholesale approved</h2>
+            <p className="muted">Your desk is active — bid, buy marketplace, and pay invoices.</p>
+          </div>
+          <div className="wholesale-status-card-actions">
+            <Link className="btn btn-primary" to="/wholesale">
+              Open wholesale hub
+            </Link>
+            <Link className="btn" to="/auctions">
+              Auctions
+            </Link>
+            <Link className="btn" to="/marketplace">
+              Marketplace
+            </Link>
+          </div>
+        </section>
       </div>
     )
   }
@@ -123,14 +128,26 @@ export function WholesaleApply() {
 
   const locked = appStatus === 'submitted' || appStatus === 'under_review' || wholesaleStatus === 'under_review'
 
+  if (
+    wholesaleStatus === 'submitted' ||
+    wholesaleStatus === 'under_review' ||
+    wholesaleStatus === 'needs_docs' ||
+    wholesaleStatus === 'rejected' ||
+    locked
+  ) {
+    return (
+      <div className="wholesale-apply">
+        <WholesaleStatusCard />
+        {staffNote ? <p className="muted tiny">Staff note: {staffNote}</p> : null}
+      </div>
+    )
+  }
+
   return (
     <div className="wholesale-apply">
+      <WholesaleStatusCard />
       <p className="muted tiny mypage-intro">
         Company, tax/resale, and how you buy. Staff may request documents after you submit.
-      </p>
-      <p className={`tiny wholesale-status-pill is-${wholesaleStatus || appStatus}`}>
-        {(wholesaleStatus || appStatus).replace(/_/g, ' ')}
-        {staffNote ? ` · ${staffNote}` : ''}
       </p>
 
       <ol className="wholesale-steps">
@@ -141,15 +158,7 @@ export function WholesaleApply() {
         ))}
       </ol>
 
-      {locked && step === STEPS.length - 1 ? (
-        <div className="account-panel">
-          <p>Application is with staff for review. Upload extra files under Documents if requested.</p>
-          <Link className="btn btn-primary" to="/account/documents">
-            Documents
-          </Link>
-        </div>
-      ) : (
-        <form className="wholesale-form" onSubmit={onNext}>
+      <form className="wholesale-form" onSubmit={onNext}>
           {step === 0 ? (
             <>
               <label>
@@ -295,7 +304,6 @@ export function WholesaleApply() {
             </button>
           </div>
         </form>
-      )}
     </div>
   )
 }

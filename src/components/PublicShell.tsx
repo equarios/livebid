@@ -5,9 +5,13 @@ import { ConsumerNav } from './ConsumerNav'
 import { HelpMenu } from './HelpMenu'
 import { LanguageMenu } from './LanguageMenu'
 import { MeMenu } from './MeMenu'
+import { NoticeBell } from './NoticeBell'
 import { SiteFooter } from './SiteFooter'
 import { SiteNav } from './SiteNav'
+import { HeaderDeskPulse } from './HeaderDeskPulse'
+import { WholesaleCatSubnav } from './WholesaleCatSubnav'
 import { canUseWholesaleDesk } from '../lib/channelAccess'
+import { useWatchFilterNotices } from '../lib/useWatchFilterNotices'
 import { useStore } from '../store'
 
 type ShellMode = 'consumer' | 'wholesale'
@@ -23,6 +27,7 @@ function GuestWholesaleNav({ onNavigate }: { onNavigate?: () => void }) {
       }}
     >
       <NavLink to="/buyers">{settings.copy.navBuyers}</NavLink>
+      <NavLink to="/sellers">{settings.copy.navSellers}</NavLink>
       <NavLink to="/wholesale/c">Categories</NavLink>
       {settings.features.register ? <NavLink to="/register">{settings.copy.navApply}</NavLink> : null}
       <NavLink to="/support">{settings.copy.navSupport}</NavLink>
@@ -42,9 +47,13 @@ export function PublicShell({
   const location = useLocation()
   const [q, setQ] = useState(() => new URLSearchParams(location.search).get('q') || '')
   const [navOpen, setNavOpen] = useState(false)
-  const [panel, setPanel] = useState<'help' | 'me' | null>(null)
+  const [panel, setPanel] = useState<'help' | 'me' | 'lang' | 'notes' | null>(null)
   const consumer = mode === 'consumer'
   const deskOk = canUseWholesaleDesk(user, isStaff)
+  const showCatSubnav =
+    !consumer &&
+    (location.pathname === '/wholesale' || location.pathname.startsWith('/wholesale/'))
+  useWatchFilterNotices()
 
   useEffect(() => {
     setQ(new URLSearchParams(location.search).get('q') || '')
@@ -133,42 +142,54 @@ export function PublicShell({
               ⌕
             </button>
           </form>
-          <button
-            type="button"
-            className="nav-toggle"
-            aria-expanded={navOpen}
-            aria-label={settings.copy.navMenu}
-            onClick={() => setNavOpen((v) => !v)}
-          >
-            {settings.copy.navMenu}
-          </button>
-          <div className={`pub-links ${navOpen ? 'is-open' : ''}`}>
-            {consumer ? (
-              <ConsumerNav onNavigate={() => setNavOpen(false)} />
-            ) : deskOk ? (
-              <SiteNav open={navOpen} onNavigate={() => setNavOpen(false)} />
-            ) : (
-              <GuestWholesaleNav onNavigate={() => setNavOpen(false)} />
-            )}
-            <HelpMenu
-              onNavigate={() => setNavOpen(false)}
-              onOpen={() => setPanel('help')}
-              onClose={() => setPanel((p) => (p === 'help' ? null : p))}
-              closeWhen={panel === 'me'}
-            />
-            <MeMenu
-              mode={consumer ? 'consumer' : 'wholesale'}
-              onNavigate={() => setNavOpen(false)}
-              onOpen={() => setPanel('me')}
-              onClose={() => setPanel((p) => (p === 'me' ? null : p))}
-              closeWhen={panel === 'help'}
-            />
-            <LanguageMenu
-              onOpen={() => setPanel(null)}
-              closeWhen={panel === 'help' || panel === 'me'}
-            />
+          <div className="pub-util">
+            {!consumer && deskOk ? <HeaderDeskPulse /> : null}
+            <button
+              type="button"
+              className="nav-toggle"
+              aria-expanded={navOpen}
+              aria-label={settings.copy.navMenu}
+              onClick={() => setNavOpen((v) => !v)}
+            >
+              {settings.copy.navMenu}
+            </button>
+            <div className={`pub-links ${navOpen ? 'is-open' : ''}`}>
+              {consumer ? (
+                <ConsumerNav onNavigate={() => setNavOpen(false)} />
+              ) : deskOk ? (
+                <SiteNav open={navOpen} onNavigate={() => setNavOpen(false)} />
+              ) : (
+                <GuestWholesaleNav onNavigate={() => setNavOpen(false)} />
+              )}
+              <HelpMenu
+                onNavigate={() => setNavOpen(false)}
+                onOpen={() => setPanel('help')}
+                onClose={() => setPanel((p) => (p === 'help' ? null : p))}
+                closeWhen={panel === 'me' || panel === 'lang' || panel === 'notes'}
+              />
+              <MeMenu
+                mode={consumer ? 'consumer' : 'wholesale'}
+                onNavigate={() => setNavOpen(false)}
+                onOpen={() => setPanel('me')}
+                onClose={() => setPanel((p) => (p === 'me' ? null : p))}
+                closeWhen={panel === 'help' || panel === 'lang' || panel === 'notes'}
+              />
+              <div className="topbar-icon-pair">
+                <NoticeBell
+                  closeWhen={panel === 'help' || panel === 'me' || panel === 'lang'}
+                  onOpen={() => setPanel('notes')}
+                  onClose={() => setPanel((p) => (p === 'notes' ? null : p))}
+                />
+                <LanguageMenu
+                  onOpen={() => setPanel('lang')}
+                  onClose={() => setPanel((p) => (p === 'lang' ? null : p))}
+                  closeWhen={panel === 'help' || panel === 'me' || panel === 'notes'}
+                />
+              </div>
+            </div>
           </div>
         </div>
+        {showCatSubnav ? <WholesaleCatSubnav /> : null}
       </header>
       <div className="pub-body">{children}</div>
       <SiteFooter />

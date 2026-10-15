@@ -13,6 +13,35 @@ type AppRow = {
   payload: Record<string, unknown>
 }
 
+type StuckRow = {
+  accountId: string
+  company: string
+  email: string
+  approvedAt: string
+  lastNudgeAt: string | null
+  nudgeCount: number
+  lastBidAt: string | null
+  bidAfterNudge: boolean
+}
+
+function stuckMeta(s: StuckRow) {
+  const bits = [`approved ${new Date(s.approvedAt).toLocaleDateString()}`]
+  if (s.lastNudgeAt) {
+    bits.push(
+      `nudged ${new Date(s.lastNudgeAt).toLocaleDateString()}${
+        s.nudgeCount > 1 ? ` ×${s.nudgeCount}` : ''
+      }`,
+    )
+    bits.push(s.bidAfterNudge ? 'bid after nudge' : 'no bid since nudge')
+  } else {
+    bits.push('never nudged')
+  }
+  if (s.lastBidAt && !s.bidAfterNudge) {
+    bits.push(`last bid ${new Date(s.lastBidAt).toLocaleDateString()}`)
+  }
+  return bits.join(' · ')
+}
+
 function fileToBase64(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader()
@@ -26,8 +55,20 @@ function fileToBase64(file: File) {
   })
 }
 
+type RecoveredRow = {
+  accountId: string
+  company: string
+  email: string
+  nudgedAt: string
+  bidAt: string
+  thanked: boolean
+}
+
 export function WholesaleReviewDesk() {
   const [rows, setRows] = useState<AppRow[]>([])
+  const [stuck, setStuck] = useState<StuckRow[]>([])
+  const [recovered, setRecovered] = useState<RecoveredRow[]>([])
+  const [idleDays, setIdleDays] = useState(7)
   const [error, setError] = useState<string | null>(null)
   const [ok, setOk] = useState<string | null>(null)
   const [note, setNote] = useState<Record<string, string>>({})
@@ -45,8 +86,15 @@ export function WholesaleReviewDesk() {
   const [quickNotice, setQuickNotice] = useState('')
 
   async function reload() {
-    const res = await api.staffWholesaleApplications()
-    setRows(res.applications)
+    const [apps, idle, back] = await Promise.all([
+      api.staffWholesaleApplications(),
+      api.staffWholesaleStuck().catch(() => ({ stuck: [] as StuckRow[], idleDays: 7 })),
+      api.staffWholesaleRecovered().catch(() => ({ recovered: [] as RecoveredRow[] })),
+    ])
+    setRows(apps.applications)
+    setStuck(idle.stuck)
+    setIdleDays(idle.idleDays || 7)
+    setRecovered(back.recovered)
   }
 
   useEffect(() => {
@@ -84,7 +132,15 @@ export function WholesaleReviewDesk() {
 
   async function act(
     accountId: string,
-    action: 'approve' | 'reject' | 'needs_docs' | 'under_review' | 'note' | 'send_notice',
+    action:
+      | 'approve'
+      | 'reject'
+      | 'needs_docs'
+      | 'under_review'
+      | 'note'
+      | 'send_notice'
+      | 'nudge_idle'
+      | 'thanks_recover',
   ) {
     setBusy(accountId + action)
     setError(null)
@@ -101,21 +157,45 @@ export function WholesaleReviewDesk() {
         )
         setDocFile((f) => ({ ...f, [accountId]: null }))
       }
-      await api.staffWholesaleAction(accountId, {
+      const res = await api.staffWholesaleAction(accountId, {
         action,
         staffNote: note[accountId],
         noticeBody:
           noticeBody[accountId] ||
           (action === 'needs_docs'
             ? 'Please upload the requested documents on My Page → Documents.'
-            : undefined),
-        noticeTitle: action === 'needs_docs' ? 'Documents needed' : 'Message from Equarios',
-        noticeHref: '/account/documents',
+            : action === 'approve'
+              ? 'Your wholesale desk is active. Next: save a watch filter, place a first bid, and confirm your ship/bill address.'
+              : undefined),
+        noticeTitle:
+          action === 'needs_docs'
+            ? 'Documents needed'
+            : action === 'approve'
+              ? 'Desk unlocked — wholesale approved'
+              : action === 'nudge_idle'
+                ? 'Your wholesale desk is waiting'
+                : action === 'thanks_recover'
+                  ? 'Good to see you back on the desk'
+                  : 'Message from Equarios',
+        noticeHref:
+          action === 'approve' || action === 'nudge_idle' || action === 'thanks_recover'
+            ? '/wholesale?onboard=1'
+            : '/account/documents',
       })
       setOk(
-        action === 'needs_docs'
-          ? `${accountId}: marked needs docs${file ? ' · form sent' : ''}.`
-          : `${accountId}: ${action.replace(/_/g, ' ')}.`,
+        action === 'thanks_recover'
+          ? res.already
+            ? `${accountId}: already thanked today.`
+            : `${accountId}: thanks emailed.`
+          : action === 'nudge_idle'
+            ? res.already
+              ? `${accountId}: already nudged today.`
+              : `${accountId}: idle nudge emailed.`
+            : action === 'needs_docs'
+              ? `${accountId}: marked needs docs${file ? ' · form sent' : ''}.`
+              : action === 'approve'
+                ? `${accountId}: approved · buyer notified (hub link).`
+                : `${accountId}: ${action.replace(/_/g, ' ')}.`,
       )
       await reload()
     } catch (e) {
@@ -191,6 +271,12 @@ export function WholesaleReviewDesk() {
     }
   }
 
+  const inReview = rows.filter(
+    (r) => r.wholesaleStatus === 'submitted' || r.wholesaleStatus === 'under_review',
+  ).length
+  const needsDocs = rows.filter((r) => r.wholesaleStatus === 'needs_docs').length
+  const waiting = inReview + needsDocs
+
   return (
     <section className="mh-desk">
       <header className="mh-desk-head">
@@ -198,9 +284,90 @@ export function WholesaleReviewDesk() {
         <p className="mh-desk-note">
           Review forms, request docs, send files to My Page → Documents, then approve desk access.
         </p>
+        <p className="tiny wholesale-apps-queue" aria-live="polite">
+          {waiting
+            ? `${waiting} waiting · ${inReview} in review · ${needsDocs} needs docs`
+            : 'No applications waiting on staff'}
+          {stuck.length
+            ? ` · ${stuck.length} approved idle (${idleDays}d, no bids)`
+            : ''}
+          {recovered.length
+            ? ` · ${recovered.length} bid after nudge (48h)`
+            : ''}
+        </p>
       </header>
       {error ? <p className="error">{error}</p> : null}
       {ok ? <p className="ok">{ok}</p> : null}
+
+      {recovered.length ? (
+        <div className="wholesale-stuck-panel wholesale-recovered-panel">
+          <h3>Bid after nudge (48h)</h3>
+          <p className="muted tiny">
+            Idle nudge worked — send a short thanks / keep-going note (once per day).
+          </p>
+          <ul className="wholesale-stuck-list">
+            {recovered.map((r) => (
+              <li key={r.accountId}>
+                <div>
+                  <strong>
+                    {r.accountId} · {r.company}
+                  </strong>
+                  <span className="muted tiny">
+                    {r.email} · nudged {new Date(r.nudgedAt).toLocaleString()} · bid{' '}
+                    {new Date(r.bidAt).toLocaleString()}
+                    {r.thanked ? ' · thanked' : ''}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  disabled={busy != null || r.thanked}
+                  onClick={() => void act(r.accountId, 'thanks_recover')}
+                >
+                  {r.thanked ? 'Thanked' : 'Thanks'}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {stuck.length ? (
+        <div className="wholesale-stuck-panel">
+          <h3>Stuck approved — no bids in {idleDays}d</h3>
+          <p className="muted tiny">
+            One-click email (once per day). Skip buyers already nudged who still have not bid —
+            or nudge again tomorrow.
+          </p>
+          <ul className="wholesale-stuck-list">
+            {stuck.map((s) => (
+              <li key={s.accountId}>
+                <div>
+                  <strong>
+                    {s.accountId} · {s.company}
+                  </strong>
+                  <span className="muted tiny">
+                    {s.email} · {stuckMeta(s)}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  disabled={busy != null}
+                  title={
+                    s.lastNudgeAt && !s.bidAfterNudge
+                      ? 'Already nudged — no bid since'
+                      : 'Send idle nudge email'
+                  }
+                  onClick={() => void act(s.accountId, 'nudge_idle')}
+                >
+                  {s.lastNudgeAt ? 'Nudge again' : 'Nudge'}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       <form className="staff-quick-send" onSubmit={onQuickSend}>
         <h3>Send form / file to any account</h3>
@@ -323,9 +490,10 @@ export function WholesaleReviewDesk() {
                   type="button"
                   className="btn btn-primary btn-sm"
                   disabled={busy != null}
+                  title="Approves desk access and emails the buyer with a hub link"
                   onClick={() => void act(r.accountId, 'approve')}
                 >
-                  Approve
+                  Approve &amp; notify
                 </button>
                 <button
                   type="button"

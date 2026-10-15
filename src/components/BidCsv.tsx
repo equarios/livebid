@@ -61,23 +61,34 @@ export function BidCsv({
     return live.filter((l) => (l.auctionType || 'live') === kind)
   }
 
-  function priceCtx(lot: Lot, lastOwnAmount?: number) {
+  function priceCtx(
+    lot: Lot,
+    lastOwn?: { amount?: number; qty?: number },
+  ) {
     return {
       independent: isSealedLot(lot, settings),
-      lastOwnAmount,
+      lastOwnAmount: lastOwn?.amount,
+      lastOwnQty: lastOwn?.qty,
     }
   }
 
   function annotate(rows: PreparedRow[]): RowIssue[] {
-    const lastSeen = new Map<string, number>()
+    const lastSeen = new Map<string, { amount: number; qty: number }>()
     return rows.map((row) => {
-      const lastOwn = lastSeen.has(row.lot.id) ? lastSeen.get(row.lot.id) : myLastBid(row.lot.id)?.amount
+      const stored = myLastBid(row.lot.id)
+      const lastOwn =
+        lastSeen.get(row.lot.id) ??
+        (stored ? { amount: stored.amount, qty: stored.qty } : undefined)
       const ctx = priceCtx(row.lot, lastOwn)
       const min = minBidPrice(row.lot, ctx)
-      const qtyErr = checkOrderQty(row.lot, row.qty, settings.copy)
+      const qtyErr = checkOrderQty(row.lot, row.qty, settings.copy, {
+        lastOwnQty: lastOwn?.qty,
+        lastOwnAmount: lastOwn?.amount,
+        amount: row.amount,
+      })
       const priceErr = checkBidPrice(row.lot, row.amount, settings.copy, ctx)
       const issue = qtyErr || priceErr
-      if (!issue) lastSeen.set(row.lot.id, row.amount)
+      if (!issue) lastSeen.set(row.lot.id, { amount: row.amount, qty: row.qty })
       return { ...row, issue, minPrice: min }
     })
   }
@@ -187,7 +198,7 @@ export function BidCsv({
         })
         continue
       }
-      if (lot.endsAt <= now) {
+      if ((lot.extraSealedEndsAt && lot.extraSealedEndsAt > 0 ? lot.extraSealedEndsAt : lot.endsAt) <= now) {
         errors.push({ lotId: lot.id, message: settings.copy.warnClosed })
         continue
       }

@@ -19,7 +19,11 @@ function postLoginPath(
     isSuperAdmin,
     canDesk: desk,
   })
-  if (!desk) return safe?.startsWith('/account') ? safe : '/account'
+  if (!desk) {
+    if (safe?.startsWith('/account')) return safe
+    /* Incomplete wholesale → apply / status desk, not blank Overview. */
+    return '/account/wholesale'
+  }
   if (safe) return safe
   return wholesaleHome(settings)
 }

@@ -25,6 +25,8 @@ model Account {
   wholesaleStatus String @default("none")
   /// JSON: which events also send email (in-app notices always created)
   emailPrefsJson String @default("{\"win\":true,\"offer\":true,\"cart\":true,\"invoice\":true,\"payment\":true,\"shipping\":true,\"auth\":true,\"outbid\":false,\"closing\":false,\"fill\":false}")
+  /// JSON: saved Device/Condition watch filters for offline match emails
+  watchFiltersJson String @default("[]")
   createdAt    DateTime @default(now())
   sessions     Session[]
   bids         Bid[]
@@ -272,6 +274,8 @@ model Lot {
   buyNowPrice      Float?
   bidCount         Int      @default(0)
   endsAt           BigInt
+  /// When set and after endsAt: Extra sealed overtime (prior bidders only). Settlement uses this clock.
+  extraSealedEndsAt BigInt?
   description      String
   accent           String   @default("#2a6f7c")
   operator         String?
@@ -303,6 +307,8 @@ model InventorySku {
   description      String
   defaultMoq       Int?
   lastPrice        Float?
+  /** Warehouse stock (pcs on hand). */
+  onHand           Int     @default(0)
 }
 
 model Bid {

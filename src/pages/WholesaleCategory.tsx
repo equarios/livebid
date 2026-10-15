@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { PublicShell } from '../components/PublicShell'
 import { SeoHead } from '../components/SeoHead'
@@ -22,6 +22,11 @@ import {
   parseCategoryParams,
   type SeoFacet,
 } from '../lib/seoTaxonomy'
+import {
+  isWatchingFilter,
+  removeWatchFilter,
+  upsertWatchFilter,
+} from '../lib/watchFilters'
 import { useNow, useStore } from '../store'
 
 function crumbs(facet: SeoFacet) {
@@ -157,6 +162,13 @@ function CategoryDetail({ facet }: { facet: SeoFacet }) {
   const description = facetDescription(facet, brand)
   const path = categoryPath(facet)
   const deskOk = canUseWholesaleDesk(user, isStaff)
+  const watchFacet: SeoFacet = {
+    deviceClass: facet.deviceClass,
+    condition: facet.condition,
+  }
+  const [watching, setWatching] = useState(() =>
+    user ? isWatchingFilter(user.accountId, watchFacet) : false,
+  )
 
   const matched = useMemo(() => {
     const seen = new Set<string>()
@@ -220,6 +232,23 @@ function CategoryDetail({ facet }: { facet: SeoFacet }) {
                 Apply as buyer
               </Link>
             )}
+            {user && facet.deviceClass ? (
+              <button
+                type="button"
+                className="pub-btn"
+                onClick={() => {
+                  if (watching) {
+                    removeWatchFilter(user.accountId, categoryPath(watchFacet))
+                    setWatching(false)
+                  } else {
+                    upsertWatchFilter(user.accountId, watchFacet, lots, now)
+                    setWatching(true)
+                  }
+                }}
+              >
+                {watching ? 'Watching filter' : 'Watch this filter'}
+              </button>
+            ) : null}
             <Link className="pub-btn" to="/wholesale/c">
               All categories
             </Link>

@@ -21,6 +21,7 @@ import {
 import { isFilterUiTarget } from '../components/FilterPanel'
 import { LotCompare } from '../components/LotCompare'
 import {
+  auctionClockRows,
   groupLotsByType,
   inAuctionList,
   isAuctionListKind,
@@ -302,10 +303,17 @@ function AuctionList() {
               now,
             )
             const typeMeta = settings.auctionTypes.find((t) => t.value === group.value)
-            const endsAt =
-              typeMeta?.closesAt ||
-              (group.lots.length ? Math.max(...group.lots.map((l) => l.endsAt)) : 0)
-            const showTimer = endsAt > now
+            const clock = auctionClockRows(group.lots, settings, now, settings.endingSoonMinutes).find(
+              (r) => r.value === group.value,
+            )
+            const showTimer = Boolean(clock && clock.endsAt > now)
+            const timerTitle = clock
+              ? clock.phase === 'extra'
+                ? `${group.label} · Sealed · prior bidders only`
+                : clock.extraEndsAt && clock.extraEndsAt > clock.liveEndsAt
+                  ? `${group.label} · live close, then Sealed`
+                  : `${group.label} · time left`
+              : `${group.label} · time left`
             return (
             <section
               key={group.value}
@@ -318,12 +326,32 @@ function AuctionList() {
                     {group.label}
                     <em>{group.lots.length}</em>
                   </h2>
-                  {showTimer ? (
+                  {showTimer && clock ? (
                     <span
-                      className="auction-command-timer"
-                      title={`${group.label} · time left`}
+                      className={`auction-command-timer${clock.phase === 'extra' ? ' is-extra' : ''}${
+                        clock.closing ? ' is-hot' : ''
+                      }`}
+                      style={
+                        clock.durationMs > 0
+                          ? {
+                              ['--close-pct' as string]: `${Math.round(
+                                Math.max(
+                                  0,
+                                  Math.min(
+                                    1,
+                                    1 - (clock.endsAt - now) / Math.max(1, clock.durationMs),
+                                  ),
+                                ) * 100,
+                              )}%`,
+                            }
+                          : undefined
+                      }
+                      title={timerTitle}
                     >
-                      <TimeLeft endsAt={endsAt} />
+                      {clock.phase === 'extra' ? (
+                        <em className="auction-command-timer-phase">Sealed</em>
+                      ) : null}
+                      <TimeLeft endsAt={clock.endsAt} />
                     </span>
                   ) : null}
                   <span
@@ -339,14 +367,23 @@ function AuctionList() {
                   {!deskCollapsed ? (
                     <>
                       {(typeMeta?.feePct ?? settings.invoice.feePct) > 0 ? (
-                        <em className="is-fee" title="System usage fee on winning goods">
+                        <span
+                          className="auction-command-stat is-fee"
+                          title="System usage fee on winning goods"
+                        >
                           Fee {typeMeta?.feePct ?? settings.invoice.feePct}%
-                        </em>
+                        </span>
                       ) : null}
                       {yourBids > 0 ? (
-                        <em className="is-yours">Your bids {yourBids}</em>
+                        <span className="auction-command-stat is-yours" title="Lots you have bid on">
+                          Your bids {yourBids}
+                        </span>
                       ) : null}
-                      {openLots > 0 ? <em className="is-open">Open {openLots}</em> : null}
+                      {openLots > 0 ? (
+                        <span className="auction-command-stat is-open" title="Lots you have not bid on">
+                          Open {openLots}
+                        </span>
+                      ) : null}
                       <span
                         className="auction-command-stat is-money"
                         title="Your qty × your price on these lots"

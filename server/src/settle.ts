@@ -1,4 +1,6 @@
 import { allocate } from './allocate'
+import { effectiveEndsAtMs, isInExtraSealed } from './auctionPhase'
+import { runBuyerDigests } from './buyerDigest'
 import { cacheDel, cacheSetNx } from './cache'
 import { prisma } from './db'
 import { feeForAuctionType, withFee } from './feeConfig'
@@ -6,6 +8,25 @@ import { trackCare } from './metrics'
 import { notify, notifyStaff } from './notify'
 
 const ENDING_SOON_MS = 60 * 60 * 1000 // 1 hour default
+/** Only thank bidders on lots that closed recently (avoids backlog flood). */
+const THANKS_WINDOW_MS = 48 * 60 * 60 * 1000
+
+function isBotAccount(accountId: string) {
+  return accountId.startsWith('BOT-')
+}
+
+async function bidderAccountIds(lotId: string): Promise<string[]> {
+  const rows = await prisma.bid.findMany({
+    where: { lotId },
+    distinct: ['accountId'],
+    select: { accountId: true },
+  })
+  return rows.map((r) => r.accountId).filter((id) => !isBotAccount(id))
+}
+
+function minsLeft(endsAtMs: number, now: number) {
+  return Math.max(1, Math.round((endsAtMs - now) / 60_000))
+}
 
 function money(n: number) {
   return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -25,11 +46,16 @@ function kdpInvoiceId(nowTs: number, accountId: string, slug: string) {
 export async function settleClosedAuctions() {
   const now = Date.now()
   const nowBig = BigInt(now)
-  const closed = await prisma.lot.findMany({
-    where: { channel: 'auction', endsAt: { lte: nowBig } },
+  const candidates = await prisma.lot.findMany({
+    where: {
+      channel: 'auction',
+      endsAt: { lte: nowBig },
+      OR: [{ extraSealedEndsAt: null }, { extraSealedEndsAt: { lte: nowBig } }],
+    },
     orderBy: { endsAt: 'asc' },
     take: 500,
   })
+  const closed = candidates.filter((l) => effectiveEndsAtMs(l) <= now)
   if (!closed.length) return
 
   const bids = await prisma.bid.findMany({
@@ -105,12 +131,14 @@ export async function settleClosedAuctions() {
       },
     })
 
+    const items = [...new Set(group.models)].slice(0, 4).join(', ')
+    const more = group.models.length > 4 ? ` +${group.models.length - 4} more` : ''
     await notify({
       id: `N-${id}`,
       accountId: group.accountId,
       kind: 'win',
       title: 'You won an auction',
-      body: `${qty} pcs · ${money(priced.total)} USD. Invoice ${id} is with staff to issue.`,
+      body: `${qty} pcs · ${money(priced.total)} USD · ${items}${more}. Invoice ${id} — open for line details.`,
       href: '/account/invoices',
     })
 
@@ -122,22 +150,99 @@ export async function settleClosedAuctions() {
       `N-ISSUE-${id}`,
     )
   }
+
+  await notifyAuctionThanks(closed, bids, now)
 }
 
-/** Watchlist closing-soon notices (in-app always; email if pref on). */
+/** Thank-you notice/email for every prior bidder when a lot fully closes. */
+async function notifyAuctionThanks(
+  closed: Array<{
+    id: string
+    manufacturer: string
+    model: string
+    auctionType: string | null
+    endsAt: bigint | number
+    extraSealedEndsAt?: bigint | number | null
+  }>,
+  bids: Array<{ lotId: string; accountId: string }>,
+  now: number,
+) {
+  const recent = closed.filter((lot) => effectiveEndsAtMs(lot) > now - THANKS_WINDOW_MS)
+  if (!recent.length) return
+
+  const byLot = new Map<string, Set<string>>()
+  for (const b of bids) {
+    if (isBotAccount(b.accountId)) continue
+    let set = byLot.get(b.lotId)
+    if (!set) {
+      set = new Set()
+      byLot.set(b.lotId, set)
+    }
+    set.add(b.accountId)
+  }
+
+  for (const lot of recent) {
+    const accounts = byLot.get(lot.id)
+    if (!accounts?.size) continue
+    const label = `${lot.manufacturer} ${lot.model}`
+    for (const accountId of accounts) {
+      await notify({
+        id: `N-THANKS-${lot.id}-${accountId}`,
+        accountId,
+        kind: 'thanks',
+        title: 'Thanks for joining',
+        body: `${label} has closed. Thanks for bidding — check wins and invoices in your account.`,
+        href: '/account/bids',
+      })
+    }
+  }
+}
+
+/** Prior bidders when live → Extra sealed overtime starts (soft ping; email if sealed pref on). */
+export async function notifySealedStarted() {
+  const now = Date.now()
+  const lots = await prisma.lot.findMany({
+    where: {
+      channel: 'auction',
+      endsAt: { lte: BigInt(now) },
+      extraSealedEndsAt: { gt: BigInt(now) },
+    },
+    take: 500,
+  })
+  for (const lot of lots) {
+    if (!isInExtraSealed(lot, now)) continue
+    const extraEnd = Number(lot.extraSealedEndsAt)
+    const accounts = await bidderAccountIds(lot.id)
+    const left = minsLeft(extraEnd, now)
+    for (const accountId of accounts) {
+      await notify({
+        id: `N-SEALED-START-${lot.id}-${accountId}`,
+        accountId,
+        kind: 'sealed',
+        title: 'Extra sealed is open — you can still bid',
+        body: `${lot.manufacturer} ${lot.model} · ~${left}m left · prior bidders only`,
+        href: '/wholesale?pulse=sealed',
+      })
+    }
+  }
+}
+
+/**
+ * Closing-soon notices (in-app always; email if pref on).
+ * Live: watchlist. Sealed end: prior bidders only (separate notice id).
+ */
 export async function notifyClosingSoon() {
   const now = Date.now()
   const horizon = now + ENDING_SOON_MS
-  const soon = await prisma.lot.findMany({
+
+  const liveSoon = await prisma.lot.findMany({
     where: {
       channel: 'auction',
       endsAt: { gt: BigInt(now), lte: BigInt(horizon) },
     },
     take: 500,
   })
-  if (!soon.length) return
-
-  for (const lot of soon) {
+  for (const lot of liveSoon) {
     const watchers = await prisma.watchItem.findMany({ where: { lotId: lot.id } })
     for (const w of watchers) {
       await notify({
@@ -150,15 +255,39 @@ export async function notifyClosingSoon() {
       })
     }
   }
+
+  const sealedSoon = await prisma.lot.findMany({
+    where: {
+      channel: 'auction',
+      endsAt: { lte: BigInt(now) },
+      extraSealedEndsAt: { gt: BigInt(now), lte: BigInt(horizon) },
+    },
+    take: 500,
+  })
+  for (const lot of sealedSoon) {
+    const accounts = await bidderAccountIds(lot.id)
+    for (const accountId of accounts) {
+      await notify({
+        id: `N-SEALED-CLOSE-${lot.id}-${accountId}`,
+        accountId,
+        kind: 'closing',
+        title: 'Sealed closing soon',
+        body: `${lot.manufacturer} ${lot.model} · ${lot.id}`,
+        href: `/auctions#${lot.auctionType || 'live'}`,
+      })
+    }
+  }
 }
 
-/** Settle + closing-soon. Uses a short lock so API + worker never double-run. */
+/** Settle + Sealed / closing-soon / daily desk digest. Uses a short lock so API + worker never double-run. */
 export async function runCareJobs() {
   const locked = await cacheSetNx('lock:care', String(Date.now()), 25)
   if (!locked) return
   try {
     await settleClosedAuctions()
+    await notifySealedStarted()
     await notifyClosingSoon()
+    await runBuyerDigests()
     trackCare(true)
   } catch (err) {
     trackCare(false)

@@ -1,17 +1,38 @@
-import { useEffect, useState } from 'react'
-import { useStore } from '../store'
+import { useEffect, useMemo, useState } from 'react'
+import { buildDigestPreviewLines } from '../lib/digestPreview'
+import { useNow, useStore } from '../store'
 import type { EmailPrefs } from '../types'
 
 const PREF_ROWS: Array<{ key: keyof EmailPrefs; label: string; hint: string }> = [
   { key: 'win', label: 'Auction wins', hint: 'When you win units and an invoice is drafted' },
+  { key: 'thanks', label: 'Auction closed', hint: 'Thanks for joining when a list you bid on ends' },
   { key: 'offer', label: 'Offer decisions', hint: 'Accepted or declined marketplace offers' },
   { key: 'cart', label: 'Cart decisions', hint: 'Accepted or declined cart reviews' },
   { key: 'invoice', label: 'Invoices', hint: 'Issued invoices ready to pay' },
   { key: 'payment', label: 'Payments', hint: 'Payment confirmed' },
   { key: 'shipping', label: 'Shipping', hint: 'Tracking updates' },
   { key: 'auth', label: 'Account security', hint: 'Signup and password changes' },
-  { key: 'outbid', label: 'Outbid alerts', hint: 'When you lose fill on a live lot (can be noisy)' },
+  {
+    key: 'outbid',
+    label: 'Close-to-fill alerts',
+    hint: 'Only when +$1 would get you units again (not every outbid)',
+  },
   { key: 'closing', label: 'Closing soon', hint: 'Watchlist lots ending within about an hour' },
+  {
+    key: 'sealed',
+    label: 'Extra sealed started',
+    hint: 'When overtime opens on a lot you already bid (prior bidders only)',
+  },
+  {
+    key: 'watch',
+    label: 'Watch filters',
+    hint: 'In-app when a lot matches; emailed in the daily digest if digest is on',
+  },
+  {
+    key: 'digest',
+    label: 'Daily desk digest',
+    hint: 'Once a day: outbid, invoices due, and batched watch matches',
+  },
   { key: 'fill', label: 'Fill updates', hint: 'Optional fill tips (usually off)' },
 ]
 
@@ -23,11 +44,26 @@ export function Account() {
     emailPrefs,
     loadEmailPrefs,
     saveEmailPrefs,
+    lots,
+    bids,
+    invoices,
   } = useStore()
+  const now = useNow()
   const address = accounts.find((a) => a.accountId === user?.accountId)?.address
   const [prefs, setPrefs] = useState<EmailPrefs | null>(emailPrefs)
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
+
+  const digestPreview = useMemo(() => {
+    if (!user) return []
+    return buildDigestPreviewLines({
+      accountId: user.accountId,
+      lots,
+      bids: bids || [],
+      invoices: invoices || [],
+      now,
+    })
+  }, [user, lots, bids, invoices, now])
 
   useEffect(() => {
     void loadEmailPrefs().then((p) => setPrefs(p))
@@ -108,6 +144,8 @@ export function Account() {
           <h3>Email notifications</h3>
           <p className="muted tiny">
             In-app bell notices always fire. Email is optional — noisy events stay off by default.
+            Quiet hours (UTC 22:00–07:00): outbid / watch / digest / closing skip email; invoices and
+            sealed still send.
           </p>
           {prefs ? (
             <ul className="pref-list">
@@ -131,6 +169,18 @@ export function Account() {
           ) : (
             <p className="muted tiny">Loading preferences…</p>
           )}
+          {prefs?.digest ? (
+            <div className="digest-preview" aria-live="polite">
+              <strong className="tiny">Digest preview (right now)</strong>
+              {digestPreview.length ? (
+                <p className="muted tiny">{digestPreview.join(' · ')}</p>
+              ) : (
+                <p className="muted tiny">
+                  Nothing to send — watch matches, outbid lots, and due invoices show up here.
+                </p>
+              )}
+            </div>
+          ) : null}
           {msg ? (
             <p className={msg === 'Saved.' || msg.startsWith('Saved') ? 'ok' : 'error'}>{msg}</p>
           ) : null}

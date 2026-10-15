@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { PublicShell } from '../components/PublicShell'
+import { StoreWholesaleHandoff } from '../components/StoreWholesaleHandoff'
 import { StoreRail } from '../components/StoreRail'
 import { StoreBlockSkeleton } from '../components/StoreSkeleton'
 import { api, type StoreProductDto } from '../lib/api'
@@ -317,6 +318,7 @@ export function StoreCart() {
             </form>
           </div>
         )}
+        <StoreWholesaleHandoff />
       </div>
     </PublicShell>
   )

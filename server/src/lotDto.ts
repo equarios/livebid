@@ -17,6 +17,7 @@ export function mapLotRow(l: {
   buyNowPrice: number | null
   bidCount: number
   endsAt: bigint
+  extraSealedEndsAt?: bigint | null
   description: string
   accent: string
   operator: string | null
@@ -42,6 +43,10 @@ export function mapLotRow(l: {
     buyNowPrice: l.buyNowPrice ?? undefined,
     bidCount: l.bidCount,
     endsAt: Number(l.endsAt),
+    extraSealedEndsAt:
+      l.extraSealedEndsAt != null && Number(l.extraSealedEndsAt) > 0
+        ? Number(l.extraSealedEndsAt)
+        : undefined,
     description: l.description,
     accent: l.accent,
     operator: l.operator ?? undefined,

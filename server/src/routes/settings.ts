@@ -15,6 +15,7 @@ settingsRoutes.put('/fees', async (c) => {
     .object({
       marketplaceFeePct: z.number().min(0).optional(),
       invoiceFeePct: z.number().min(0).optional(),
+      offerFloorPct: z.number().min(0).max(100).optional(),
       auctionTypeFees: z.record(z.string(), z.number().min(0)).optional(),
     })
     .safeParse(await c.req.json().catch(() => ({})))
@@ -23,6 +24,7 @@ settingsRoutes.put('/fees', async (c) => {
   const next = writeFees({
     marketplaceFeePct: body.data.marketplaceFeePct ?? cur.marketplaceFeePct,
     invoiceFeePct: body.data.invoiceFeePct ?? cur.invoiceFeePct,
+    offerFloorPct: body.data.offerFloorPct ?? cur.offerFloorPct,
     auctionTypeFees: body.data.auctionTypeFees ?? cur.auctionTypeFees,
   })
   return c.json({ fees: next })

@@ -112,6 +112,31 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(body),
     }),
+  getWatchFilters: () =>
+    req<{
+      filters: Array<{
+        id: string
+        deviceClass?: string
+        condition?: string
+        label: string
+        to: string
+        createdAt: number
+      }>
+    }>('/api/account/watch-filters'),
+  saveWatchFilters: (
+    filters: Array<{
+      id: string
+      deviceClass?: string
+      condition?: string
+      label: string
+      to: string
+      createdAt?: number
+    }>,
+  ) =>
+    req<{ filters: unknown[] }>('/api/account/watch-filters', {
+      method: 'PUT',
+      body: JSON.stringify({ filters }),
+    }),
   getWholesaleApplication: () =>
     req<{
       application: {
@@ -169,17 +194,50 @@ export const api = {
         payload: Record<string, unknown>
       }>
     }>('/api/account/staff/wholesale-applications'),
+  staffWholesaleStuck: () =>
+    req<{
+      stuck: Array<{
+        accountId: string
+        company: string
+        email: string
+        approvedAt: string
+        lastNudgeAt: string | null
+        nudgeCount: number
+        lastBidAt: string | null
+        bidAfterNudge: boolean
+      }>
+      idleDays: number
+    }>('/api/account/staff/wholesale-stuck'),
+  staffWholesaleRecovered: () =>
+    req<{
+      recovered: Array<{
+        accountId: string
+        company: string
+        email: string
+        nudgedAt: string
+        bidAt: string
+        thanked: boolean
+      }>
+    }>('/api/account/staff/wholesale-recovered'),
   staffWholesaleAction: (
     accountId: string,
     body: {
-      action: 'approve' | 'reject' | 'needs_docs' | 'under_review' | 'note' | 'send_notice'
+      action:
+        | 'approve'
+        | 'reject'
+        | 'needs_docs'
+        | 'under_review'
+        | 'note'
+        | 'send_notice'
+        | 'nudge_idle'
+        | 'thanks_recover'
       staffNote?: string
       noticeTitle?: string
       noticeBody?: string
       noticeHref?: string
     },
   ) =>
-    req<{ ok: boolean; wholesaleStatus?: string }>(
+    req<{ ok: boolean; wholesaleStatus?: string; already?: boolean }>(
       `/api/account/staff/wholesale-applications/${encodeURIComponent(accountId)}`,
       { method: 'POST', body: JSON.stringify(body) },
     ),
@@ -419,9 +477,24 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ ident, code, password }),
     }),
+  syncAuctionClock: (body: {
+    auctionType: string
+    closesAt: number
+    extraSealedMinutes?: number
+  }) =>
+    req<{ ok: boolean; updated: number; closesAt: number; extraSealedEndsAt: number | null }>(
+      '/api/catalog/auction-clocks',
+      { method: 'POST', body: JSON.stringify(body) },
+    ),
+  publishLots: (lots: unknown[]) =>
+    req<{ ok: boolean; lots: unknown[]; count: number }>('/api/catalog/lots/batch', {
+      method: 'POST',
+      body: JSON.stringify({ lots }),
+    }),
   saveFees: (fees: {
     marketplaceFeePct: number
     invoiceFeePct: number
+    offerFloorPct: number
     auctionTypeFees: Record<string, number>
   }) =>
     req<{ fees: typeof fees }>('/api/settings/fees', {

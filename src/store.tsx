@@ -17,15 +17,23 @@ import {
   type AppLocale,
 } from './i18n'
 import {
-  applyDropClocks,
+  applyLaunchClocks,
   ensureAuctionClocks,
+  filterExtraSealedLots,
+  isAuctionOpen,
+  isInExtraSealed,
   isSealedLot,
   lotAuctionSlug,
   migrateLotAuctionType,
   normalizeAuctionTypes,
 } from './lib/auctionLists'
 import { inventoryFromLots, upsertInventory } from './lib/inventory'
-import { liveLotFromDrop } from './lib/listingDrops'
+import {
+  dropListKey,
+  liveLotFromDrop,
+  previewDropClocks,
+  type DropListClockPlan,
+} from './lib/listingDrops'
 import {
   buildInvoice,
   invoiceTotals,
@@ -34,10 +42,11 @@ import {
   settleInvoiceIssue,
 } from './lib/invoices'
 import { api, isApiAvailable, resetApiProbe, type ApiUser } from './lib/api'
+import { pullWatchFiltersFromServer } from './lib/watchFilters'
 import { onLotTick, startRealtime, stopRealtime } from './lib/realtime'
 import { buyerCareNotices, settleClosedAuctions } from './lib/settle'
 import { mergeDeskBanners } from './lib/deskBanner'
-import { checkBidPrice, checkOrderQty, lotMoq } from './lib/moq'
+import { checkBidPrice, checkOfferPrice, checkOrderQty, lotMoq } from './lib/moq'
 import type {
   Account,
   Bid,
@@ -66,9 +75,13 @@ const DEFAULT_EMAIL_PREFS: EmailPrefs = {
   payment: true,
   shipping: true,
   auth: true,
-  outbid: false,
+  outbid: true,
   closing: false,
+  thanks: true,
   fill: false,
+  watch: true,
+  digest: true,
+  sealed: true,
 }
 
 type Store = {
@@ -146,13 +159,31 @@ type Store = {
   clearPaymentConfirmation: (id: string) => Promise<string | null>
   markInvoiceOpened: (id: string) => void
   markNoticesRead: () => void
+  /** Client-only notices (e.g. watch-filter matches). */
+  appendLocalNotices: (rows: Notice[]) => void
   myBid: (lotId: string) => number | undefined
   myLastBid: (lotId: string) => Bid | undefined
   addLot: (lot: Lot) => void
   addLots: (lots: Lot[]) => void
   submitListingDrop: (items: ListingDropItem[]) => string | null
   withdrawListingDrop: (id: string) => string | null
-  reviewListingDrop: (id: string, decision: 'approved' | 'declined') => string | null
+  reviewListingDrop: (
+    id: string,
+    decision: 'approved' | 'declined',
+    launchPlans?: DropListClockPlan[],
+  ) => Promise<string | null>
+  /** Super: edit a pending drop item before publish. */
+  patchListingDropItem: (
+    dropId: string,
+    itemId: string,
+    patch: Partial<ListingDropItem>,
+  ) => string | null
+  /** Super: set live + Extra sealed minutes for every item on a list in a pending drop. */
+  patchListingDropGroupClock: (
+    dropId: string,
+    listKey: string,
+    clock: { durationMins: number; extraSealedMinutes?: number },
+  ) => string | null
   saveSku: (sku: InventorySku) => string | null
   removeSku: (id: string) => string | null
   updateLot: (lot: Lot) => void
@@ -327,6 +358,11 @@ function mergeSettings(partial?: Partial<SiteSettings> | null): SiteSettings {
               intro: existingLive.intro || liveDef.intro,
               closesAt: existingLive.closesAt || liveDef.closesAt,
               closeMinutes: existingLive.closeMinutes || liveDef.closeMinutes,
+              extraSealedMinutes:
+                existingLive.extraSealedMinutes === 0 ||
+                Number.isFinite(existingLive.extraSealedMinutes)
+                  ? existingLive.extraSealedMinutes
+                  : liveDef.extraSealedMinutes,
               feePct:
                 existingLive.feePct === 0 || Number.isFinite(existingLive.feePct)
                   ? existingLive.feePct
@@ -344,6 +380,11 @@ function mergeSettings(partial?: Partial<SiteSettings> | null): SiteSettings {
               fillMode: 'sealed',
               closesAt: existingOffline.closesAt || offlineDef.closesAt,
               closeMinutes: existingOffline.closeMinutes || offlineDef.closeMinutes,
+              extraSealedMinutes:
+                existingOffline.extraSealedMinutes === 0 ||
+                Number.isFinite(existingOffline.extraSealedMinutes)
+                  ? existingOffline.extraSealedMinutes
+                  : offlineDef.extraSealedMinutes,
               feePct:
                 existingOffline.feePct === 0 || Number.isFinite(existingOffline.feePct)
                   ? existingOffline.feePct
@@ -459,6 +500,43 @@ function mergeSettings(partial?: Partial<SiteSettings> | null): SiteSettings {
           (p.wholesaleEmptyDeals || base.wholesaleEmptyDeals).trim() || base.wholesaleEmptyDeals,
         wholesaleEmptyMarket:
           (p.wholesaleEmptyMarket || base.wholesaleEmptyMarket).trim() || base.wholesaleEmptyMarket,
+        wholesaleSeoTitle:
+          (p.wholesaleSeoTitle || base.wholesaleSeoTitle).trim() || base.wholesaleSeoTitle,
+        wholesaleSeoDescription:
+          (p.wholesaleSeoDescription || base.wholesaleSeoDescription).trim() ||
+          base.wholesaleSeoDescription,
+        wholesaleEndingSoonTitle:
+          (p.wholesaleEndingSoonTitle || base.wholesaleEndingSoonTitle).trim() ||
+          base.wholesaleEndingSoonTitle,
+        wholesaleEndingSoonViewAll:
+          (p.wholesaleEndingSoonViewAll || base.wholesaleEndingSoonViewAll).trim() ||
+          base.wholesaleEndingSoonViewAll,
+        wholesaleMyDeskLabel:
+          (p.wholesaleMyDeskLabel || base.wholesaleMyDeskLabel).trim() || base.wholesaleMyDeskLabel,
+        wholesaleMyDeskGo:
+          (p.wholesaleMyDeskGo || base.wholesaleMyDeskGo).trim() || base.wholesaleMyDeskGo,
+        wholesaleCatDeviceLabel:
+          (p.wholesaleCatDeviceLabel || base.wholesaleCatDeviceLabel).trim() ||
+          base.wholesaleCatDeviceLabel,
+        wholesaleCatConditionLabel:
+          (p.wholesaleCatConditionLabel || base.wholesaleCatConditionLabel).trim() ||
+          base.wholesaleCatConditionLabel,
+        wholesaleCatAllLabel:
+          (p.wholesaleCatAllLabel || base.wholesaleCatAllLabel).trim() || base.wholesaleCatAllLabel,
+        wholesaleEmptyHub:
+          (p.wholesaleEmptyHub || base.wholesaleEmptyHub).trim() || base.wholesaleEmptyHub,
+        wholesaleBrowseMarketCta:
+          (p.wholesaleBrowseMarketCta || base.wholesaleBrowseMarketCta).trim() ||
+          base.wholesaleBrowseMarketCta,
+        wholesaleOpenAuctionsCta:
+          (p.wholesaleOpenAuctionsCta || base.wholesaleOpenAuctionsCta).trim() ||
+          base.wholesaleOpenAuctionsCta,
+        wholesaleViewAllAuctions:
+          (p.wholesaleViewAllAuctions || base.wholesaleViewAllAuctions).trim() ||
+          base.wholesaleViewAllAuctions,
+        wholesaleViewAllMarket:
+          (p.wholesaleViewAllMarket || base.wholesaleViewAllMarket).trim() ||
+          base.wholesaleViewAllMarket,
         buyers: mergePage(base.buyers, p.buyers),
         sellers: mergePage(base.sellers, p.sellers),
         support: mergePage(base.support, p.support),
@@ -470,6 +548,12 @@ function mergeSettings(partial?: Partial<SiteSettings> | null): SiteSettings {
       if (m === 0) return 0
       if (Number.isFinite(m) && (m as number) >= 0) return m as number
       return DEFAULT_SETTINGS.marketplaceFeePct
+    })(),
+    offerFloorPct: (() => {
+      const m = partial?.offerFloorPct
+      if (m === 0) return 0
+      if (Number.isFinite(m) && (m as number) >= 0 && (m as number) <= 100) return m as number
+      return DEFAULT_SETTINGS.offerFloorPct
     })(),
     reopenMinutes: Math.max(
       1,
@@ -843,6 +927,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   )
 
   const applyBootstrap = useCallback(async (sessionUser?: ApiUser | User | null) => {
+    // Drop demo/localStorage lots immediately so bids never hit ghost LB-* ids.
+    setData((prev) => ({ ...prev, lots: [], bids: [] }))
     const boot = await api.bootstrap()
     let lots = ((boot.lots as Lot[]) || []).slice()
     let bids = ((boot.bids as Bid[]) || []).slice()
@@ -866,10 +952,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         auctionType: migrateLotAuctionType(l.auctionType),
       }))
       const settings = mergeSettings(prev.settings)
-      const clocked = ensureAuctionClocks(settings, rawLots)
+      // Prefer server clock fields; only fill missing type closesAt for UI chrome.
+      const auctionTypes = settings.auctionTypes.map((t) => {
+        if (t.closesAt && t.closesAt > Date.now()) return t
+        const group = rawLots.filter(
+          (l) => l.channel === 'auction' && (l.auctionType || 'live') === t.value,
+        )
+        if (!group.length) return t
+        const ends = Math.max(...group.map((l) => l.endsAt))
+        if (ends <= Date.now()) return t
+        return { ...t, closesAt: ends }
+      })
       return {
         ...prev,
-        lots: clocked.lots,
+        lots: rawLots,
         bids,
         cart: (boot.cart as CartItem[]) || [],
         cartOrders: (boot.cartOrders as CartOrder[]) || [],
@@ -883,12 +979,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         inventory: (boot.inventory as InventorySku[])?.length
           ? (boot.inventory as InventorySku[])
           : prev.inventory,
-        // keep settings from client defaults / local until settings API exists
-        settings: clocked.settings,
+        settings: { ...settings, auctionTypes },
         listingDrops: prev.listingDrops,
       }
     })
-    if (sessionUser) setUser(sessionUser as User)
+    if (sessionUser) {
+      setUser(sessionUser as User)
+      void pullWatchFiltersFromServer(sessionUser.accountId).catch(() => undefined)
+    }
   }, [])
 
   useEffect(() => {
@@ -1362,6 +1460,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           const res = await api.placeBid(lotId, amount, qty)
           setData((prev) => {
             const bid = res.bid
+              ? {
+                  lotId: res.bid.lotId,
+                  accountId: res.bid.accountId,
+                  amount: res.bid.amount,
+                  qty: res.bid.qty,
+                  at: res.bid.at,
+                }
+              : {
+                  lotId,
+                  accountId: user?.accountId || '',
+                  amount,
+                  qty,
+                  at: Date.now(),
+                }
             const lots = res.lot
               ? prev.lots.map((l) =>
                   l.id === res.lot!.id
@@ -1372,33 +1484,56 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                       }
                     : l,
                 )
-              : prev.lots
-            const bids = bid
-              ? [...prev.bids.filter((b) => !(b.lotId === bid.lotId && b.at === bid.at && b.accountId === bid.accountId)), bid]
-              : prev.bids
+              : prev.lots.map((l) =>
+                  l.id === lotId
+                    ? {
+                        ...l,
+                        currentPrice: Math.max(l.currentPrice, amount),
+                        bidCount: l.bidCount + 1,
+                      }
+                    : l,
+                )
+            const bids = [
+              ...prev.bids.filter(
+                (b) => !(b.lotId === bid.lotId && b.at === bid.at && b.accountId === bid.accountId),
+              ),
+              bid,
+            ]
             return { ...prev, lots, bids }
           })
           return null
         } catch (e) {
-          return e instanceof Error ? e.message : data.settings.copy.warnNoBid
+          const msg = e instanceof Error ? e.message : data.settings.copy.warnNoBid
+          if (/lot not found/i.test(msg)) {
+            void applyBootstrap(user)
+            return 'That lot is not on the server. Refreshing the desk — publish the catalog from Super if it was only a local draft.'
+          }
+          return msg
         }
       }
       const lot = data.lots.find((l) => l.id === lotId)
       if (!data.settings.features.bidding) return data.settings.copy.warnNoBid
       if (!user) return data.settings.copy.warnLogin
       if (!lot || lot.channel !== 'auction') return data.settings.copy.warnLotMissing
-      if (lot.endsAt <= Date.now()) return data.settings.copy.warnClosed
-      const qtyErr = checkOrderQty(lot, qty, data.settings.copy)
-      if (qtyErr) return qtyErr
+      const nowTs = Date.now()
+      if (!isAuctionOpen(lot, nowTs)) return data.settings.copy.warnClosed
       const accountId = user.accountId
-      const independent = isSealedLot(lot, data.settings)
       const mine = data.bids.filter((b) => b.lotId === lotId && b.accountId === accountId)
-      const lastOwn = mine.length
-        ? mine.reduce((a, b) => (a.at > b.at ? a : b)).amount
-        : undefined
+      if (isInExtraSealed(lot, nowTs) && !mine.length) {
+        return 'Extra sealed: only prior bidders can bid on this lot.'
+      }
+      const independent = isSealedLot(lot, data.settings, nowTs)
+      const lastBid = mine.length ? mine.reduce((a, b) => (a.at > b.at ? a : b)) : undefined
+      const qtyErr = checkOrderQty(lot, qty, data.settings.copy, {
+        lastOwnQty: lastBid?.qty,
+        lastOwnAmount: lastBid?.amount,
+        amount,
+      })
+      if (qtyErr) return qtyErr
       const priceErr = checkBidPrice(lot, amount, data.settings.copy, {
         independent,
-        lastOwnAmount: lastOwn,
+        lastOwnAmount: lastBid?.amount,
+        lastOwnQty: lastBid?.qty,
       })
       if (priceErr) return priceErr
       setData((prev) =>
@@ -1421,7 +1556,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       )
       return null
     },
-    [data.lots, data.bids, data.settings, user],
+    [data.lots, data.bids, data.settings, user, applyBootstrap],
   )
 
   const placeBids = useCallback(
@@ -1437,37 +1572,50 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return { ok: 0, errors: [{ lotId: '—', message: copy.warnLogin }] }
       }
       const now = Date.now()
-      const lastSeen = new Map<string, number>()
+      const lastSeen = new Map<string, { amount: number; qty: number }>()
       for (const entry of entries) {
         const lot = data.lots.find((l) => l.id.toUpperCase() === entry.lotId.trim().toUpperCase())
         if (!lot || lot.channel !== 'auction') {
           errors.push({ lotId: entry.lotId || '—', message: copy.warnLotMissing })
           continue
         }
-        if (lot.endsAt <= now) {
+        if (!isAuctionOpen(lot, now)) {
           errors.push({ lotId: lot.id, message: copy.warnClosed })
           continue
         }
-        const qtyErr = checkOrderQty(lot, entry.qty, copy)
+        const mine = data.bids.filter((b) => b.lotId === lot.id && b.accountId === accountId)
+        if (isInExtraSealed(lot, now) && !mine.length) {
+          errors.push({
+            lotId: lot.id,
+            message: 'Extra sealed: only prior bidders can bid on this lot.',
+          })
+          continue
+        }
+        const independent = isSealedLot(lot, data.settings, now)
+        const storedLast = mine.length
+          ? mine.reduce((a, b) => (a.at > b.at ? a : b))
+          : undefined
+        const lastOwn = lastSeen.get(lot.id) ??
+          (storedLast ? { amount: storedLast.amount, qty: storedLast.qty } : undefined)
+        const qtyErr = checkOrderQty(lot, entry.qty, copy, {
+          lastOwnQty: lastOwn?.qty,
+          lastOwnAmount: lastOwn?.amount,
+          amount: entry.amount,
+        })
         if (qtyErr) {
           errors.push({ lotId: lot.id, message: qtyErr })
           continue
         }
-        const independent = isSealedLot(lot, data.settings)
-        const mine = data.bids.filter((b) => b.lotId === lot.id && b.accountId === accountId)
-        const storedLast = mine.length
-          ? mine.reduce((a, b) => (a.at > b.at ? a : b)).amount
-          : undefined
-        const lastOwn = lastSeen.has(lot.id) ? lastSeen.get(lot.id) : storedLast
         const priceErr = checkBidPrice(lot, entry.amount, copy, {
           independent,
-          lastOwnAmount: lastOwn,
+          lastOwnAmount: lastOwn?.amount,
+          lastOwnQty: lastOwn?.qty,
         })
         if (priceErr) {
           errors.push({ lotId: lot.id, message: priceErr })
           continue
         }
-        lastSeen.set(lot.id, entry.amount)
+        lastSeen.set(lot.id, { amount: entry.amount, qty: entry.qty })
         ok.push({ lotId: lot.id, amount: entry.amount, qty: entry.qty, independent })
       }
       if (!ok.length) return { ok: 0, errors }
@@ -1835,43 +1983,57 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (!lot || lot.channel !== 'marketplace' || !lot.buyNowPrice) {
         return data.settings.copy.warnListingGone.replace('{id}', lotId)
       }
-      const qtyErr = checkOrderQty(lot, qty, data.settings.copy)
-      if (qtyErr) return qtyErr
-      if (!Number.isFinite(unitPrice) || unitPrice < 1) return data.settings.copy.warnMinPrice.replace('{price}', '$1')
-      if (unitPrice >= lot.buyNowPrice) {
-        return data.settings.copy.warnOfferPrice.replace('{price}', String(lot.buyNowPrice))
-      }
-      const open = (data.offers || []).find(
+      const accepted = (data.offers || []).find(
         (o) => o.lotId === lotId && o.accountId === user.accountId && o.status === 'accepted',
       )
-      if (open) return data.settings.copy.warnOfferOpen
+      if (accepted) return data.settings.copy.warnOfferOpen
+      const pending = (data.offers || []).find(
+        (o) => o.lotId === lotId && o.accountId === user.accountId && o.status === 'pending',
+      )
+      const rounded = Math.round(unitPrice)
+      const qtyErr = checkOrderQty(lot, qty, data.settings.copy, {
+        lastOwnQty: pending?.qty,
+        lastOwnAmount: pending?.unitPrice,
+        amount: rounded,
+      })
+      if (qtyErr) return qtyErr
+      const priceErr = checkOfferPrice(
+        lot.buyNowPrice,
+        rounded,
+        data.settings.copy,
+        pending?.unitPrice,
+        data.settings.offerFloorPct,
+      )
+      if (priceErr) return priceErr
       const offer: MarketOffer = {
-        id: `OFF-${Date.now().toString().slice(-8)}`,
+        id: pending?.id || `OFF-${Date.now().toString().slice(-8)}`,
         lotId,
         accountId: user.accountId,
         qty,
-        unitPrice: Math.round(unitPrice),
+        unitPrice: rounded,
         listedPrice: lot.buyNowPrice,
         status: 'pending',
-        createdAt: Date.now(),
+        createdAt: pending?.createdAt ?? Date.now(),
       }
       setData((prev) => {
         const rest = (prev.offers || []).filter(
           (o) => !(o.lotId === lotId && o.accountId === user.accountId && o.status === 'pending'),
         )
         const staff = prev.accounts.filter((a) => a.role === 'admin' || a.role === 'superadmin')
-        const notices: Notice[] = [
-          ...staff.map((a) => ({
-            id: `N-OFFR-${offer.id}-${a.accountId}`,
-            accountId: a.accountId,
-            kind: 'offer' as const,
-            title: 'New marketplace offer',
-            body: `${user.company} · ${lot.manufacturer} ${lot.model} · ${qty} pcs @ ${offer.unitPrice}`,
-            href: '/admin',
-            at: Date.now(),
-          })),
-          ...(prev.notices || []),
-        ]
+        const notices: Notice[] = pending
+          ? prev.notices || []
+          : [
+              ...staff.map((a) => ({
+                id: `N-OFFR-${offer.id}-${a.accountId}`,
+                accountId: a.accountId,
+                kind: 'offer' as const,
+                title: 'New marketplace offer',
+                body: `${user.company} · ${lot.manufacturer} ${lot.model} · ${qty} pcs @ ${offer.unitPrice}`,
+                href: '/admin',
+                at: Date.now(),
+              })),
+              ...(prev.notices || []),
+            ]
         return { ...prev, offers: [offer, ...rest], notices }
       })
       return null
@@ -2092,7 +2254,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   )
 
   const reviewListingDrop = useCallback(
-    (id: string, decision: 'approved' | 'declined') => {
+    async (id: string, decision: 'approved' | 'declined', launchPlans?: DropListClockPlan[]) => {
       if (!user || user.role !== 'superadmin') return 'Only Super admin can confirm catalogs.'
       const drop = (data.listingDrops || []).find((d) => d.id === id)
       if (!drop || drop.status !== 'pending') return 'That catalog is no longer waiting.'
@@ -2106,29 +2268,161 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return null
       }
       const now = Date.now()
+      const plans =
+        launchPlans && launchPlans.length
+          ? launchPlans
+          : previewDropClocks(data.settings, drop.items, now)
+      const planByKey = new Map(plans.map((p) => [p.listKey, p]))
+      const stampedItems = drop.items.map((item) => {
+        const key = dropListKey(item)
+        const plan = planByKey.get(key)
+        if (!plan || plan.mode === 'marketplace') return item
+        return {
+          ...item,
+          durationMins: plan.durationMins,
+          extraSealedMinutes: plan.extraMins || undefined,
+        }
+      })
       const used = new Set(data.lots.map((l) => l.id.toUpperCase()))
       const lots: Lot[] = []
-      for (const item of drop.items) {
+      for (const item of stampedItems) {
         const key = item.id.toUpperCase()
         if (used.has(key)) return `Lot ID ${item.id} is already live. Decline this drop and send a new sheet.`
         used.add(key)
-        lots.push(liveLotFromDrop(item, now))
+        lots.push(liveLotFromDrop(item, now, data.settings))
       }
-      setData((prev) => {
-        const next = applyDropClocks(prev.settings, prev.lots, lots, drop.items, now)
-        return {
-          ...prev,
-          settings: next.settings,
-          lots: next.lots,
-          inventory: upsertInventory(prev.inventory || [], lots),
-          listingDrops: (prev.listingDrops || []).map((d) =>
-            d.id === id ? { ...d, status: 'approved' as const, reviewedAt: now, reviewedBy: user.accountId } : d,
-          ),
+      const next = applyLaunchClocks(data.settings, data.lots, lots, plans, now)
+      const publishedIds = new Set(lots.map((l) => l.id))
+      const toPublish = next.lots.filter((l) => publishedIds.has(l.id))
+
+      if (apiModeRef.current) {
+        try {
+          await api.publishLots(
+            toPublish.map((l) => ({
+              id: l.id,
+              channel: l.channel,
+              auctionType: l.auctionType || null,
+              manufacturer: l.manufacturer,
+              model: l.model,
+              modelNumber: l.modelNumber,
+              capacity: l.capacity,
+              color: l.color,
+              grade: l.grade,
+              battery: l.battery,
+              qty: l.qty,
+              moq: l.moq ?? null,
+              startPrice: l.startPrice,
+              currentPrice: l.currentPrice,
+              buyNowPrice: l.buyNowPrice ?? null,
+              endsAt: l.endsAt,
+              extraSealedEndsAt: l.extraSealedEndsAt ?? null,
+              description: l.description || '',
+              accent: l.accent,
+              operator: l.operator ?? null,
+              simLocked: l.simLocked ?? null,
+              activationLocked: l.activationLocked ?? null,
+              origin: l.origin ?? null,
+            })),
+          )
+          pushAuctionClocks(next.settings)
+          setData((prev) => ({
+            ...prev,
+            settings: next.settings,
+            listingDrops: (prev.listingDrops || []).map((d) =>
+              d.id === id
+                ? {
+                    ...d,
+                    items: stampedItems,
+                    status: 'approved' as const,
+                    reviewedAt: now,
+                    reviewedBy: user.accountId,
+                  }
+                : d,
+            ),
+          }))
+          await applyBootstrap(user)
+          return null
+        } catch (e) {
+          return e instanceof Error ? e.message : 'Could not publish lots to the server.'
         }
-      })
+      }
+
+      setData((prev) => ({
+        ...prev,
+        settings: next.settings,
+        lots: next.lots,
+        inventory: upsertInventory(prev.inventory || [], lots),
+        listingDrops: (prev.listingDrops || []).map((d) =>
+          d.id === id
+            ? {
+                ...d,
+                items: stampedItems,
+                status: 'approved' as const,
+                reviewedAt: now,
+                reviewedBy: user.accountId,
+              }
+            : d,
+        ),
+      }))
       return null
     },
-    [user, data.lots, data.listingDrops],
+    [user, data.lots, data.listingDrops, data.settings, applyBootstrap],
+  )
+
+  const patchListingDropItem = useCallback(
+    (dropId: string, itemId: string, patch: Partial<ListingDropItem>) => {
+      if (!user || user.role !== 'superadmin') return 'Only Super admin can edit pending catalogs.'
+      const drop = (data.listingDrops || []).find((d) => d.id === dropId)
+      if (!drop || drop.status !== 'pending') return 'That catalog is no longer waiting.'
+      setData((prev) => ({
+        ...prev,
+        listingDrops: (prev.listingDrops || []).map((d) => {
+          if (d.id !== dropId) return d
+          return {
+            ...d,
+            items: d.items.map((item) => (item.id === itemId ? { ...item, ...patch, id: item.id } : item)),
+          }
+        }),
+      }))
+      return null
+    },
+    [user, data.listingDrops],
+  )
+
+  const patchListingDropGroupClock = useCallback(
+    (
+      dropId: string,
+      listKey: string,
+      clock: { durationMins: number; extraSealedMinutes?: number },
+    ) => {
+      if (!user || user.role !== 'superadmin') return 'Only Super admin can edit pending catalogs.'
+      const drop = (data.listingDrops || []).find((d) => d.id === dropId)
+      if (!drop || drop.status !== 'pending') return 'That catalog is no longer waiting.'
+      const mins = Math.max(1, Math.floor(clock.durationMins) || 1)
+      const extra =
+        clock.extraSealedMinutes === undefined
+          ? undefined
+          : Math.max(0, Math.floor(clock.extraSealedMinutes) || 0)
+      setData((prev) => ({
+        ...prev,
+        listingDrops: (prev.listingDrops || []).map((d) => {
+          if (d.id !== dropId) return d
+          return {
+            ...d,
+            items: d.items.map((item) => {
+              if (dropListKey(item) !== listKey) return item
+              return {
+                ...item,
+                durationMins: mins,
+                ...(extra === undefined ? {} : { extraSealedMinutes: extra || undefined }),
+              }
+            }),
+          }
+        }),
+      }))
+      return null
+    },
+    [user, data.listingDrops],
   )
 
   const saveSku = useCallback(
@@ -2138,7 +2432,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
       if (!sku.model.trim() || !sku.manufacturer.trim()) return 'Maker and model are required.'
       const id = sku.id.trim() || `SKU-${Date.now().toString(36)}`
-      const next: InventorySku = { ...sku, id, model: sku.model.trim(), manufacturer: sku.manufacturer.trim() }
+      const onHand = Math.max(0, Math.floor(Number(sku.onHand) || 0))
+      const next: InventorySku = {
+        ...sku,
+        id,
+        model: sku.model.trim(),
+        manufacturer: sku.manufacturer.trim(),
+        onHand,
+      }
       setData((prev) => {
         const list = prev.inventory || []
         const exists = list.some((s) => s.id === id)
@@ -2177,11 +2478,27 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }))
   }, [])
 
+  const pushAuctionClocks = (settings: SiteSettings, slug?: string) => {
+    if (!apiModeRef.current) return
+    for (const t of settings.auctionTypes) {
+      if (slug && t.value !== slug) continue
+      if (!t.closesAt) continue
+      void api
+        .syncAuctionClock({
+          auctionType: t.value,
+          closesAt: t.closesAt,
+          extraSealedMinutes: t.extraSealedMinutes || 0,
+        })
+        .catch(() => undefined)
+    }
+  }
+
   const saveSettings = useCallback((next: SiteSettings) => {
     if (user?.role !== 'superadmin') return
     setData((prev) => {
       const settings = mergeSettings(next)
       const clocked = ensureAuctionClocks(settings, prev.lots)
+      pushAuctionClocks(clocked.settings)
       return { ...prev, settings: clocked.settings, lots: clocked.lots }
     })
     if (apiModeRef.current) {
@@ -2198,6 +2515,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               ? Number(next.marketplaceFeePct) || 0
               : next.invoice?.feePct ?? 2,
           invoiceFeePct: next.invoice?.feePct ?? 2,
+          offerFloorPct:
+            next.offerFloorPct === 0 || Number.isFinite(next.offerFloorPct)
+              ? Math.min(100, Math.max(0, Number(next.offerFloorPct) || 0))
+              : 30,
           auctionTypeFees,
         })
         .catch(() => undefined)
@@ -2281,6 +2602,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       !slug || t.value === slug ? { ...t, closesAt, closeMinutes: minutes } : t,
     )
     const next = ensureAuctionClocks({ ...prev.settings, auctionTypes }, prev.lots)
+    pushAuctionClocks(next.settings, slug)
     return { ...prev, settings: next.settings, lots: next.lots }
   }
 
@@ -2650,6 +2972,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, [user])
 
+  const appendLocalNotices = useCallback((rows: Notice[]) => {
+    if (!rows.length) return
+    setData((prev) => {
+      const have = new Set((prev.notices || []).map((n) => n.id))
+      const add = rows.filter((n) => n?.id && !have.has(n.id))
+      if (!add.length) return prev
+      return { ...prev, notices: [...add, ...(prev.notices || [])] }
+    })
+  }, [])
+
   useEffect(() => {
     if (!apiMode || !user) {
       stopRealtime()
@@ -2684,12 +3016,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, [apiMode, user, loadEmailPrefs, refreshNotices])
 
+  const staff = user?.role === 'admin' || user?.role === 'superadmin'
+  const visibleLots = useMemo(
+    () => filterExtraSealedLots(data.lots, data.bids, user?.accountId, Boolean(staff), now),
+    [data.lots, data.bids, user?.accountId, staff, now],
+  )
+
   const value = useMemo(
     () => ({
       apiMode,
       authReady,
       user,
-      lots: data.lots,
+      lots: visibleLots,
       bids: data.bids,
       watchlist: data.watchlist,
       invoices: data.invoices,
@@ -2739,6 +3077,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       clearPaymentConfirmation,
       markInvoiceOpened,
       markNoticesRead,
+      appendLocalNotices,
       myBid,
       myLastBid,
       addLot,
@@ -2746,6 +3085,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       submitListingDrop,
       withdrawListingDrop,
       reviewListingDrop,
+      patchListingDropItem,
+      patchListingDropGroupClock,
       saveSku,
       removeSku,
       updateLot,
@@ -2799,6 +3140,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       clearPaymentConfirmation,
       markInvoiceOpened,
       markNoticesRead,
+      appendLocalNotices,
       myBid,
       myLastBid,
       addLot,
@@ -2806,6 +3148,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       submitListingDrop,
       withdrawListingDrop,
       reviewListingDrop,
+      patchListingDropItem,
+      patchListingDropGroupClock,
       saveSku,
       removeSku,
       updateLot,
@@ -2817,6 +3161,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       extendLot,
       extendAuctionType,
       reopenAuctions,
+      visibleLots,
     ],
   )
 

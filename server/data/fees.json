@@ -1,8 +1,12 @@
 {
-  "marketplaceFeePct": 0,
+  "marketplaceFeePct": 2,
   "invoiceFeePct": 2,
+  "offerFloorPct": 30,
   "auctionTypeFees": {
-    "live": 0,
-    "offline": 0
+    "live": 2,
+    "offline": 2,
+    "hongkong": 2,
+    "china": 2,
+    "india": 2
   }
 }

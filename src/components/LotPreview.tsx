@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { LotPhotos } from './LotPhotos'
 import { ModalShell } from './ModalShell'
-import { isSealedLot, typePillClass } from '../lib/auctionLists'
+import { effectiveEndsAt, hideAuctionHigh, typePillClass } from '../lib/auctionLists'
 import { lotTypeLabel, specLocks, usd } from '../lib/format'
 import { BatteryMark } from './BatteryMark'
 import { moqLabel } from '../lib/moq'

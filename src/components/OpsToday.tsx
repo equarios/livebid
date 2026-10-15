@@ -14,11 +14,32 @@ type Props = {
   role: 'admin' | 'super'
   queues: OpsQueueCounts
   liveLots: number
+  /** Lots currently in Extra sealed overtime. */
+  sealedLots?: number
   inventoryCount: number
   onGo: (section: string, desk?: string) => void
 }
 
-export function OpsToday({ role, queues, liveLots, inventoryCount, onGo }: Props) {
+export function OpsToday({
+  role,
+  queues,
+  liveLots,
+  sealedLots = 0,
+  inventoryCount,
+  onGo,
+}: Props) {
+  const sealedCard: Card = {
+    id: 'sealed',
+    section: 'catalog',
+    desk: 'lots',
+    title: 'Extra sealed now',
+    count: sealedLots,
+    hint: sealedLots
+      ? 'Lots in overtime — prior bidders only · watch the floor'
+      : 'No lots in Extra sealed right now',
+    tone: sealedLots ? 'urgent' : 'muted',
+  }
+
   const cards: Card[] =
     role === 'admin'
       ? [
@@ -68,6 +89,27 @@ export function OpsToday({ role, queues, liveLots, inventoryCount, onGo }: Props
             hint: 'Edit, reopen, or remove live listings',
             tone: 'muted',
           },
+          sealedCard,
+          {
+            id: 'wholesale',
+            section: 'buyers',
+            title: 'Wholesale apps',
+            count: queues.wholesaleApps,
+            hint: queues.wholesaleApps
+              ? `${queues.wholesaleSubmitted} in review · ${queues.wholesaleNeedsDocs} needs docs`
+              : 'No buyer applications waiting',
+            tone: queues.wholesaleApps ? 'urgent' : 'muted',
+          },
+          {
+            id: 'stuck',
+            section: 'buyers',
+            title: 'Idle approved',
+            count: queues.wholesaleStuck,
+            hint: queues.wholesaleStuck
+              ? 'Approved buyers with no recent bids — nudge from Wholesale desk'
+              : 'No idle approved buyers',
+            tone: queues.wholesaleStuck ? 'open' : 'muted',
+          },
         ]
       : [
           {
@@ -78,6 +120,7 @@ export function OpsToday({ role, queues, liveLots, inventoryCount, onGo }: Props
             hint: 'Approve Admin listing drops before they go live',
             tone: queues.catalogWaitItems ? 'urgent' : 'muted',
           },
+          sealedCard,
           {
             id: 'money',
             section: 'money',
@@ -93,6 +136,26 @@ export function OpsToday({ role, queues, liveLots, inventoryCount, onGo }: Props
             count: queues.pendingAccounts,
             hint: 'Approve buyers and manage people',
             tone: queues.pendingAccounts ? 'open' : 'muted',
+          },
+          {
+            id: 'wholesale',
+            section: 'people',
+            title: 'Wholesale apps',
+            count: queues.wholesaleApps,
+            hint: queues.wholesaleApps
+              ? `${queues.wholesaleSubmitted} in review · ${queues.wholesaleNeedsDocs} needs docs`
+              : 'No buyer applications waiting',
+            tone: queues.wholesaleApps ? 'urgent' : 'muted',
+          },
+          {
+            id: 'stuck',
+            section: 'people',
+            title: 'Idle approved',
+            count: queues.wholesaleStuck,
+            hint: queues.wholesaleStuck
+              ? 'Approved buyers with no recent bids — nudge from Wholesale desk'
+              : 'No idle approved buyers',
+            tone: queues.wholesaleStuck ? 'open' : 'muted',
           },
         ]
 

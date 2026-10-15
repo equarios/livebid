@@ -8,10 +8,12 @@ import { OpsToday } from '../components/OpsToday'
 import { StoreDesk } from '../components/StoreDesk'
 import { ClientsDesk } from '../components/ClientsDesk'
 import { WholesaleReviewDesk } from '../components/WholesaleReviewDesk'
+import { NumberField } from '../components/NumberField'
 import { TimeLeft } from '../components/TimeLeft'
 import { DEFAULT_SETTINGS } from '../data'
 import { api } from '../lib/api'
-import { RESERVED_LIST_SLUGS, slugAuctionType } from '../lib/auctionLists'
+import { isInExtraSealed, RESERVED_LIST_SLUGS, slugAuctionType } from '../lib/auctionLists'
+import { BODY_FONT_PRESETS, DISPLAY_FONT_PRESETS } from '../lib/fontPresets'
 import {
   DESK_BANNER_KEYS,
   DESK_BANNER_LABELS,
@@ -164,7 +166,7 @@ const COPY_LABEL: Record<keyof typeof DEFAULT_SETTINGS.copy, string> = {
   warnClosed: 'Warning · closed lot',
   warnCart: 'Warning · cart off',
   warnOffers: 'Warning · offers off',
-  warnOfferPrice: 'Warning · offer must be below list ({price})',
+  warnOfferPrice: 'Warning · offer below floor % of list',
   warnOfferOpen: 'Warning · accepted offer already open',
   warnLogin: 'Warning · bad login',
   warnRegister: 'Warning · sign-up fields',
@@ -185,7 +187,8 @@ function AddAuctionTypeDialog({
   const [label, setLabel] = useState('')
   const [slug, setSlug] = useState('')
   const [fillMode, setFillMode] = useState<AuctionFillMode>('live')
-  const [closeMinutes, setCloseMinutes] = useState(240)
+  const [closeMinutes, setCloseMinutes] = useState(48 * 60)
+  const [extraSealedMinutes, setExtraSealedMinutes] = useState(6 * 60)
   const [feePct, setFeePct] = useState(2)
   const [error, setError] = useState<string | null>(null)
   const value = slugAuctionType(slug || label)
@@ -205,12 +208,14 @@ function AddAuctionTypeDialog({
       return
     }
     const mins = Math.max(1, Math.floor(closeMinutes) || 240)
+    const extra = Math.max(0, Math.floor(extraSealedMinutes) || 0)
     const fee = Math.max(0, Number(feePct) || 0)
     onCreate({
       value,
       label: name,
       fillMode,
       closeMinutes: mins,
+      extraSealedMinutes: extra || undefined,
       closesAt: Date.now() + mins * 60 * 1000,
       feePct: fee,
     })
@@ -260,7 +265,7 @@ function AddAuctionTypeDialog({
           </select>
         </label>
         <label>
-          Default close (minutes)
+          Live close (minutes)
           <input
             type="number"
             min={1}
@@ -268,6 +273,18 @@ function AddAuctionTypeDialog({
             onChange={(e) => setCloseMinutes(Number(e.target.value))}
           />
         </label>
+        <label>
+          Extra sealed (minutes)
+          <input
+            type="number"
+            min={0}
+            value={extraSealedMinutes}
+            onChange={(e) => setExtraSealedMinutes(Number(e.target.value))}
+          />
+        </label>
+        <p className="muted tiny">
+          After live ends, only prior bidders see those lots and keep bidding (sealed). 0 = off.
+        </p>
         <label>
           Fee % on wins
           <input
@@ -554,14 +571,31 @@ export function Super() {
   const [role, setRole] = useState<AccountRole>('member')
   const [status, setStatus] = useState<AccountStatus>('active')
 
-  const queues = opsQueueCounts({ listingDrops, invoices, accounts, offers, cartOrders })
+  const [wholesaleStuck, setWholesaleStuck] = useState(0)
+  useEffect(() => {
+    void api
+      .staffWholesaleStuck()
+      .then((r) => setWholesaleStuck(r.stuck.length))
+      .catch(() => undefined)
+  }, [])
+  const queues = opsQueueCounts({
+    listingDrops,
+    invoices,
+    accounts,
+    offers,
+    cartOrders,
+    wholesaleStuck,
+  })
   const liveLots = lots.filter((l) => l.channel === 'auction' && l.endsAt > now).length
+  const sealedLots = lots.filter((l) => isInExtraSealed(l, now)).length
 
   const legacy = legacyTabToNav(params.get('tab'))
   const sectionParam = params.get('section') || legacy?.section || ''
   const deskParam = params.get('desk') || legacy?.desk || ''
   const defaultSection: SuperSection =
-    queues.catalogWaitItems || queues.money || queues.pendingAccounts ? 'today' : 'people'
+    queues.catalogWaitItems || queues.money || queues.pendingAccounts || queues.wholesaleApps
+      ? 'today'
+      : 'people'
   const section: SuperSection = SUPER_SECTIONS.has(sectionParam as SuperSection)
     ? (sectionParam as SuperSection)
     : defaultSection
@@ -602,6 +636,10 @@ export function Super() {
           fillMode: d.fillMode,
           intro: d.intro,
           closeMinutes: d.closeMinutes,
+          extraSealedMinutes:
+            d.extraSealedMinutes === 0 || Number.isFinite(d.extraSealedMinutes)
+              ? d.extraSealedMinutes
+              : live.extraSealedMinutes,
           feePct: d.feePct === 0 || Number.isFinite(d.feePct) ? d.feePct : live.feePct,
         }
       }),
@@ -609,9 +647,13 @@ export function Super() {
         prev.marketplaceFeePct === 0 || Number.isFinite(prev.marketplaceFeePct)
           ? prev.marketplaceFeePct
           : settings.marketplaceFeePct,
+      offerFloorPct:
+        prev.offerFloorPct === 0 || Number.isFinite(prev.offerFloorPct)
+          ? prev.offerFloorPct
+          : settings.offerFloorPct,
       invoice: { ...DEFAULT_SETTINGS.invoice, ...settings.invoice, ...prev.invoice },
     }))
-  }, [settings.auctionTypes, settings.invoice, settings.marketplaceFeePct])
+  }, [settings.auctionTypes, settings.invoice, settings.marketplaceFeePct, settings.offerFloorPct])
 
   function publishAuctionType(row: AuctionTypeDef) {
     const auctionTypes = [...settings.auctionTypes.filter((t) => t.value !== row.value), row]
@@ -760,6 +802,33 @@ export function Super() {
           p.wholesaleEmptyDeals.trim() || DEFAULT_SETTINGS.pages.wholesaleEmptyDeals,
         wholesaleEmptyMarket:
           p.wholesaleEmptyMarket.trim() || DEFAULT_SETTINGS.pages.wholesaleEmptyMarket,
+        wholesaleSeoTitle:
+          p.wholesaleSeoTitle.trim() || DEFAULT_SETTINGS.pages.wholesaleSeoTitle,
+        wholesaleSeoDescription:
+          p.wholesaleSeoDescription.trim() || DEFAULT_SETTINGS.pages.wholesaleSeoDescription,
+        wholesaleEndingSoonTitle:
+          p.wholesaleEndingSoonTitle.trim() || DEFAULT_SETTINGS.pages.wholesaleEndingSoonTitle,
+        wholesaleEndingSoonViewAll:
+          p.wholesaleEndingSoonViewAll.trim() || DEFAULT_SETTINGS.pages.wholesaleEndingSoonViewAll,
+        wholesaleMyDeskLabel:
+          p.wholesaleMyDeskLabel.trim() || DEFAULT_SETTINGS.pages.wholesaleMyDeskLabel,
+        wholesaleMyDeskGo: p.wholesaleMyDeskGo.trim() || DEFAULT_SETTINGS.pages.wholesaleMyDeskGo,
+        wholesaleCatDeviceLabel:
+          p.wholesaleCatDeviceLabel.trim() || DEFAULT_SETTINGS.pages.wholesaleCatDeviceLabel,
+        wholesaleCatConditionLabel:
+          p.wholesaleCatConditionLabel.trim() || DEFAULT_SETTINGS.pages.wholesaleCatConditionLabel,
+        wholesaleCatAllLabel:
+          p.wholesaleCatAllLabel.trim() || DEFAULT_SETTINGS.pages.wholesaleCatAllLabel,
+        wholesaleEmptyHub:
+          p.wholesaleEmptyHub.trim() || DEFAULT_SETTINGS.pages.wholesaleEmptyHub,
+        wholesaleBrowseMarketCta:
+          p.wholesaleBrowseMarketCta.trim() || DEFAULT_SETTINGS.pages.wholesaleBrowseMarketCta,
+        wholesaleOpenAuctionsCta:
+          p.wholesaleOpenAuctionsCta.trim() || DEFAULT_SETTINGS.pages.wholesaleOpenAuctionsCta,
+        wholesaleViewAllAuctions:
+          p.wholesaleViewAllAuctions.trim() || DEFAULT_SETTINGS.pages.wholesaleViewAllAuctions,
+        wholesaleViewAllMarket:
+          p.wholesaleViewAllMarket.trim() || DEFAULT_SETTINGS.pages.wholesaleViewAllMarket,
         buyers: trimPage(p.buyers),
         sellers: trimPage(p.sellers),
         support: trimPage(p.support),
@@ -846,7 +915,11 @@ export function Super() {
       },
       { id: 'money', label: 'Money', count: queues.money || undefined },
       { id: 'store', label: 'Store' },
-      { id: 'people', label: 'People', count: queues.pendingAccounts || undefined },
+      {
+        id: 'people',
+        label: 'People',
+        count: (queues.pendingAccounts + queues.wholesaleApps) || undefined,
+      },
       { id: 'clients', label: 'Clients' },
       {
         id: 'settings',
@@ -895,6 +968,7 @@ export function Super() {
           role="super"
           queues={queues}
           liveLots={liveLots}
+          sealedLots={sealedLots}
           inventoryCount={0}
           onGo={go}
         />
@@ -1549,11 +1623,74 @@ export function Super() {
                 />
               </label>
             ))}
+            <label>
+              Body font preset
+              <select
+                value={
+                  BODY_FONT_PRESETS.find((p) => p.stack === draft.theme.font)?.id || 'custom'
+                }
+                onChange={(e) => {
+                  const preset = BODY_FONT_PRESETS.find((p) => p.id === e.target.value)
+                  if (!preset) return
+                  setDraft({ ...draft, theme: { ...draft.theme, font: preset.stack } })
+                }}
+              >
+                {BODY_FONT_PRESETS.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.label}
+                  </option>
+                ))}
+                <option value="custom">Custom stack…</option>
+              </select>
+            </label>
             <label className="admin-span">
-              Font stack
+              Body font stack
               <input
                 value={draft.theme.font}
                 onChange={(e) => setDraft({ ...draft, theme: { ...draft.theme, font: e.target.value } })}
+              />
+            </label>
+            <label>
+              Display font preset
+              <select
+                value={
+                  DISPLAY_FONT_PRESETS.find((p) => {
+                    if (p.id === 'match-body') {
+                      return (
+                        (draft.theme.displayFont || '') === draft.theme.font ||
+                        draft.theme.displayFont === ''
+                      )
+                    }
+                    return p.stack === (draft.theme.displayFont ?? DEFAULT_SETTINGS.theme.displayFont)
+                  })?.id || 'custom'
+                }
+                onChange={(e) => {
+                  const preset = DISPLAY_FONT_PRESETS.find((p) => p.id === e.target.value)
+                  if (!preset) return
+                  setDraft({
+                    ...draft,
+                    theme: {
+                      ...draft.theme,
+                      displayFont: preset.id === 'match-body' ? draft.theme.font : preset.stack,
+                    },
+                  })
+                }}
+              >
+                {DISPLAY_FONT_PRESETS.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.label}
+                  </option>
+                ))}
+                <option value="custom">Custom stack…</option>
+              </select>
+            </label>
+            <label className="admin-span">
+              Display / heading font
+              <input
+                value={draft.theme.displayFont ?? DEFAULT_SETTINGS.theme.displayFont}
+                onChange={(e) =>
+                  setDraft({ ...draft, theme: { ...draft.theme, displayFont: e.target.value } })
+                }
               />
             </label>
             <label>
@@ -1570,6 +1707,195 @@ export function Super() {
                 onChange={(e) => setDraft({ ...draft, icons: { favourite: e.target.value } })}
               />
             </label>
+
+            <p className="admin-form-legend">Typography (site-wide)</p>
+            <p className="muted tiny admin-span" style={{ marginTop: -4 }}>
+              Sizes, weights, line-height, letter-spacing, buttons, and links — CSS variables site-wide.
+            </p>
+            {(
+              [
+                ['fontSize', 'Body size (px)'],
+                ['fontSizeTiny', 'Tiny / hints (px)'],
+                ['fontSizeLabel', 'Label size (px)'],
+                ['fontSizePrice', 'Price size (px)'],
+                ['fontSizeH1', 'H1 size (px)'],
+                ['fontSizeH2', 'H2 size (px)'],
+                ['fontSizeButton', 'Button size (px)'],
+              ] as const
+            ).map(([key, label]) => (
+              <label key={key}>
+                {label}
+                <NumberField
+                  min={10}
+                  max={36}
+                  step={1}
+                  value={draft.theme[key] ?? DEFAULT_SETTINGS.theme[key]}
+                  onCommit={(n) =>
+                    setDraft({
+                      ...draft,
+                      theme: { ...draft.theme, [key]: Math.min(36, Math.max(10, Math.round(n))) },
+                    })
+                  }
+                />
+              </label>
+            ))}
+            {(
+              [
+                ['fontWeightBody', 'Body weight'],
+                ['fontWeightBold', 'Bold weight'],
+                ['fontWeightHeading', 'Heading weight'],
+                ['fontWeightButton', 'Button weight'],
+                ['fontWeightLink', 'Link weight'],
+              ] as const
+            ).map(([key, label]) => (
+              <label key={key}>
+                {label}
+                <select
+                  value={String(draft.theme[key] ?? DEFAULT_SETTINGS.theme[key])}
+                  onChange={(e) =>
+                    setDraft({
+                      ...draft,
+                      theme: { ...draft.theme, [key]: Number(e.target.value) },
+                    })
+                  }
+                >
+                  {[400, 500, 600, 650, 700].map((w) => (
+                    <option key={w} value={w}>
+                      {w}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ))}
+            {(
+              [
+                ['lineHeight', 'Body line-height', 1.1, 2, 0.05],
+                ['lineHeightTiny', 'Tiny line-height', 1.1, 2, 0.05],
+                ['lineHeightHeading', 'Heading line-height', 1, 1.6, 0.05],
+                ['letterSpacing', 'Body letter-spacing (em)', -0.05, 0.2, 0.01],
+                ['letterSpacingLabel', 'Label letter-spacing (em)', 0, 0.2, 0.01],
+              ] as const
+            ).map(([key, label, min, max, step]) => (
+              <label key={key}>
+                {label}
+                <NumberField
+                  min={min}
+                  max={max}
+                  step={step}
+                  value={draft.theme[key] ?? DEFAULT_SETTINGS.theme[key]}
+                  onCommit={(n) =>
+                    setDraft({
+                      ...draft,
+                      theme: {
+                        ...draft.theme,
+                        [key]: Math.min(max, Math.max(min, Math.round(n * 1000) / 1000)),
+                      },
+                    })
+                  }
+                />
+              </label>
+            ))}
+            <label>
+              Link underline
+              <select
+                value={draft.theme.linkUnderline ?? DEFAULT_SETTINGS.theme.linkUnderline}
+                onChange={(e) =>
+                  setDraft({
+                    ...draft,
+                    theme: {
+                      ...draft.theme,
+                      linkUnderline: e.target.value as 'none' | 'hover' | 'always',
+                    },
+                  })
+                }
+              >
+                <option value="none">None</option>
+                <option value="hover">On hover</option>
+                <option value="always">Always</option>
+              </select>
+            </label>
+            <div
+              className="admin-span type-preview card"
+              style={{
+                padding: 12,
+                marginBottom: 8,
+                fontFamily: draft.theme.font,
+                fontSize: `${draft.theme.fontSize ?? DEFAULT_SETTINGS.theme.fontSize}px`,
+                fontWeight: draft.theme.fontWeightBody ?? DEFAULT_SETTINGS.theme.fontWeightBody,
+                lineHeight: draft.theme.lineHeight ?? DEFAULT_SETTINGS.theme.lineHeight,
+                letterSpacing: `${draft.theme.letterSpacing ?? DEFAULT_SETTINGS.theme.letterSpacing}em`,
+              }}
+            >
+              <div
+                className="label"
+                style={{
+                  fontSize: `${draft.theme.fontSizeLabel ?? DEFAULT_SETTINGS.theme.fontSizeLabel}px`,
+                  letterSpacing: `${draft.theme.letterSpacingLabel ?? DEFAULT_SETTINGS.theme.letterSpacingLabel}em`,
+                }}
+              >
+                Preview
+              </div>
+              <h2
+                style={{
+                  marginBottom: 6,
+                  fontFamily: draft.theme.displayFont ?? DEFAULT_SETTINGS.theme.displayFont,
+                  fontSize: `${draft.theme.fontSizeH2 ?? DEFAULT_SETTINGS.theme.fontSizeH2}px`,
+                  fontWeight:
+                    draft.theme.fontWeightHeading ?? DEFAULT_SETTINGS.theme.fontWeightHeading,
+                  lineHeight:
+                    draft.theme.lineHeightHeading ?? DEFAULT_SETTINGS.theme.lineHeightHeading,
+                }}
+              >
+                Heading sample
+              </h2>
+              <p style={{ marginBottom: 4 }}>Body copy uses the body size and weight.</p>
+              <p
+                className="price"
+                style={{
+                  margin: '4px 0',
+                  fontSize: `${draft.theme.fontSizePrice ?? DEFAULT_SETTINGS.theme.fontSizePrice}px`,
+                  fontWeight: draft.theme.fontWeightBold ?? DEFAULT_SETTINGS.theme.fontWeightBold,
+                }}
+              >
+                $128
+              </p>
+              <div
+                className="muted bid-cost-hint"
+                style={{
+                  fontSize: `${draft.theme.fontSizeTiny ?? DEFAULT_SETTINGS.theme.fontSizeTiny}px`,
+                  lineHeight: draft.theme.lineHeightTiny ?? DEFAULT_SETTINGS.theme.lineHeightTiny,
+                }}
+              >
+                Buy est. $4,998.00 (incl. 2% fee) · Offer est. $4,998.00
+              </div>
+              <div style={{ marginTop: 8, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  style={{
+                    fontSize: `${draft.theme.fontSizeButton ?? DEFAULT_SETTINGS.theme.fontSizeButton}px`,
+                    fontWeight:
+                      draft.theme.fontWeightButton ?? DEFAULT_SETTINGS.theme.fontWeightButton,
+                  }}
+                >
+                  Button
+                </button>
+                <a
+                  href="#preview-link"
+                  onClick={(e) => e.preventDefault()}
+                  style={{
+                    fontWeight: draft.theme.fontWeightLink ?? DEFAULT_SETTINGS.theme.fontWeightLink,
+                    textDecoration:
+                      (draft.theme.linkUnderline ?? DEFAULT_SETTINGS.theme.linkUnderline) === 'always'
+                        ? 'underline'
+                        : 'none',
+                  }}
+                >
+                  Sample link
+                </a>
+              </div>
+            </div>
+
             <button className="btn btn-primary btn-sm" type="submit">
               Save look
             </button>
@@ -1923,6 +2249,105 @@ export function Super() {
 
             <div className="invoice-profile-panel admin-span">
               <h3>Wholesale hub strips</h3>
+              <label className="admin-span">
+                SEO title <span className="tiny muted">use {'{brand}'}</span>
+                <input
+                  value={pagesDraft.wholesaleSeoTitle}
+                  onChange={(e) => patchPages({ wholesaleSeoTitle: e.target.value })}
+                />
+              </label>
+              <label className="admin-span">
+                SEO description <span className="tiny muted">use {'{brand}'}</span>
+                <textarea
+                  rows={3}
+                  value={pagesDraft.wholesaleSeoDescription}
+                  onChange={(e) => patchPages({ wholesaleSeoDescription: e.target.value })}
+                />
+              </label>
+              <label>
+                Ending soon title
+                <input
+                  value={pagesDraft.wholesaleEndingSoonTitle}
+                  onChange={(e) => patchPages({ wholesaleEndingSoonTitle: e.target.value })}
+                />
+              </label>
+              <label>
+                Ending soon · View all
+                <input
+                  value={pagesDraft.wholesaleEndingSoonViewAll}
+                  onChange={(e) => patchPages({ wholesaleEndingSoonViewAll: e.target.value })}
+                />
+              </label>
+              <label>
+                Your desk label
+                <input
+                  value={pagesDraft.wholesaleMyDeskLabel}
+                  onChange={(e) => patchPages({ wholesaleMyDeskLabel: e.target.value })}
+                />
+              </label>
+              <label>
+                Your desk · go
+                <input
+                  value={pagesDraft.wholesaleMyDeskGo}
+                  onChange={(e) => patchPages({ wholesaleMyDeskGo: e.target.value })}
+                />
+              </label>
+              <label>
+                Header · Device
+                <input
+                  value={pagesDraft.wholesaleCatDeviceLabel}
+                  onChange={(e) => patchPages({ wholesaleCatDeviceLabel: e.target.value })}
+                />
+              </label>
+              <label>
+                Header · Condition
+                <input
+                  value={pagesDraft.wholesaleCatConditionLabel}
+                  onChange={(e) => patchPages({ wholesaleCatConditionLabel: e.target.value })}
+                />
+              </label>
+              <label>
+                Header · All
+                <input
+                  value={pagesDraft.wholesaleCatAllLabel}
+                  onChange={(e) => patchPages({ wholesaleCatAllLabel: e.target.value })}
+                />
+              </label>
+              <label className="admin-span">
+                Empty hub message
+                <input
+                  value={pagesDraft.wholesaleEmptyHub}
+                  onChange={(e) => patchPages({ wholesaleEmptyHub: e.target.value })}
+                />
+              </label>
+              <label>
+                Browse marketplace CTA
+                <input
+                  value={pagesDraft.wholesaleBrowseMarketCta}
+                  onChange={(e) => patchPages({ wholesaleBrowseMarketCta: e.target.value })}
+                />
+              </label>
+              <label>
+                Open auctions CTA
+                <input
+                  value={pagesDraft.wholesaleOpenAuctionsCta}
+                  onChange={(e) => patchPages({ wholesaleOpenAuctionsCta: e.target.value })}
+                />
+              </label>
+              <label>
+                View all auctions
+                <input
+                  value={pagesDraft.wholesaleViewAllAuctions}
+                  onChange={(e) => patchPages({ wholesaleViewAllAuctions: e.target.value })}
+                />
+              </label>
+              <label>
+                View all marketplace
+                <input
+                  value={pagesDraft.wholesaleViewAllMarket}
+                  onChange={(e) => patchPages({ wholesaleViewAllMarket: e.target.value })}
+                />
+              </label>
               <label className="admin-span">
                 How-it-works title
                 <input
@@ -2355,21 +2780,31 @@ export function Super() {
             </p>
             <label style={{ maxWidth: 220, marginBottom: 12 }}>
               Marketplace fee %
-              <input
-                type="number"
+              <NumberField
                 min={0}
                 step={0.1}
                 value={draft.marketplaceFeePct ?? settings.invoice.feePct ?? 2}
-                onChange={(e) =>
-                  setDraft({
-                    ...draft,
-                    marketplaceFeePct: Math.max(0, Number(e.target.value) || 0),
-                  })
-                }
+                onCommit={(marketplaceFeePct) => setDraft({ ...draft, marketplaceFeePct })}
               />
             </label>
             <p className="muted tiny" style={{ marginTop: -6 }}>
               Applies to cart, buy-now, and offers. 0 = no marketplace fee.
+            </p>
+            <label style={{ maxWidth: 220, marginBottom: 12 }}>
+              Offer floor % of list
+              <NumberField
+                min={0}
+                max={100}
+                step={1}
+                value={draft.offerFloorPct ?? 30}
+                onCommit={(offerFloorPct) =>
+                  setDraft({ ...draft, offerFloorPct: Math.min(100, Math.max(0, offerFloorPct)) })
+                }
+              />
+            </label>
+            <p className="muted tiny" style={{ marginTop: -6 }}>
+              Buyers can offer down to this % of list price (e.g. 30 → min is 30% of list). 0 = $1
+              floor only.
             </p>
             <div className="type-rows">
               {draft.auctionTypes.map((t, i) => {
@@ -2393,7 +2828,7 @@ export function Super() {
                       />
                     </label>
                     <label>
-                      Default close (min)
+                      Live close (min)
                       <input
                         type="number"
                         min={1}
@@ -2407,14 +2842,42 @@ export function Super() {
                         }}
                       />
                     </label>
+                    <label>
+                      Extra sealed (min)
+                      <NumberField
+                        min={0}
+                        value={t.extraSealedMinutes || 0}
+                        onCommit={(mins) => {
+                          const auctionTypes = draft.auctionTypes.map((row, idx) =>
+                            idx === i
+                              ? { ...row, extraSealedMinutes: mins || undefined }
+                              : row,
+                          )
+                          setDraft({ ...draft, auctionTypes })
+                        }}
+                      />
+                    </label>
                     <div>
-                      <span className="muted tiny">Current close</span>
+                      <span className="muted tiny">Live clock</span>
                       <div className="type-row-actions">
                         {t.closesAt && t.closesAt > now ? (
                           <TimeLeft endsAt={t.closesAt} closedLabel="Closed" />
+                        ) : t.closesAt && (t.extraSealedMinutes || 0) > 0 ? (
+                          <span className="pill pill-sealed">Extra sealed</span>
                         ) : (
                           <span className="muted tiny">Closed</span>
                         )}
+                        {(t.extraSealedMinutes || 0) > 0 && t.closesAt ? (
+                          <span className="muted tiny">
+                            +{t.extraSealedMinutes}m sealed
+                            {t.closesAt <= now && t.closesAt + t.extraSealedMinutes! * 60 * 1000 > now ? (
+                              <>
+                                {' '}
+                                · <TimeLeft endsAt={t.closesAt + t.extraSealedMinutes! * 60 * 1000} closedLabel="Done" />
+                              </>
+                            ) : null}
+                          </span>
+                        ) : null}
                         <button
                           type="button"
                           className="btn btn-ghost btn-sm"
@@ -2451,13 +2914,11 @@ export function Super() {
                     </label>
                     <label>
                       Fee %
-                      <input
-                        type="number"
+                      <NumberField
                         min={0}
                         step={0.1}
                         value={t.feePct ?? settings.invoice.feePct ?? 2}
-                        onChange={(e) => {
-                          const fee = Math.max(0, Number(e.target.value) || 0)
+                        onCommit={(fee) => {
                           const auctionTypes = draft.auctionTypes.map((row, idx) =>
                             idx === i ? { ...row, feePct: fee } : row,
                           )

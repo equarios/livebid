@@ -98,15 +98,19 @@ function lot(
     currentPrice: number
     buyNowPrice?: number
     endsAt: number
+    extraSealedEndsAt?: number
     description: string
     origin?: string
   },
 ) {
+  const { extraSealedEndsAt, ...rest } = partial
   return {
-    ...partial,
+    ...rest,
     bidCount: 0,
     accent: '#2a6f7c',
     endsAt: BigInt(partial.endsAt),
+    extraSealedEndsAt:
+      extraSealedEndsAt != null ? BigInt(extraSealedEndsAt) : undefined,
   }
 }
 

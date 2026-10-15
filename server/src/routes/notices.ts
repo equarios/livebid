@@ -46,7 +46,11 @@ noticeRoutes.put('/prefs', requireUser, async (c) => {
       auth: z.boolean().optional(),
       outbid: z.boolean().optional(),
       closing: z.boolean().optional(),
+      thanks: z.boolean().optional(),
       fill: z.boolean().optional(),
+      watch: z.boolean().optional(),
+      digest: z.boolean().optional(),
+      sealed: z.boolean().optional(),
     })
     .safeParse(await c.req.json().catch(() => ({})))
   if (!body.success) return c.json({ error: 'Invalid prefs.' }, 400)
@@ -72,12 +76,16 @@ noticeRoutes.post('/', requireUser, async (c) => {
         'invoice',
         'outbid',
         'closing',
+        'thanks',
         'fill',
         'offer',
         'cart',
         'payment',
         'shipping',
         'auth',
+        'watch',
+        'digest',
+        'sealed',
       ]),
       title: z.string().min(1).max(120),
       body: z.string().min(1).max(500),

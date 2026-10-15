@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { BrandLogo } from './BrandLogo'
+import { HeaderDeskPulse } from './HeaderDeskPulse'
 import { HelpMenu } from './HelpMenu'
 import { LanguageMenu } from './LanguageMenu'
 import { LotPreviewProvider } from './LotPreview'
 import { MeMenu } from './MeMenu'
+import { NoticeBell } from './NoticeBell'
 import { SiteFooter } from './SiteFooter'
 import { SiteNav } from './SiteNav'
 import { SiteWarnPopup } from './SiteWarnPopup'
 import { canUseWholesaleDesk, wholesaleHome } from '../lib/channelAccess'
-import { useDismissOnOutside } from '../lib/useDismissOnOutside'
+import { useWatchFilterNotices } from '../lib/useWatchFilterNotices'
 import { useStore } from '../store'
 
 function searchTarget(pathname: string, showAuctions: boolean, showMarketplace: boolean) {
@@ -21,7 +23,7 @@ function searchTarget(pathname: string, showAuctions: boolean, showMarketplace: 
 }
 
 export function Layout() {
-  const { user, notices, settings, markNoticesRead, isStaff } = useStore()
+  const { user, settings, isStaff } = useStore()
   const navigate = useNavigate()
   const location = useLocation()
   const [menuOpen, setMenuOpen] = useState(false)
@@ -29,7 +31,7 @@ export function Layout() {
   const [navOpen, setNavOpen] = useState(false)
   const [q, setQ] = useState(() => new URLSearchParams(location.search).get('q') || '')
   const headerRef = useRef<HTMLElement>(null)
-  const noticeRef = useRef<HTMLDivElement>(null)
+  useWatchFilterNotices()
 
   useEffect(() => {
     const el = headerRef.current
@@ -60,8 +62,6 @@ export function Layout() {
     setMenuOpen(false)
   }, [location.pathname])
 
-  useDismissOnOutside(notesOpen, noticeRef, () => setNotesOpen(false))
-
   /* Menu toggle + drawer are siblings in .topbar — dismiss if click is outside both. */
   useEffect(() => {
     if (!navOpen) return
@@ -86,8 +86,6 @@ export function Layout() {
     }
   }, [navOpen])
 
-  const myNotices = notices.filter((n) => n.accountId === user?.accountId).slice(0, 12)
-  const unread = myNotices.filter((n) => !n.read).length
   const home = canUseWholesaleDesk(user, isStaff) ? wholesaleHome(settings) : '/account'
   const myPage = location.pathname.startsWith('/account')
   const placeholder =
@@ -159,51 +157,12 @@ export function Layout() {
               <SiteNav open={navOpen} onNavigate={() => setNavOpen(false)} />
             </div>
             <div className="topbar-user">
+              <HeaderDeskPulse />
               <HelpMenu
                 closeWhen={notesOpen || menuOpen || navOpen}
                 onOpen={closeOtherChrome}
                 onClose={() => setMenuOpen(false)}
               />
-              <div className={`notice-menu ${notesOpen ? 'open' : ''}`} ref={noticeRef}>
-                <button
-                  type="button"
-                  className="notice-bell"
-                  aria-label={settings.copy.navNotifications}
-                  aria-expanded={notesOpen}
-                  onClick={() => {
-                    setNotesOpen((v) => !v)
-                    setMenuOpen(false)
-                    setNavOpen(false)
-                    markNoticesRead()
-                  }}
-                >
-                  🔔
-                  {unread > 0 ? <em>{unread}</em> : null}
-                </button>
-                {notesOpen ? (
-                  <div className="notice-panel">
-                    <strong>{settings.copy.navNotifications}</strong>
-                    {myNotices.length ? (
-                      myNotices.map((n) => (
-                        <button
-                          key={n.id}
-                          type="button"
-                          className={`notice-item ${n.read ? '' : 'is-new'}`}
-                          onClick={() => {
-                            setNotesOpen(false)
-                            navigate(n.href)
-                          }}
-                        >
-                          <span>{n.title}</span>
-                          <span className="muted tiny">{n.body}</span>
-                        </button>
-                      ))
-                    ) : (
-                      <p className="muted tiny">—</p>
-                    )}
-                  </div>
-                ) : null}
-              </div>
               <MeMenu
                 mode="app"
                 closeWhen={notesOpen || navOpen}
@@ -214,10 +173,22 @@ export function Layout() {
                 }}
                 onClose={() => setMenuOpen(false)}
               />
-              <LanguageMenu
-                closeWhen={notesOpen || menuOpen || navOpen}
-                onOpen={closeOtherChrome}
-              />
+              {/* End of bar: bell + language (same round controls). */}
+              <div className="topbar-icon-pair">
+                <NoticeBell
+                  closeWhen={menuOpen || navOpen}
+                  onOpen={() => {
+                    setNotesOpen(true)
+                    setMenuOpen(false)
+                    setNavOpen(false)
+                  }}
+                  onClose={() => setNotesOpen(false)}
+                />
+                <LanguageMenu
+                  closeWhen={notesOpen || menuOpen || navOpen}
+                  onOpen={closeOtherChrome}
+                />
+              </div>
             </div>
           </div>
         </header>

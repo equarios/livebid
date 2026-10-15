@@ -54,6 +54,7 @@ export function normalizeAuctionTypes(
     intro?: string
     closesAt?: number
     closeMinutes?: number
+    extraSealedMinutes?: number
     feePct?: number
   }>,
 ) {
@@ -64,6 +65,7 @@ export function normalizeAuctionTypes(
     if (!value || RESERVED_LIST_SLUGS.has(value) || seen.has(value)) continue
     seen.add(value)
     const feeRaw = Number(t.feePct)
+    const extraRaw = Number(t.extraSealedMinutes)
     out.push({
       value,
       label: (t.label || value).trim(),
@@ -72,10 +74,55 @@ export function normalizeAuctionTypes(
       closesAt: typeof t.closesAt === 'number' && t.closesAt > 0 ? t.closesAt : undefined,
       closeMinutes:
         typeof t.closeMinutes === 'number' && t.closeMinutes > 0 ? Math.floor(t.closeMinutes) : undefined,
+      extraSealedMinutes:
+        Number.isFinite(extraRaw) && extraRaw > 0 ? Math.floor(extraRaw) : undefined,
       feePct: Number.isFinite(feeRaw) && feeRaw >= 0 ? feeRaw : undefined,
     })
   }
   return out
+}
+
+export function effectiveEndsAt(lot: Pick<Lot, 'endsAt' | 'extraSealedEndsAt'>): number {
+  return lot.extraSealedEndsAt && lot.extraSealedEndsAt > 0 ? lot.extraSealedEndsAt : lot.endsAt
+}
+
+export function isInExtraSealed(
+  lot: Pick<Lot, 'endsAt' | 'extraSealedEndsAt' | 'channel'>,
+  now = Date.now(),
+): boolean {
+  if (lot.channel === 'marketplace') return false
+  const extra = lot.extraSealedEndsAt
+  if (!extra || extra <= 0) return false
+  return now > lot.endsAt && now <= extra
+}
+
+export function isAuctionOpen(
+  lot: Pick<Lot, 'endsAt' | 'extraSealedEndsAt' | 'channel'>,
+  now = Date.now(),
+): boolean {
+  if (lot.channel === 'marketplace') return true
+  return effectiveEndsAt(lot) > now
+}
+
+export function computeExtraSealedEndsAt(closesAt: number, extraSealedMinutes?: number): number | undefined {
+  const mins = Math.floor(Number(extraSealedMinutes) || 0)
+  if (mins <= 0 || !closesAt) return undefined
+  return closesAt + mins * 60 * 1000
+}
+
+/** Hide Extra sealed lots from buyers who never bid (staff see all). */
+export function filterExtraSealedLots<T extends Pick<Lot, 'id' | 'channel' | 'endsAt' | 'extraSealedEndsAt'>>(
+  lots: T[],
+  bids: Array<{ lotId: string; accountId: string }>,
+  accountId: string | undefined,
+  staff: boolean,
+  now = Date.now(),
+): T[] {
+  if (staff || !accountId) return lots
+  const mine = new Set(
+    bids.filter((b) => b.accountId === accountId).map((b) => b.lotId),
+  )
+  return lots.filter((l) => l.channel !== 'auction' || !isInExtraSealed(l, now) || mine.has(l.id))
 }
 
 export function isAuctionListKind(value: string | undefined, settings?: SiteSettings): value is AuctionListKind {
@@ -115,6 +162,9 @@ export function listIntro(kind: AuctionListKind, settings?: SiteSettings) {
   if (mode === 'hybrid') {
     return `${def?.label || kind}: live fill now, then a sealed stage.`
   }
+  if ((def?.extraSealedMinutes || 0) > 0) {
+    return `${def?.label || kind}: open live fill first; then Extra sealed overtime for accounts that already bid (others cannot see those lots).`
+  }
   return `${def?.label || kind}: last bid per account fills this inventory. You only see your own fill.`
 }
 
@@ -129,7 +179,26 @@ export function lotFillMode(lot: Pick<Lot, 'auctionType' | 'channel'>, settings?
   return normalizeFillMode(undefined, lot.auctionType)
 }
 
-export function isSealedLot(lot: Pick<Lot, 'auctionType' | 'channel'>, settings?: SiteSettings) {
+export function isSealedLot(
+  lot: Pick<Lot, 'auctionType' | 'channel' | 'endsAt' | 'extraSealedEndsAt'>,
+  settings?: SiteSettings,
+  now = Date.now(),
+) {
+  if (isInExtraSealed(lot, now)) return true
+  return lotFillMode(lot, settings) === 'sealed'
+}
+
+/**
+ * Offline sealed hides the high. Extra sealed shows last high to prior bidders
+ * (they are the only ones who can see the lot).
+ */
+export function hideAuctionHigh(
+  lot: Pick<Lot, 'auctionType' | 'channel' | 'endsAt' | 'extraSealedEndsAt'>,
+  settings?: SiteSettings,
+  now = Date.now(),
+) {
+  if (lot.channel !== 'auction') return false
+  if (isInExtraSealed(lot, now)) return false
   return lotFillMode(lot, settings) === 'sealed'
 }
 
@@ -148,13 +217,19 @@ export function ensureAuctionClocks(
     const mins = Math.max(1, t.closeMinutes || (t.value === 'live' ? 240 : 18 * 60))
     return { ...t, closeMinutes: mins, closesAt: now + mins * 60 * 1000 }
   })
-  const byType = new Map(auctionTypes.map((t) => [t.value, t.closesAt || 0]))
+  const byType = new Map(auctionTypes.map((t) => [t.value, t]))
   const nextLots = lots.map((lot) => {
     if (lot.channel !== 'auction') return lot
     const slug = lotAuctionSlug(lot)
-    const closesAt = byType.get(slug)
-    if (!closesAt) return { ...lot, auctionType: slug }
-    return { ...lot, auctionType: slug, endsAt: closesAt }
+    const def = byType.get(slug)
+    if (!def?.closesAt) return { ...lot, auctionType: slug }
+    const extraSealedEndsAt = computeExtraSealedEndsAt(def.closesAt, def.extraSealedMinutes)
+    return {
+      ...lot,
+      auctionType: slug,
+      endsAt: def.closesAt,
+      extraSealedEndsAt,
+    }
   })
   return { settings: { ...settings, auctionTypes }, lots: nextLots }
 }
@@ -183,6 +258,59 @@ export function applyDropClocks(
   return ensureAuctionClocks({ ...settings, auctionTypes }, [...incoming, ...existingLots], now)
 }
 
+export type LaunchClockPlan = {
+  listKey: string
+  mode: 'join' | 'new' | 'marketplace'
+  durationMins: number
+  extraMins: number
+  liveEndsAt: number
+}
+
+/**
+ * Publish from Super Launch Preview: one clock plan per list.
+ * Join keeps the open closesAt; new sets absolute liveEndsAt. Extra sealed comes only from the plan.
+ */
+export function applyLaunchClocks(
+  settings: SiteSettings,
+  existingLots: Lot[],
+  incoming: Lot[],
+  plans: LaunchClockPlan[],
+  now = Date.now(),
+): { settings: SiteSettings; lots: Lot[] } {
+  const byKey = new Map(plans.filter((p) => p.mode !== 'marketplace').map((p) => [p.listKey, p]))
+  const auctionTypes = settings.auctionTypes.map((t) => {
+    const plan = byKey.get(t.value)
+    if (!plan) return t
+    if (plan.mode === 'join' && t.closesAt && t.closesAt > now) {
+      return { ...t, extraSealedMinutes: plan.extraMins }
+    }
+    const mins = Math.max(1, plan.durationMins || 1)
+    const closesAt = plan.liveEndsAt > now ? plan.liveEndsAt : now + mins * 60 * 1000
+    return {
+      ...t,
+      closeMinutes: mins,
+      closesAt,
+      extraSealedMinutes: plan.extraMins,
+    }
+  })
+  const byType = new Map(auctionTypes.map((t) => [t.value, t]))
+  const nextLots = [...incoming, ...existingLots].map((lot) => {
+    if (lot.channel !== 'auction') return lot
+    const slug = lotAuctionSlug(lot)
+    const def = byType.get(slug)
+    if (!def?.closesAt) return { ...lot, auctionType: slug }
+    const plan = byKey.get(slug)
+    const extra = plan ? plan.extraMins : def.extraSealedMinutes || 0
+    return {
+      ...lot,
+      auctionType: slug,
+      endsAt: def.closesAt,
+      extraSealedEndsAt: computeExtraSealedEndsAt(def.closesAt, extra),
+    }
+  })
+  return { settings: { ...settings, auctionTypes }, lots: nextLots }
+}
+
 export function typeClockOpen(settings: SiteSettings, slug: string, now = Date.now()) {
   const t = settings.auctionTypes.find((row) => row.value === slug)
   return Boolean(t?.closesAt && t.closesAt > now)
@@ -191,7 +319,11 @@ export function typeClockOpen(settings: SiteSettings, slug: string, now = Date.n
 export type AuctionClockRow = {
   value: string
   label: string
+  /** Phase countdown target (live close or Extra sealed end). */
   endsAt: number
+  liveEndsAt: number
+  extraEndsAt?: number
+  phase: 'live' | 'extra'
   count: number
   closing: boolean
   durationMs: number
@@ -207,18 +339,29 @@ export function auctionClockRows(
   for (const t of settings.auctionTypes) {
     const group = lots.filter((l) => l.channel === 'auction' && lotAuctionSlug(l) === t.value)
     if (!group.length) continue
-    const endsAt = t.closesAt || Math.max(...group.map((l) => l.endsAt))
+    const liveEndsAt = t.closesAt || Math.max(...group.map((l) => l.endsAt))
+    const fromLots = Math.max(...group.map((l) => effectiveEndsAt(l)))
+    const typeExtra = computeExtraSealedEndsAt(liveEndsAt, t.extraSealedMinutes)
+    const extraEndsAt =
+      fromLots > liveEndsAt ? fromLots : typeExtra && typeExtra > liveEndsAt ? typeExtra : undefined
+    const finalEnd = extraEndsAt && extraEndsAt > liveEndsAt ? extraEndsAt : liveEndsAt
+    if (finalEnd <= now) continue
+    const phase: 'live' | 'extra' =
+      extraEndsAt && now > liveEndsAt && now <= extraEndsAt ? 'extra' : 'live'
+    const endsAt = phase === 'extra' && extraEndsAt ? extraEndsAt : liveEndsAt
     if (endsAt <= now) continue
-    const durationMs = Math.max(
-      1,
-      (t.closeMinutes || minutes) * 60 * 1000,
-      endsAt - now,
-    )
+    const liveDurationMs = Math.max(1, (t.closeMinutes || minutes) * 60 * 1000, liveEndsAt - now)
+    const extraDurationMs =
+      extraEndsAt && extraEndsAt > liveEndsAt ? Math.max(1, extraEndsAt - liveEndsAt) : 0
+    const durationMs = phase === 'extra' ? extraDurationMs : liveDurationMs
     rows.push({
       value: t.value,
       label: t.label,
       endsAt,
-      count: group.length,
+      liveEndsAt,
+      extraEndsAt,
+      phase,
+      count: group.filter((l) => isAuctionOpen(l, now)).length || group.length,
       closing: isEndingSoon(endsAt, now, minutes),
       durationMs,
     })
@@ -245,8 +388,8 @@ export function typePillClass(lot: Pick<Lot, 'auctionType' | 'channel'>, setting
 export function inAuctionList(lot: Lot, kind: AuctionListKind, now = Date.now()) {
   if (lot.channel !== 'auction') return false
   if (kind === 'all') return true
-  if (kind === 'ongoing') return lot.endsAt > now
-  if (kind === 'closed') return lot.endsAt <= now
+  if (kind === 'ongoing') return isAuctionOpen(lot, now)
+  if (kind === 'closed') return !isAuctionOpen(lot, now)
   return (lot.auctionType || 'live') === kind
 }
 

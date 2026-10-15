@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { api, type StoreOrderDto, type StoreProductDto } from '../lib/api'
 import { usd } from '../lib/format'
 import { storeProductImage } from '../lib/storePhotos'
+import { NumberField } from './NumberField'
 
 const MAX_IMAGES = 8
 
@@ -369,13 +370,12 @@ export function StoreDesk() {
                     </td>
                     <td className="num">{usd(p.price)}</td>
                     <td className="num">
-                      <input
+                      <NumberField
                         className="retail-qty"
-                        type="number"
                         min={0}
                         value={p.stock}
                         disabled={busy}
-                        onChange={(e) => void patchStock(p, Math.max(0, Number(e.target.value) || 0))}
+                        onCommit={(n) => void patchStock(p, n)}
                       />
                     </td>
                     <td>{p.active ? 'Live' : 'Hidden'}</td>

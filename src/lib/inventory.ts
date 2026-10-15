@@ -56,6 +56,7 @@ export function skuFromLot(lot: Lot, id?: string): InventorySku {
     description: lot.description || '',
     defaultMoq: lot.moq,
     lastPrice: lot.currentPrice,
+    onHand: 0,
   }
 }
 

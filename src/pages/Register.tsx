@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { AuthFrame } from '../components/AuthFrame'
-import { canUseWholesaleDesk, publicHome, wholesaleHome } from '../lib/channelAccess'
+import { canUseWholesaleDesk, wholesaleHome } from '../lib/channelAccess'
 import { useStore } from '../store'
 
 type Step = 'identity' | 'password' | 'verify'
@@ -23,8 +23,12 @@ export function Register() {
   const [busy, setBusy] = useState(false)
 
   if (user) {
-    const dest = canUseWholesaleDesk(user, isStaff) ? wholesaleHome(settings) : publicHome(settings)
-    return <Navigate to={dest === '/' ? '/account' : dest} replace />
+    /* New buyers land on wholesale apply — store Apply funnel continues here. */
+    if (canUseWholesaleDesk(user, isStaff)) {
+      const dest = wholesaleHome(settings)
+      return <Navigate to={dest === '/' ? '/wholesale' : dest} replace />
+    }
+    return <Navigate to="/account/wholesale" replace />
   }
   if (!settings.features.register && step !== 'verify') return <Navigate to="/login" replace />
 

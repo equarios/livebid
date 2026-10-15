@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { CartDesk } from '../components/CartDesk'
 import { ImeiDesk } from '../components/ImeiDesk'
@@ -12,9 +12,10 @@ import { OfferDesk } from '../components/OfferDesk'
 import { OpsShell, type OpsSection } from '../components/OpsShell'
 import { OpsToday } from '../components/OpsToday'
 import { TimeLeft } from '../components/TimeLeft'
-import { ORIGINS, typePillClass } from '../lib/auctionLists'
+import { isInExtraSealed, ORIGINS, typePillClass } from '../lib/auctionLists'
 import { listingLabel, listingMinutes } from '../lib/duration'
 import { lotTypeLabel, usd } from '../lib/format'
+import { api } from '../lib/api'
 import { opsQueueCounts } from '../lib/opsQueues'
 import { useNow, useStore } from '../store'
 import type { AuctionType, Channel, Grade, Lot } from '../types'
@@ -113,6 +114,7 @@ export function Admin() {
     offers,
     cartOrders,
     invoices,
+    accounts,
     settings,
     listingDrops,
     inventory,
@@ -124,8 +126,23 @@ export function Admin() {
   } = useStore()
   const now = useNow()
   const [params, setParams] = useSearchParams()
+  const [wholesaleStuck, setWholesaleStuck] = useState(0)
+  useEffect(() => {
+    void api
+      .staffWholesaleStuck()
+      .then((r) => setWholesaleStuck(r.stuck.length))
+      .catch(() => undefined)
+  }, [])
   const live = lots.filter((l) => l.channel === 'auction' && l.endsAt > now)
-  const queues = opsQueueCounts({ cartOrders, offers, listingDrops, invoices })
+  const sealedLots = lots.filter((l) => isInExtraSealed(l, now)).length
+  const queues = opsQueueCounts({
+    cartOrders,
+    offers,
+    listingDrops,
+    invoices,
+    accounts,
+    wholesaleStuck,
+  })
   const waitingSuper = (listingDrops || []).filter((d) => d.status === 'pending')
 
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -134,7 +151,8 @@ export function Admin() {
 
   const sectionParam = params.get('section') || ''
   const deskParam = params.get('desk') || ''
-  const defaultSection = queues.commerce || queues.money ? 'today' : 'catalog'
+  const defaultSection =
+    queues.commerce || queues.money || queues.wholesaleApps ? 'today' : 'catalog'
   // Legacy Catalog → IMEI sub-desk → top-level IMEI section
   const section =
     sectionParam === 'catalog' && deskParam === 'imei'
@@ -298,7 +316,7 @@ export function Admin() {
       { id: 'money', label: 'Money', count: queues.money || undefined },
       { id: 'imei', label: 'IMEI' },
       { id: 'store', label: 'Store' },
-      { id: 'buyers', label: 'Buyers' },
+      { id: 'buyers', label: 'Buyers', count: queues.wholesaleApps || undefined },
       { id: 'clients', label: 'Clients' },
     ],
     [queues, waitingSuper, live.length],
@@ -341,6 +359,7 @@ export function Admin() {
           role="admin"
           queues={queues}
           liveLots={live.length}
+          sealedLots={sealedLots}
           inventoryCount={inventory.length}
           onGo={go}
         />

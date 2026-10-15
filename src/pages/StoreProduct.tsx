@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { PublicShell } from '../components/PublicShell'
+import { StoreWholesaleHandoff } from '../components/StoreWholesaleHandoff'
 import { StoreGallery } from '../components/StoreGallery'
 import { StoreRail } from '../components/StoreRail'
 import { StoreBlockSkeleton } from '../components/StoreSkeleton'
@@ -160,6 +161,7 @@ export function StoreProductPage() {
             </div>
           </div>
         ) : null}
+        <StoreWholesaleHandoff />
       </div>
     </PublicShell>
   )

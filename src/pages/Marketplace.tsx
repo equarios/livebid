@@ -14,7 +14,13 @@ import { isFilterUiTarget } from '../components/FilterPanel'
 import { ItemLink } from '../components/ItemLink'
 import { ConfirmBidDialog } from '../components/ConfirmBidDialog'
 import { fillCopy, usd, usdCents } from '../lib/format'
-import { checkOrderQty, lotMoq, moqLabel } from '../lib/moq'
+import {
+  checkOfferPrice,
+  checkOrderQty,
+  minBidQty,
+  minOfferPrice,
+  moqLabel,
+} from '../lib/moq'
 import { feePctForLot, moneyForChannel, moneyForLot, quoteMoney } from '../lib/invoices'
 import { useStore } from '../store'
 import type { Grade, Lot } from '../types'
@@ -25,28 +31,58 @@ function MarketLot({ lot, asCard }: { lot: Lot; asCard?: boolean }) {
   const left = Math.max(0, lot.qty - inCart)
   const lotMoney = moneyForLot(invoices, lot.id, settings)
   const lineTotal = (lot.buyNowPrice ?? lot.currentPrice) * lot.qty
-  const [qty, setQty] = useState(String(lotMoq(lot)))
   const [msg, setMsg] = useState<string | null>(null)
   const [ok, setOk] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [offerOpen, setOfferOpen] = useState(false)
   const [acceptOpen, setAcceptOpen] = useState(false)
   const price = lot.buyNowPrice ?? lot.currentPrice
-  const [offerPrice, setOfferPrice] = useState(String(Math.max(1, price - 1)))
   const mine = (offers || [])
     .filter((o) => o.lotId === lot.id && o.accountId === user?.accountId)
     .sort((a, b) => b.createdAt - a.createdAt)[0]
   const liveOffer = mine && (mine.status === 'pending' || mine.status === 'accepted') ? mine : null
+  const pendingOffer = mine?.status === 'pending' ? mine : null
+  const minQty = minBidQty(lot, pendingOffer?.qty)
+  const listFloor = minOfferPrice(price, settings.offerFloorPct)
+  /** Prefill list (or last pending). Super offer-floor % enforced on Offer click only. */
+  const defaultOffer = pendingOffer?.unitPrice ?? price
+  const [qty, setQty] = useState(String(minQty))
+  const [offerPrice, setOfferPrice] = useState(String(defaultOffer))
 
-  function parsedQty() {
+  useEffect(() => {
+    if (!pendingOffer) return
+    setQty(String(pendingOffer.qty))
+    setOfferPrice(String(pendingOffer.unitPrice))
+  }, [lot.id, pendingOffer?.id, pendingOffer?.qty, pendingOffer?.unitPrice, pendingOffer?.createdAt])
+
+  function restoreQty() {
+    setQty(String(pendingOffer?.qty ?? minQty))
+  }
+
+  function restoreOfferPrice() {
+    setOfferPrice(String(pendingOffer?.unitPrice ?? price))
+  }
+
+  function parsedQty(forOffer = false) {
     const q = Number(qty)
-    const qtyErr = checkOrderQty(lot, q, settings.copy)
+    const qtyErr = checkOrderQty(
+      lot,
+      q,
+      settings.copy,
+      forOffer
+        ? {
+            lastOwnQty: pendingOffer?.qty,
+            lastOwnAmount: pendingOffer?.unitPrice,
+            amount: Number(offerPrice),
+          }
+        : undefined,
+    )
     if (qtyErr) return qtyErr
     return q
   }
 
   function add() {
-    const q = parsedQty()
+    const q = parsedQty(false)
     if (typeof q === 'string') {
       setOk(false)
       setMsg(q)
@@ -69,22 +105,47 @@ function MarketLot({ lot, asCard }: { lot: Lot; asCard?: boolean }) {
   }
 
   function startOffer() {
-    const q = parsedQty()
+    const q = parsedQty(true)
+    const p = Number(offerPrice)
     if (typeof q === 'string') {
       setOk(false)
       setMsg(q)
+      return
+    }
+    const priceErr = checkOfferPrice(
+      price,
+      p,
+      settings.copy,
+      pendingOffer?.unitPrice,
+      settings.offerFloorPct,
+    )
+    if (priceErr) {
+      setOk(false)
+      setMsg(priceErr)
       return
     }
     setOfferOpen(true)
   }
 
   function commitOffer() {
-    const q = parsedQty()
+    const q = parsedQty(true)
     const p = Number(offerPrice)
     setOfferOpen(false)
     if (typeof q === 'string') {
       setOk(false)
       setMsg(q)
+      return
+    }
+    const priceErr = checkOfferPrice(
+      price,
+      p,
+      settings.copy,
+      pendingOffer?.unitPrice,
+      settings.offerFloorPct,
+    )
+    if (priceErr) {
+      setOk(false)
+      setMsg(priceErr)
       return
     }
     void placeOffer(lot.id, q, p).then((err) => {
@@ -93,6 +154,8 @@ function MarketLot({ lot, asCard }: { lot: Lot; asCard?: boolean }) {
         setMsg(err)
         return
       }
+      setQty(String(q))
+      setOfferPrice(String(Math.round(p)))
       setOk(true)
       setMsg(settings.copy.okOffer)
     })
@@ -119,24 +182,36 @@ function MarketLot({ lot, asCard }: { lot: Lot; asCard?: boolean }) {
           <span>Quantity</span>
           <input
             type="number"
-            min={lotMoq(lot)}
+            min={minQty}
             max={lot.qty}
             step={1}
             value={qty}
+            placeholder={String(pendingOffer?.qty ?? minQty)}
             aria-label={`Quantity for ${lot.id}`}
             onChange={(e) => setQty(e.target.value)}
+            onBlur={() => {
+              if (qty.trim() === '' || !Number.isFinite(Number(qty)) || Number(qty) < minQty) {
+                restoreQty()
+              }
+            }}
           />
         </label>
         <label className="inline-field">
           <span>Offer Price</span>
           <input
             type="number"
-            min={1}
-            max={Math.max(1, price - 1)}
+            min={listFloor}
             step={1}
             value={offerPrice}
+            placeholder={String(pendingOffer?.unitPrice ?? price)}
             aria-label={`Offer price for ${lot.id}`}
             onChange={(e) => setOfferPrice(e.target.value)}
+            onBlur={() => {
+              // Only reset empty/garbage — never yank a typed lower price back to list.
+              if (offerPrice.trim() === '' || !Number.isFinite(Number(offerPrice))) {
+                restoreOfferPrice()
+              }
+            }}
           />
         </label>
         <div className="inline-bid-actions">
@@ -184,8 +259,8 @@ function MarketLot({ lot, asCard }: { lot: Lot; asCard?: boolean }) {
       {liveOffer ? (
         <div className="muted tiny">
           {liveOffer.status === 'pending'
-            ? `Offer ${usd(liveOffer.unitPrice)} pending review`
-            : `Accepted ${usd(liveOffer.unitPrice)} — confirm invoice`}
+            ? `Your offer ${liveOffer.qty.toLocaleString()} pcs × ${usd(liveOffer.unitPrice)} · pending`
+            : `Accepted ${liveOffer.qty.toLocaleString()} pcs × ${usd(liveOffer.unitPrice)} — confirm invoice`}
         </div>
       ) : null}
       {msg ? <div className={ok ? 'ok tiny' : 'error tiny'}>{msg}</div> : null}

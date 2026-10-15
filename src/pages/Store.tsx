@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { LandHeroSlider } from '../components/LandHeroSlider'
 import { PublicShell } from '../components/PublicShell'
+import { StoreWholesaleHandoff } from '../components/StoreWholesaleHandoff'
 import { StoreProductCard } from '../components/StoreProductCard'
 import { StoreProductPreview } from '../components/StoreProductPreview'
 import { StoreRail } from '../components/StoreRail'
@@ -144,6 +145,7 @@ export function Store() {
       </div>
 
       {preview ? <StoreProductPreview product={preview} onClose={() => setPreview(null)} /> : null}
+      <StoreWholesaleHandoff />
     </PublicShell>
   )
 }

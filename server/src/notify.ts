@@ -1,17 +1,22 @@
 import { prisma } from './db'
 import { sendMail } from './mail'
+import { isQuietEmailKind, isQuietHours } from './quietHours'
 
 export type NoticeKind =
   | 'win'
   | 'invoice'
   | 'outbid'
   | 'closing'
+  | 'thanks'
   | 'fill'
   | 'offer'
   | 'cart'
   | 'payment'
   | 'shipping'
   | 'auth'
+  | 'watch'
+  | 'digest'
+  | 'sealed'
 
 export type EmailPrefs = {
   win: boolean
@@ -23,7 +28,13 @@ export type EmailPrefs = {
   auth: boolean
   outbid: boolean
   closing: boolean
+  thanks: boolean
   fill: boolean
+  watch: boolean
+  /** Once-daily desk summary (outbid · invoices · watch hits). */
+  digest: boolean
+  /** Extra sealed overtime started on a lot you already bid. */
+  sealed: boolean
 }
 
 export const DEFAULT_EMAIL_PREFS: EmailPrefs = {
@@ -34,9 +45,13 @@ export const DEFAULT_EMAIL_PREFS: EmailPrefs = {
   payment: true,
   shipping: true,
   auth: true,
-  outbid: false,
+  outbid: true,
   closing: false,
+  thanks: true,
   fill: false,
+  watch: true,
+  digest: true,
+  sealed: true,
 }
 
 export function parseEmailPrefs(raw: string | null | undefined): EmailPrefs {
@@ -92,8 +107,21 @@ export async function notify(input: NotifyInput) {
   })
 
   const prefs = parseEmailPrefs(account.emailPrefsJson)
-  const wantEmail =
+  let wantEmail =
     input.forceEmail || (!input.skipEmail && prefs[prefForKind(input.kind)])
+  /* Watch matches stay in-app; email rides the daily digest when digest is on. */
+  if (!input.forceEmail && input.kind === 'watch' && prefs.digest) {
+    wantEmail = false
+  }
+  /* Overnight quiet: in-app still created; non-urgent email waits for daytime. */
+  if (
+    wantEmail &&
+    !input.forceEmail &&
+    isQuietEmailKind(input.kind) &&
+    isQuietHours()
+  ) {
+    wantEmail = false
+  }
 
   let emailed = false
   if (wantEmail && account.email) {

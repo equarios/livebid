@@ -1,0 +1,12 @@
+---
+description: Keep agent turns short to save tokens and cost
+alwaysApply: true
+---
+
+# Save tokens (LiveBid)
+
+- Answer in few short sentences unless the user asks for detail.
+- One task per turn. Do not expand scope or re-run verify/e2e/staging unless asked.
+- Prefer grep/read of specific files over broad exploration or subagents.
+- Skip long summaries of prior work; no restating LAUNCH/PUBLISH unless the user says publish/launch/deploy.
+- Do not start parallel research when a direct fix or yes/no is enough.
