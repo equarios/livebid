@@ -1,3 +1,4 @@
+import { originLabel, normalizeOrigin } from './auctionLists'
 import type { InventorySku, Lot } from '../types'
 
 export function skuFingerprint(row: {
@@ -18,7 +19,7 @@ export function skuFingerprint(row: {
     row.capacity,
     row.color,
     row.grade,
-    row.origin || 'INT',
+    originLabel(row.origin),
     row.simLocked ? '1' : '0',
     row.activationLocked ? '1' : '0',
   ]
@@ -34,7 +35,7 @@ export function skuSpecLine(sku: InventorySku) {
   const sim = sku.simLocked ? 'SIM locked' : 'SIM unlocked'
   const act = sku.activationLocked ? 'Act locked' : 'Act open'
   const moq = sku.defaultMoq && sku.defaultMoq > 1 ? `MOQ ${sku.defaultMoq}` : 'No MOQ'
-  return `${sku.color} · Grade ${sku.grade} · ${sku.origin || 'INT'} · ${sku.battery}% · ${sim} · ${act}${
+  return `${sku.color} · Grade ${sku.grade} · ${originLabel(sku.origin)} · ${sku.battery}% · ${sim} · ${act}${
     sku.operator ? ` · ${sku.operator}` : ''
   } · ${moq}`
 }
@@ -49,7 +50,7 @@ export function skuFromLot(lot: Lot, id?: string): InventorySku {
     color: lot.color,
     grade: lot.grade,
     battery: lot.battery,
-    origin: lot.origin || 'INT',
+    origin: normalizeOrigin(lot.origin),
     operator: lot.operator,
     simLocked: lot.simLocked,
     activationLocked: lot.activationLocked,

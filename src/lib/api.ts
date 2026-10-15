@@ -422,10 +422,20 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ side, decision }),
     }),
-  submitInvoicePayment: (id: string, receiptName: string, receiptData: string) =>
+  submitInvoicePayment: (
+    id: string,
+    receiptName: string,
+    receiptData: string,
+    extra?: { payMethod?: 'bank' | 'usdt' | 'cash'; payRef?: string },
+  ) =>
     req<{ invoice: unknown }>(`/api/commerce/invoices/${encodeURIComponent(id)}/pay`, {
       method: 'POST',
-      body: JSON.stringify({ receiptName, receiptData }),
+      body: JSON.stringify({
+        receiptName,
+        receiptData,
+        payMethod: extra?.payMethod,
+        payRef: extra?.payRef,
+      }),
     }),
   reviewInvoicePayment: (id: string, side: 'admin' | 'super', decision: 'accepted' | 'declined') =>
     req<{ invoice: unknown }>(
@@ -491,16 +501,126 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ lots }),
     }),
+  lotPriceComps: (id: string) =>
+    req<{ comps: PriceCompDto[]; median: number | null }>(
+      `/api/catalog/lots/${encodeURIComponent(id)}/comps`,
+    ),
+  getFees: () =>
+    req<{
+      fees: {
+        marketplaceFeePct: number
+        invoiceFeePct: number
+        offerFloorPct: number
+        auctionTypeFees: Record<string, number>
+        fulfillment?: import('../types').FulfillmentSettings
+      }
+    }>('/api/settings/fees'),
   saveFees: (fees: {
     marketplaceFeePct: number
     invoiceFeePct: number
     offerFloorPct: number
     auctionTypeFees: Record<string, number>
+    fulfillment?: import('../types').FulfillmentSettings
   }) =>
     req<{ fees: typeof fees }>('/api/settings/fees', {
       method: 'PUT',
       body: JSON.stringify(fees),
     }),
+  storeFulfillment: () =>
+    req<{
+      fulfillment: {
+        modes: import('../types').FulfillmentMode[]
+        defaultMode: import('../types').FulfillmentMode
+        deliveryFeeFlat: number
+        freeDeliveryMin: number
+        deliveryPayer: import('../types').ShippingPayer
+        pickupLabel: string
+        pickupHours: string
+        courierHints: string
+        pickupSlots?: string[]
+        pickupLeadDays?: number
+        pickupSlotCap?: number
+        earliestPickupDate?: string
+      }
+    }>('/api/store/fulfillment'),
+  storePickupSlots: (date: string) =>
+    req<{
+      date: string
+      pickupSlotCap: number
+      slots: Array<{
+        slot: string
+        booked: number
+        cap: number
+        remaining: number | null
+        full: boolean
+      }>
+    }>(`/api/store/fulfillment/slots?date=${encodeURIComponent(date)}`),
+  askAboutItem: (body: {
+    channel: 'store' | 'auction' | 'marketplace'
+    itemId: string
+    itemTitle: string
+    itemHref?: string
+    name: string
+    email: string
+    message: string
+  }) =>
+    req<{ enquiry: ProductEnquiryDto }>('/api/enquiry', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  productEnquiryCount: () => req<{ openCount: number }>('/api/enquiry/count'),
+  productEnquiries: (status?: 'open' | 'done') => {
+    const qs = status ? `?status=${encodeURIComponent(status)}` : ''
+    return req<{ enquiries: ProductEnquiryDto[]; openCount: number }>(
+      `/api/enquiry${qs}`,
+    )
+  },
+  updateProductEnquiry: (id: string, body: { status: 'open' | 'done' }) =>
+    req<{ enquiry: ProductEnquiryDto }>(`/api/enquiry/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+  getLogistics: () =>
+    req<{
+      logistics: {
+        preferredFulfillmentMode: import('../types').FulfillmentMode | null
+        courierCarrier: string | null
+        courierAccount: string | null
+        address: string | null
+      }
+    }>('/api/account/logistics'),
+  saveLogistics: (body: {
+    preferredFulfillmentMode?: import('../types').FulfillmentMode | null
+    courierCarrier?: string | null
+    courierAccount?: string | null
+    address?: string | null
+  }) =>
+    req<{
+      logistics: {
+        preferredFulfillmentMode: import('../types').FulfillmentMode | null
+        courierCarrier: string | null
+        courierAccount: string | null
+        address: string | null
+      }
+    }>('/api/account/logistics', { method: 'PUT', body: JSON.stringify(body) }),
+  setInvoiceFulfillment: (
+    id: string,
+    body: {
+      fulfillmentMode: import('../types').FulfillmentMode
+      courierCarrier?: string
+      courierAccount?: string
+      shipAddress?: string
+      shipPhone?: string
+      shippingFee?: number
+      readyForCollect?: boolean
+      pickupDate?: string
+      pickupSlot?: string
+    },
+  ) =>
+    req<{ invoice: Record<string, unknown>; shippingInvoiceId?: string | null }>(
+      `/api/commerce/invoices/${encodeURIComponent(id)}/fulfillment`,
+      { method: 'PATCH', body: JSON.stringify(body) },
+    ),
   imeiPacks: () =>
     req<{
       packs: Array<{
@@ -694,9 +814,14 @@ export const api = {
     email: string
     name: string
     phone?: string
-    address: string
+    address?: string
     note?: string
-    paymentMethod: 'card' | 'paypal' | 'bank'
+    paymentMethod: 'card' | 'paypal' | 'bank' | 'usdt' | 'cash'
+    fulfillmentMode?: import('../types').FulfillmentMode
+    courierCarrier?: string
+    courierAccount?: string
+    pickupDate?: string
+    pickupSlot?: string
     lines: Array<{ productId: string; qty: number }>
   }) =>
     req<{ order: StoreOrderDto }>('/api/store/orders', {
@@ -708,12 +833,21 @@ export const api = {
     req<{ order: StoreOrderDto }>(`/api/store/orders/${encodeURIComponent(id)}`),
   updateStoreOrder: (
     id: string,
-    body: { status?: 'pending_payment' | 'paid' | 'shipped' | 'cancelled'; paymentRef?: string | null },
+    body: {
+      status?: 'pending_payment' | 'paid' | 'shipped' | 'cancelled'
+      paymentRef?: string | null
+      readyForCollect?: boolean
+      shippingFee?: number
+      shippingFeeQuoted?: boolean
+    },
   ) =>
-    req<{ order: StoreOrderDto }>(`/api/store/orders/${encodeURIComponent(id)}`, {
-      method: 'PATCH',
-      body: JSON.stringify(body),
-    }),
+    req<{ order: StoreOrderDto; shippingInvoiceId?: string | null }>(
+      `/api/store/orders/${encodeURIComponent(id)}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      },
+    ),
 
   communityListings: (params?: { q?: string; category?: string; mine?: boolean; queue?: boolean }) => {
     const qs = new URLSearchParams()
@@ -778,6 +912,15 @@ export type StoreProductDto = {
   stock: number
   category: string
   brand?: string
+  modelNumber?: string
+  capacity?: string
+  color?: string
+  grade?: string
+  /** 0 = unknown / hide on card. */
+  battery?: number
+  origin?: string
+  simLocked?: boolean
+  activationLocked?: boolean
   imageUrl: string | null
   /** Ordered gallery; first is cover. */
   images?: string[]
@@ -793,6 +936,13 @@ export type StoreOrderDto = {
   name: string
   phone: string | null
   address: string
+  fulfillmentMode?: import('../types').FulfillmentMode
+  courierCarrier?: string | null
+  courierAccount?: string | null
+  readyForCollect?: boolean
+  shippingFeeQuoted?: boolean
+  pickupDate?: string | null
+  pickupSlot?: string | null
   status: string
   paymentMethod: string
   paymentRef: string | null
@@ -810,6 +960,31 @@ export type StoreOrderDto = {
     unitPrice: number
     qty: number
   }>
+}
+
+export type ProductEnquiryDto = {
+  id: string
+  channel: 'store' | 'auction' | 'marketplace'
+  itemId: string
+  itemTitle: string
+  itemHref: string
+  name: string
+  email: string
+  accountId: string | null
+  message: string
+  status: 'open' | 'done'
+  createdAt: number
+  doneAt?: number
+}
+
+export type PriceCompDto = {
+  lotId: string
+  unitPrice: number
+  at: number
+  type: string
+  grade: string
+  capacity: string
+  qty: number
 }
 
 export type CommunityListingDto = {

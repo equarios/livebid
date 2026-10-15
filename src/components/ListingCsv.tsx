@@ -1,7 +1,7 @@
 import { useRef, useState, type ChangeEvent } from 'react'
 import { ConfirmDialog } from './ConfirmDialog'
 import { ModalShell } from './ModalShell'
-import { ORIGINS, slugAuctionType } from '../lib/auctionLists'
+import { normalizeOrigin, slugAuctionType } from '../lib/auctionLists'
 import { csvAuctionMatches, csvTypeKey, downloadCsv, parseListingCsv, type CsvListingRow } from '../lib/csv'
 import { listingMinutes } from '../lib/duration'
 import { usd } from '../lib/format'
@@ -88,7 +88,7 @@ export function ListingCsv() {
       lot.modelNumber,
       lot.capacity,
       lot.color,
-      lot.origin || 'INT',
+      normalizeOrigin(lot.origin),
       lot.grade,
       lot.battery,
       lot.qty,
@@ -252,7 +252,7 @@ export function ListingCsv() {
         return
       }
       used.add(id)
-      const origin = ORIGINS.includes(row.origin as (typeof ORIGINS)[number]) ? row.origin : 'INT'
+      const origin = normalizeOrigin(row.origin)
       built.push({
         id,
         channel: meta.channel,

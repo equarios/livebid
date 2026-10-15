@@ -1,6 +1,11 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import {
+  DEFAULT_FULFILLMENT,
+  normalizeFulfillment,
+  type FulfillmentConfig,
+} from './fulfillment'
 
 export type FeeConfig = {
   marketplaceFeePct: number
@@ -8,6 +13,7 @@ export type FeeConfig = {
   /** Lowest marketplace offer as % of list (0–100). */
   offerFloorPct: number
   auctionTypeFees: Record<string, number>
+  fulfillment: FulfillmentConfig
 }
 
 const DEFAULT: FeeConfig = {
@@ -15,6 +21,7 @@ const DEFAULT: FeeConfig = {
   invoiceFeePct: 2,
   offerFloorPct: 30,
   auctionTypeFees: { live: 2, offline: 2 },
+  fulfillment: { ...DEFAULT_FULFILLMENT },
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -33,7 +40,9 @@ function clampOfferFloorPct(n: unknown, fallback: number) {
 
 export function readFees(): FeeConfig {
   try {
-    const raw = JSON.parse(fs.readFileSync(FILE, 'utf8')) as Partial<FeeConfig>
+    const raw = JSON.parse(fs.readFileSync(FILE, 'utf8')) as Partial<FeeConfig> & {
+      fulfillment?: Partial<FulfillmentConfig>
+    }
     return {
       marketplaceFeePct: clampPct(raw.marketplaceFeePct, DEFAULT.marketplaceFeePct),
       invoiceFeePct: clampPct(raw.invoiceFeePct, DEFAULT.invoiceFeePct),
@@ -42,6 +51,7 @@ export function readFees(): FeeConfig {
         ...DEFAULT.auctionTypeFees,
         ...(raw.auctionTypeFees && typeof raw.auctionTypeFees === 'object' ? raw.auctionTypeFees : {}),
       },
+      fulfillment: normalizeFulfillment(raw.fulfillment),
     }
   } catch {
     return {
@@ -49,6 +59,7 @@ export function readFees(): FeeConfig {
       invoiceFeePct: DEFAULT.invoiceFeePct,
       offerFloorPct: DEFAULT.offerFloorPct,
       auctionTypeFees: { ...DEFAULT.auctionTypeFees },
+      fulfillment: { ...DEFAULT_FULFILLMENT },
     }
   }
 }
@@ -59,6 +70,7 @@ export function writeFees(next: FeeConfig) {
     invoiceFeePct: clampPct(next.invoiceFeePct, 2),
     offerFloorPct: clampOfferFloorPct(next.offerFloorPct, DEFAULT.offerFloorPct),
     auctionTypeFees: {},
+    fulfillment: normalizeFulfillment(next.fulfillment),
   }
   for (const [k, v] of Object.entries(next.auctionTypeFees || {})) {
     if (!k.trim()) continue
@@ -67,6 +79,10 @@ export function writeFees(next: FeeConfig) {
   fs.mkdirSync(path.dirname(FILE), { recursive: true })
   fs.writeFileSync(FILE, JSON.stringify(clean, null, 2))
   return clean
+}
+
+export function readFulfillment(): FulfillmentConfig {
+  return readFees().fulfillment
 }
 
 export function feeForAuctionType(slug: string) {

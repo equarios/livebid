@@ -15,6 +15,12 @@ import {
   suggestInvoiceId,
 } from '../lib/invoices'
 import { isoDate, moneyUsd, usd } from '../lib/format'
+import {
+  WHOLESALE_PAY_LABEL,
+  isCashReceipt,
+  wholesalePayLink,
+  wholesalePayMailto,
+} from '../lib/wholesalePay'
 import { useStore } from '../store'
 import type { CartOrder, Invoice, InvoiceLine, Lot, MarketOffer, PayReview } from '../types'
 
@@ -145,6 +151,13 @@ export function InvoiceDesk({
   const [auctionLabel, setAuctionLabel] = useState('')
   const [feePct, setFeePct] = useState('0')
   const [terms, setTerms] = useState('')
+  const [fulfillmentMode, setFulfillmentMode] = useState<
+    'pickup' | 'delivery' | 'buyer_courier'
+  >(() => settings.fulfillment?.defaultWholesaleMode || 'pickup')
+  const [courierCarrier, setCourierCarrier] = useState('FedEx')
+  const [courierAccount, setCourierAccount] = useState('')
+  const [shippingFee, setShippingFee] = useState('0')
+  const [readyForCollect, setReadyForCollect] = useState(false)
   const [shipCompany, setShipCompany] = useState(() => clients[0]?.company || '')
   const [shipAddress, setShipAddress] = useState(() => clients[0]?.address || '')
   const [shipEmail, setShipEmail] = useState(() => clients[0]?.email || '')
@@ -236,6 +249,18 @@ export function InvoiceDesk({
       feePct: fee,
       auctionLabel: auctionLabel.trim() || undefined,
       terms: terms.trim() || undefined,
+      fulfillmentMode,
+      courierCarrier:
+        fulfillmentMode === 'buyer_courier' ? courierCarrier.trim() || undefined : undefined,
+      courierAccount:
+        fulfillmentMode === 'buyer_courier' ? courierAccount.trim() || undefined : undefined,
+      shippingFee: Math.max(0, Number(shippingFee) || 0),
+      shippingFeeQuoted:
+        fulfillmentMode !== 'delivery' ||
+        settings.fulfillment?.deliveryPayer !== 'admin_decide' ||
+        Number.isFinite(Number(shippingFee)),
+      shippingPayer: settings.fulfillment?.deliveryPayer,
+      readyForCollect,
       shipCompany: shipCompany.trim() || undefined,
       shipAddress: shipAddress.trim() || undefined,
       shipEmail: shipEmail.trim() || undefined,
@@ -264,6 +289,12 @@ export function InvoiceDesk({
     poNumber,
     auctionLabel,
     terms,
+    fulfillmentMode,
+    courierCarrier,
+    courierAccount,
+    shippingFee,
+    readyForCollect,
+    settings.fulfillment?.deliveryPayer,
     shipCompany,
     shipAddress,
     shipEmail,
@@ -345,6 +376,14 @@ export function InvoiceDesk({
     if (force || !billAddress.trim()) setBillAddress(client.address || '')
     if (force || !billEmail.trim()) setBillEmail(client.email || '')
     if (force || !billPhone.trim()) setBillPhone(client.phone || '')
+    if (force || client.preferredFulfillmentMode) {
+      setFulfillmentMode(client.preferredFulfillmentMode)
+      if (client.preferredFulfillmentMode === 'buyer_courier') {
+        setCourierCarrier(client.courierCarrier || 'FedEx')
+        setCourierAccount(client.courierAccount || '')
+      }
+      setShowShipMeta(true)
+    }
   }
 
   function closeComposer() {
@@ -369,6 +408,11 @@ export function InvoiceDesk({
     setAuctionLabel('')
     setFeePct(String(feePctForLot(lots[0] || { channel: 'auction', auctionType: 'live' }, settings)))
     setTerms(settings.invoice.terms || '')
+    setFulfillmentMode(settings.fulfillment?.defaultWholesaleMode || 'pickup')
+    setCourierCarrier('FedEx')
+    setCourierAccount('')
+    setShippingFee('0')
+    setReadyForCollect(false)
     const client = clients[0]
     setShipCompany(client?.company || '')
     setShipAddress(client?.address || '')
@@ -410,6 +454,13 @@ export function InvoiceDesk({
     setAuctionLabel(inv.auctionLabel || '')
     setFeePct(String(suggestedFeePct(inv, lots, settings)))
     setTerms(inv.terms || settings.invoice.terms || '')
+    setFulfillmentMode(
+      inv.fulfillmentMode || settings.fulfillment?.defaultWholesaleMode || 'pickup',
+    )
+    setCourierCarrier(inv.courierCarrier || 'FedEx')
+    setCourierAccount(inv.courierAccount || '')
+    setShippingFee(String(inv.shippingFee ?? 0))
+    setReadyForCollect(Boolean(inv.readyForCollect))
     setShipCompany(inv.shipCompany || client?.company || '')
     setShipAddress(inv.shipAddress || client?.address || '')
     setShipEmail(inv.shipEmail || client?.email || '')
@@ -427,7 +478,15 @@ export function InvoiceDesk({
           (inv.billEmail || client?.email || '') === (inv.shipEmail || client?.email || '') &&
           (inv.billPhone || client?.phone || '') === (inv.shipPhone || client?.phone || '')),
     )
-    setShowShipMeta(Boolean(inv.trackingNo || inv.shippedAt))
+    setShowShipMeta(
+      Boolean(
+        inv.trackingNo ||
+          inv.shippedAt ||
+          inv.fulfillmentMode ||
+          inv.readyForCollect ||
+          inv.courierCarrier,
+      ),
+    )
     setMsg(`Editing ${inv.id}`)
     setErr(null)
     setMode('compose')
@@ -576,6 +635,18 @@ export function InvoiceDesk({
       feePct: fee,
       auctionLabel: auctionLabel.trim() || undefined,
       terms: terms.trim() || undefined,
+      fulfillmentMode,
+      courierCarrier:
+        fulfillmentMode === 'buyer_courier' ? courierCarrier.trim() || undefined : undefined,
+      courierAccount:
+        fulfillmentMode === 'buyer_courier' ? courierAccount.trim() || undefined : undefined,
+      shippingFee: Math.max(0, Number(shippingFee) || 0),
+      shippingFeeQuoted:
+        fulfillmentMode !== 'delivery' ||
+        settings.fulfillment?.deliveryPayer !== 'admin_decide' ||
+        Number.isFinite(Number(shippingFee)),
+      shippingPayer: settings.fulfillment?.deliveryPayer,
+      readyForCollect,
       shipCompany: shipCompany.trim() || undefined,
       shipAddress: shipAddress.trim() || undefined,
       shipEmail: shipEmail.trim() || undefined,
@@ -644,11 +715,43 @@ export function InvoiceDesk({
 
   function invoiceActions(inv: Invoice) {
     const issueOpen = inv.status === 'draft' || (inv.status === 'declined' && !inv.issuedAt)
+    const canSendPayLink =
+      (canAdmin || canSuper) && (inv.status === 'unpaid' || inv.status === 'pending_review')
+    const buyerEmail =
+      accounts.find((a) => a.accountId === inv.accountId)?.email?.trim() || ''
     return (
       <div className="row-actions">
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPreviewId(inv.id)}>
           Preview
         </button>
+        {canSendPayLink ? (
+          <>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => {
+                const link = wholesalePayLink(inv.id)
+                void navigator.clipboard.writeText(link).then(
+                  () => setMsg(`Pay link copied · ${inv.id}`),
+                  () => setMsg(link),
+                )
+              }}
+            >
+              Copy pay link
+            </button>
+            <a
+              className="btn btn-ghost btn-sm"
+              href={wholesalePayMailto({
+                to: buyerEmail,
+                invoiceId: inv.id,
+                amountLabel: moneyUsd(invoiceTotals(inv, settings).total),
+              })}
+              onClick={() => setMsg(`Email draft opened · ${inv.id}`)}
+            >
+              Email pay link
+            </a>
+          </>
+        ) : null}
         {issueOpen ? (
           <>
             {canAdmin ? (
@@ -1248,6 +1351,71 @@ export function InvoiceDesk({
               {showShipMeta ? (
                 <div className="invoice-editor-meta" style={{ marginTop: 10 }}>
                   <label>
+                    Fulfillment
+                    <select
+                      value={fulfillmentMode}
+                      onChange={(e) =>
+                        setFulfillmentMode(e.target.value as 'pickup' | 'delivery' | 'buyer_courier')
+                      }
+                    >
+                      {(settings.fulfillment?.wholesaleModes || [
+                        'pickup',
+                        'delivery',
+                        'buyer_courier',
+                      ]).map((m) => (
+                        <option key={m} value={m}>
+                          {m === 'pickup'
+                            ? 'Self pickup'
+                            : m === 'buyer_courier'
+                              ? 'Buyer courier account'
+                              : 'Delivery'}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {fulfillmentMode === 'buyer_courier' ? (
+                    <>
+                      <label>
+                        Courier
+                        <select
+                          value={courierCarrier}
+                          onChange={(e) => setCourierCarrier(e.target.value)}
+                        >
+                          {['FedEx', 'UPS', 'DHL', 'Other'].map((c) => (
+                            <option key={c} value={c}>
+                              {c}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        Buyer account #
+                        <input
+                          value={courierAccount}
+                          onChange={(e) => setCourierAccount(e.target.value)}
+                        />
+                      </label>
+                    </>
+                  ) : null}
+                  <label>
+                    Delivery fee (USD)
+                    <input
+                      type="number"
+                      min={0}
+                      step={0.01}
+                      value={shippingFee}
+                      onChange={(e) => setShippingFee(e.target.value)}
+                    />
+                  </label>
+                  <label className="check-inline">
+                    <input
+                      type="checkbox"
+                      checked={readyForCollect}
+                      onChange={(e) => setReadyForCollect(e.target.checked)}
+                    />
+                    Ready for collect / pickup
+                  </label>
+                  <label>
                     Tracking no
                     <input value={trackingNo} onChange={(e) => setTrackingNo(e.target.value)} />
                   </label>
@@ -1528,8 +1696,19 @@ export function InvoiceDesk({
                     </div>
                   </td>
                   <td className="inv-q-receipt">
+                    {inv.payMethod ? (
+                      <span className="tiny muted inv-q-pay-method">
+                        {WHOLESALE_PAY_LABEL[inv.payMethod] || inv.payMethod}
+                        {inv.payRef ? ` · ${inv.payRef.slice(0, 16)}` : ''}
+                      </span>
+                    ) : null}
                     {inv.receiptData ? (
                       <>
+                        {isCashReceipt(inv.receiptData) || inv.receiptData.startsWith('text:') ? (
+                          <span className="tiny" title={inv.receiptName || 'Declared'}>
+                            {isCashReceipt(inv.receiptData) ? 'Cash' : inv.payRef || 'Ref'}
+                          </span>
+                        ) : (
                         <a
                           href={inv.receiptData}
                           target="_blank"
@@ -1548,6 +1727,7 @@ export function InvoiceDesk({
                             <span className="tiny">PDF</span>
                           )}
                         </a>
+                        )}
                         <label className="btn btn-ghost btn-sm inv-q-replace">
                           Replace
                           <input

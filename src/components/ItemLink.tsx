@@ -1,3 +1,4 @@
+import { originLabel } from '../lib/auctionLists'
 import { moqLabel } from '../lib/moq'
 import { lotThumb, photoFallback } from '../lib/photos'
 import { useStore } from '../store'
@@ -19,7 +20,7 @@ export function ItemLink({
   const { openLot } = useLotPreview()
   const { settings } = useStore()
   const title = [lot.manufacturer, lot.model, lot.modelNumber].filter(Boolean).join(' ')
-  const sub = [lot.capacity, lot.origin || 'INT', lot.color].filter(Boolean).join(' · ')
+  const sub = [lot.capacity, originLabel(lot.origin), lot.color].filter(Boolean).join(' · ')
 
   return (
     <button type="button" className="item-link item-cell" onClick={() => openLot(lot.id)}>

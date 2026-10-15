@@ -6,6 +6,8 @@ import { ModalShell } from '../components/ModalShell'
 import { OpsShell, type OpsSection } from '../components/OpsShell'
 import { OpsToday } from '../components/OpsToday'
 import { StoreDesk } from '../components/StoreDesk'
+import { FulfillmentQueue } from '../components/FulfillmentQueue'
+import { ProductEnquiryDesk } from '../components/ProductEnquiryDesk'
 import { ClientsDesk } from '../components/ClientsDesk'
 import { WholesaleReviewDesk } from '../components/WholesaleReviewDesk'
 import { NumberField } from '../components/NumberField'
@@ -572,10 +574,17 @@ export function Super() {
   const [status, setStatus] = useState<AccountStatus>('active')
 
   const [wholesaleStuck, setWholesaleStuck] = useState(0)
+  const [productAsks, setProductAsks] = useState(0)
   useEffect(() => {
     void api
       .staffWholesaleStuck()
       .then((r) => setWholesaleStuck(r.stuck.length))
+      .catch(() => undefined)
+  }, [])
+  useEffect(() => {
+    void api
+      .productEnquiryCount()
+      .then((r) => setProductAsks(r.openCount))
       .catch(() => undefined)
   }, [])
   const queues = opsQueueCounts({
@@ -585,6 +594,7 @@ export function Super() {
     offers,
     cartOrders,
     wholesaleStuck,
+    productAsks,
   })
   const liveLots = lots.filter((l) => l.channel === 'auction' && l.endsAt > now).length
   const sealedLots = lots.filter((l) => isInExtraSealed(l, now)).length
@@ -625,6 +635,44 @@ export function Super() {
   }, [])
 
   useEffect(() => {
+    let alive = true
+    void api
+      .getFees()
+      .then((res) => {
+        if (!alive || !res.fees) return
+        setDraft((prev) => ({
+          ...prev,
+          marketplaceFeePct: res.fees.marketplaceFeePct,
+          offerFloorPct: res.fees.offerFloorPct,
+          fulfillment: {
+            ...DEFAULT_SETTINGS.fulfillment!,
+            ...(res.fees.fulfillment || {}),
+            storeModes:
+              res.fees.fulfillment?.storeModes?.length
+                ? res.fees.fulfillment.storeModes
+                : DEFAULT_SETTINGS.fulfillment!.storeModes,
+            wholesaleModes:
+              res.fees.fulfillment?.wholesaleModes?.length
+                ? res.fees.fulfillment.wholesaleModes
+                : DEFAULT_SETTINGS.fulfillment!.wholesaleModes,
+          },
+          auctionTypes: prev.auctionTypes.map((t) => ({
+            ...t,
+            feePct:
+              res.fees.auctionTypeFees?.[t.value] === 0 ||
+              Number.isFinite(res.fees.auctionTypeFees?.[t.value])
+                ? Number(res.fees.auctionTypeFees[t.value]) || 0
+                : t.feePct,
+          })),
+        }))
+      })
+      .catch(() => undefined)
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  useEffect(() => {
     setDraft((prev) => ({
       ...prev,
       auctionTypes: settings.auctionTypes.map((live) => {
@@ -651,9 +699,29 @@ export function Super() {
         prev.offerFloorPct === 0 || Number.isFinite(prev.offerFloorPct)
           ? prev.offerFloorPct
           : settings.offerFloorPct,
+      fulfillment: {
+        ...DEFAULT_SETTINGS.fulfillment!,
+        ...(settings.fulfillment || {}),
+        ...(prev.fulfillment || {}),
+        storeModes:
+          prev.fulfillment?.storeModes?.length ||
+          settings.fulfillment?.storeModes?.length ||
+          DEFAULT_SETTINGS.fulfillment!.storeModes
+            ? prev.fulfillment?.storeModes?.length
+              ? prev.fulfillment.storeModes
+              : settings.fulfillment?.storeModes?.length
+                ? settings.fulfillment.storeModes
+                : DEFAULT_SETTINGS.fulfillment!.storeModes
+            : DEFAULT_SETTINGS.fulfillment!.storeModes,
+        wholesaleModes: prev.fulfillment?.wholesaleModes?.length
+          ? prev.fulfillment.wholesaleModes
+          : settings.fulfillment?.wholesaleModes?.length
+            ? settings.fulfillment.wholesaleModes
+            : DEFAULT_SETTINGS.fulfillment!.wholesaleModes,
+      },
       invoice: { ...DEFAULT_SETTINGS.invoice, ...settings.invoice, ...prev.invoice },
     }))
-  }, [settings.auctionTypes, settings.invoice, settings.marketplaceFeePct, settings.offerFloorPct])
+  }, [settings.auctionTypes, settings.invoice, settings.marketplaceFeePct, settings.offerFloorPct, settings.fulfillment])
 
   function publishAuctionType(row: AuctionTypeDef) {
     const auctionTypes = [...settings.auctionTypes.filter((t) => t.value !== row.value), row]
@@ -914,7 +982,16 @@ export function Super() {
         count: queues.catalogWaitItems || undefined,
       },
       { id: 'money', label: 'Money', count: queues.money || undefined },
-      { id: 'store', label: 'Store' },
+      {
+        id: 'store',
+        label: 'Store',
+        count: queues.fulfillment || undefined,
+        desks: [
+          { id: 'catalog', label: 'Catalog' },
+          { id: 'fulfill', label: 'Fulfillment', count: queues.fulfillment || undefined },
+          { id: 'asks', label: 'Asks', count: queues.productAsks || undefined },
+        ],
+      },
       {
         id: 'people',
         label: 'People',
@@ -1126,7 +1203,11 @@ export function Super() {
 
       {section === 'catalog' ? <ListingReview /> : null}
 
-      {section === 'store' ? <StoreDesk /> : null}
+      {section === 'store' && deskParam === 'fulfill' ? <FulfillmentQueue /> : null}
+      {section === 'store' && deskParam === 'asks' ? <ProductEnquiryDesk /> : null}
+      {section === 'store' && deskParam !== 'fulfill' && deskParam !== 'asks' ? (
+        <StoreDesk />
+      ) : null}
 
       {section === 'money' ? (
         <section className="mh-desk pay-queue-card invoice-super-panel">
@@ -1455,6 +1536,22 @@ export function Super() {
                     onChange={(e) => patchInvoice({ paymentMethod: e.target.value })}
                   />
                 </label>
+                <label>
+                  USDT network
+                  <input
+                    value={invoiceDraft.usdtNetwork || ''}
+                    onChange={(e) => patchInvoice({ usdtNetwork: e.target.value })}
+                    placeholder="TRC-20"
+                  />
+                </label>
+                <label className="admin-span">
+                  USDT wallet
+                  <input
+                    value={invoiceDraft.usdtWallet || ''}
+                    onChange={(e) => patchInvoice({ usdtWallet: e.target.value })}
+                    placeholder="Shown to buyers on pay dialog"
+                  />
+                </label>
                 <label className="admin-span">
                   Bank fees note
                   <input
@@ -1569,7 +1666,7 @@ export function Super() {
             </fieldset>
             <fieldset className="admin-toggles">
               <legend>Filters clients see</legend>
-              {(['maker', 'grade', 'capacity'] as const).map((key) => (
+              {(['maker', 'grade', 'capacity', 'origin'] as const).map((key) => (
                 <label key={key}>
                   <input
                     type="checkbox"
@@ -2806,6 +2903,205 @@ export function Super() {
               Buyers can offer down to this % of list price (e.g. 30 → min is 30% of list). 0 = $1
               floor only.
             </p>
+            <fieldset className="admin-span" style={{ margin: '16px 0', border: '1px solid var(--line)', padding: 12, borderRadius: 8 }}>
+              <legend>
+                <strong>Fulfillment</strong>
+              </legend>
+              <p className="muted tiny">
+                Pickup, platform delivery, or buyer-owned FedEx / UPS / DHL accounts (wholesale).
+              </p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
+                <div>
+                  <p className="tiny">
+                    <strong>Store modes</strong>
+                  </p>
+                  {(['pickup', 'delivery', 'buyer_courier'] as const).map((m) => (
+                    <label key={`store-${m}`} className="check-inline" style={{ display: 'block' }}>
+                      <input
+                        type="checkbox"
+                        checked={(draft.fulfillment?.storeModes || []).includes(m)}
+                        onChange={(e) => {
+                          const cur = draft.fulfillment || settings.fulfillment!
+                          const storeModes = e.target.checked
+                            ? [...new Set([...(cur.storeModes || []), m])]
+                            : (cur.storeModes || []).filter((x) => x !== m)
+                          setDraft({
+                            ...draft,
+                            fulfillment: { ...cur, storeModes },
+                          })
+                        }}
+                      />
+                      {m === 'pickup' ? 'Pickup' : m === 'delivery' ? 'Delivery' : 'Own courier'}
+                    </label>
+                  ))}
+                </div>
+                <div>
+                  <p className="tiny">
+                    <strong>Wholesale modes</strong>
+                  </p>
+                  {(['pickup', 'delivery', 'buyer_courier'] as const).map((m) => (
+                    <label key={`ws-${m}`} className="check-inline" style={{ display: 'block' }}>
+                      <input
+                        type="checkbox"
+                        checked={(draft.fulfillment?.wholesaleModes || []).includes(m)}
+                        onChange={(e) => {
+                          const cur = draft.fulfillment || settings.fulfillment!
+                          const wholesaleModes = e.target.checked
+                            ? [...new Set([...(cur.wholesaleModes || []), m])]
+                            : (cur.wholesaleModes || []).filter((x) => x !== m)
+                          setDraft({
+                            ...draft,
+                            fulfillment: { ...cur, wholesaleModes },
+                          })
+                        }}
+                      />
+                      {m === 'pickup' ? 'Pickup' : m === 'delivery' ? 'Delivery' : 'Own courier'}
+                    </label>
+                  ))}
+                </div>
+                <label style={{ maxWidth: 160 }}>
+                  Delivery fee $
+                  <NumberField
+                    min={0}
+                    step={0.1}
+                    value={draft.fulfillment?.deliveryFeeFlat ?? 12}
+                    onCommit={(deliveryFeeFlat) =>
+                      setDraft({
+                        ...draft,
+                        fulfillment: {
+                          ...(draft.fulfillment || settings.fulfillment!),
+                          deliveryFeeFlat,
+                        },
+                      })
+                    }
+                  />
+                </label>
+                <label style={{ maxWidth: 160 }}>
+                  Free over $
+                  <NumberField
+                    min={0}
+                    step={1}
+                    value={draft.fulfillment?.freeDeliveryMin ?? 200}
+                    onCommit={(freeDeliveryMin) =>
+                      setDraft({
+                        ...draft,
+                        fulfillment: {
+                          ...(draft.fulfillment || settings.fulfillment!),
+                          freeDeliveryMin,
+                        },
+                      })
+                    }
+                  />
+                </label>
+                <label style={{ maxWidth: 200 }}>
+                  Who pays delivery
+                  <select
+                    value={draft.fulfillment?.deliveryPayer || 'buyer'}
+                    onChange={(e) =>
+                      setDraft({
+                        ...draft,
+                        fulfillment: {
+                          ...(draft.fulfillment || settings.fulfillment!),
+                          deliveryPayer: e.target.value as
+                            | 'buyer'
+                            | 'seller'
+                            | 'platform'
+                            | 'admin_decide',
+                        },
+                      })
+                    }
+                  >
+                    <option value="buyer">Buyer</option>
+                    <option value="seller">Seller</option>
+                    <option value="platform">Platform</option>
+                    <option value="admin_decide">Staff decide</option>
+                  </select>
+                </label>
+                <label style={{ minWidth: 200 }}>
+                  Pickup label
+                  <input
+                    value={draft.fulfillment?.pickupLabel || ''}
+                    onChange={(e) =>
+                      setDraft({
+                        ...draft,
+                        fulfillment: {
+                          ...(draft.fulfillment || settings.fulfillment!),
+                          pickupLabel: e.target.value,
+                        },
+                      })
+                    }
+                  />
+                </label>
+                <label style={{ minWidth: 200 }}>
+                  Pickup hours
+                  <input
+                    value={draft.fulfillment?.pickupHours || ''}
+                    onChange={(e) =>
+                      setDraft({
+                        ...draft,
+                        fulfillment: {
+                          ...(draft.fulfillment || settings.fulfillment!),
+                          pickupHours: e.target.value,
+                        },
+                      })
+                    }
+                  />
+                </label>
+                <label style={{ minWidth: 280 }}>
+                  Pickup slots (comma-separated)
+                  <input
+                    value={(draft.fulfillment?.pickupSlots || []).join(', ')}
+                    onChange={(e) =>
+                      setDraft({
+                        ...draft,
+                        fulfillment: {
+                          ...(draft.fulfillment || settings.fulfillment!),
+                          pickupSlots: e.target.value
+                            .split(',')
+                            .map((s) => s.trim())
+                            .filter(Boolean),
+                        },
+                      })
+                    }
+                    placeholder="10:00-12:00, 12:00-14:00"
+                  />
+                </label>
+                <label style={{ maxWidth: 140 }}>
+                  Lead days
+                  <NumberField
+                    min={0}
+                    max={14}
+                    value={draft.fulfillment?.pickupLeadDays ?? 0}
+                    onCommit={(pickupLeadDays) =>
+                      setDraft({
+                        ...draft,
+                        fulfillment: {
+                          ...(draft.fulfillment || settings.fulfillment!),
+                          pickupLeadDays,
+                        },
+                      })
+                    }
+                  />
+                </label>
+                <label style={{ maxWidth: 160 }}>
+                  Max / slot (0=∞)
+                  <NumberField
+                    min={0}
+                    max={200}
+                    value={draft.fulfillment?.pickupSlotCap ?? 8}
+                    onCommit={(pickupSlotCap) =>
+                      setDraft({
+                        ...draft,
+                        fulfillment: {
+                          ...(draft.fulfillment || settings.fulfillment!),
+                          pickupSlotCap,
+                        },
+                      })
+                    }
+                  />
+                </label>
+              </div>
+            </fieldset>
             <div className="type-rows">
               {draft.auctionTypes.map((t, i) => {
                 const inUse = lots.some((l) => l.channel === 'auction' && (l.auctionType || 'live') === t.value)

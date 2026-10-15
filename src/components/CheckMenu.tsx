@@ -1,4 +1,5 @@
 import { useRef } from 'react'
+import { originLabel } from '../lib/auctionLists'
 import type { Grade, Lot } from '../types'
 import { FilterPanel } from './FilterPanel'
 
@@ -19,6 +20,16 @@ export function capacityOptions(lots: Lot[]) {
     if (Number.isFinite(na) && Number.isFinite(nb) && na !== nb) return na - nb
     return a.localeCompare(b)
   })
+}
+
+export function originFilterOptions(lots: Array<{ origin?: string | null }>) {
+  return [...new Set(lots.map((l) => originLabel(l.origin)).filter(Boolean))].sort()
+}
+
+export function stringFilterOptions(values: Array<string | null | undefined>) {
+  return [...new Set(values.map((v) => (v || '').trim()).filter(Boolean))].sort((a, b) =>
+    a.localeCompare(b, undefined, { numeric: true }),
+  )
 }
 
 export function CheckMenu<T extends string>({

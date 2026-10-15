@@ -3,7 +3,37 @@ import type { AuctionFillMode, AuctionTypeDef, Lot, SiteSettings } from '../type
 
 export type AuctionListKind = string
 
-export const ORIGINS = ['JP', 'KR', 'EU', 'US', 'HK', 'AE', 'TW', 'INT'] as const
+/** Market / ship-from region — 3-letter so buyers can read at a glance. */
+export const ORIGINS = ['JPN', 'KOR', 'EUR', 'USA', 'HKG', 'ARE', 'TWN', 'INT'] as const
+
+/** Legacy 2-letter → 3-letter (and pass-through for already-3). */
+const ORIGIN_ALIASES: Record<string, (typeof ORIGINS)[number]> = {
+  JP: 'JPN',
+  JPN: 'JPN',
+  KR: 'KOR',
+  KOR: 'KOR',
+  EU: 'EUR',
+  EUR: 'EUR',
+  US: 'USA',
+  USA: 'USA',
+  HK: 'HKG',
+  HKG: 'HKG',
+  AE: 'ARE',
+  ARE: 'ARE',
+  TW: 'TWN',
+  TWN: 'TWN',
+  INT: 'INT',
+}
+
+export function normalizeOrigin(raw?: string | null): (typeof ORIGINS)[number] {
+  const key = String(raw || 'INT').trim().toUpperCase()
+  return ORIGIN_ALIASES[key] || 'INT'
+}
+
+/** Buyer-facing origin code (always 3-letter). */
+export function originLabel(raw?: string | null) {
+  return normalizeOrigin(raw)
+}
 
 export const RESERVED_LIST_SLUGS = new Set([
   'all',
@@ -394,7 +424,7 @@ export function inAuctionList(lot: Lot, kind: AuctionListKind, now = Date.now())
 }
 
 export function originOptions(lots: Lot[]) {
-  return [...new Set(lots.map((l) => l.origin || 'INT'))].sort()
+  return [...new Set(lots.map((l) => originLabel(l.origin)))].sort()
 }
 
 export function localTimeZone() {

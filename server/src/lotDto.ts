@@ -1,3 +1,5 @@
+import { normalizeOrigin } from './origins'
+
 /** Shared lot JSON shape for commerce routes. */
 export function mapLotRow(l: {
   id: string
@@ -52,6 +54,6 @@ export function mapLotRow(l: {
     operator: l.operator ?? undefined,
     simLocked: l.simLocked ?? undefined,
     activationLocked: l.activationLocked ?? undefined,
-    origin: l.origin ?? undefined,
+    origin: l.origin != null && l.origin !== '' ? normalizeOrigin(l.origin) : undefined,
   }
 }

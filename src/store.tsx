@@ -65,6 +65,7 @@ import type {
   SiteSettings,
   ThemeSettings,
   User,
+  WholesalePayMethod,
 } from './types'
 
 const DEFAULT_EMAIL_PREFS: EmailPrefs = {
@@ -151,7 +152,12 @@ type Store = {
   confirmOffer: (id: string) => Promise<string | null>
   cancelOffer: (id: string) => string | null
   toggleWatch: (lotId: string) => Promise<void>
-  submitPayment: (id: string, receiptName: string, receiptData: string) => Promise<string | null>
+  submitPayment: (
+    id: string,
+    receiptName: string,
+    receiptData: string,
+    extra?: { payMethod?: WholesalePayMethod; payRef?: string },
+  ) => Promise<string | null>
   reviewPayment: (id: string, side: PayReviewSide, decision: PayDecision) => Promise<string | null>
   reviewInvoiceIssue: (id: string, side: PayReviewSide, decision: PayDecision) => Promise<string | null>
   saveInvoice: (invoice: Invoice, previousId?: string) => Promise<string | null>
@@ -555,6 +561,27 @@ function mergeSettings(partial?: Partial<SiteSettings> | null): SiteSettings {
       if (Number.isFinite(m) && (m as number) >= 0 && (m as number) <= 100) return m as number
       return DEFAULT_SETTINGS.offerFloorPct
     })(),
+    fulfillment: {
+      ...DEFAULT_SETTINGS.fulfillment!,
+      ...(partial?.fulfillment || {}),
+      storeModes:
+        partial?.fulfillment?.storeModes?.length
+          ? partial.fulfillment.storeModes
+          : DEFAULT_SETTINGS.fulfillment!.storeModes,
+      wholesaleModes:
+        partial?.fulfillment?.wholesaleModes?.length
+          ? partial.fulfillment.wholesaleModes
+          : DEFAULT_SETTINGS.fulfillment!.wholesaleModes,
+      pickupSlots:
+        partial?.fulfillment?.pickupSlots?.length
+          ? partial.fulfillment.pickupSlots
+          : DEFAULT_SETTINGS.fulfillment!.pickupSlots,
+      pickupSlotCap:
+        Number.isFinite(partial?.fulfillment?.pickupSlotCap) &&
+        (partial!.fulfillment!.pickupSlotCap as number) >= 0
+          ? Math.min(200, Math.floor(partial!.fulfillment!.pickupSlotCap as number))
+          : DEFAULT_SETTINGS.fulfillment!.pickupSlotCap,
+    },
     reopenMinutes: Math.max(
       1,
       Math.round(partial?.reopenMinutes ?? (partial?.reopenHours ?? DEFAULT_SETTINGS.reopenHours) * 60),
@@ -2520,6 +2547,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               ? Math.min(100, Math.max(0, Number(next.offerFloorPct) || 0))
               : 30,
           auctionTypeFees,
+          fulfillment: next.fulfillment,
         })
         .catch(() => undefined)
     }
@@ -2630,10 +2658,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const submitPayment = useCallback(
-    async (id: string, receiptName: string, receiptData: string) => {
+    async (
+      id: string,
+      receiptName: string,
+      receiptData: string,
+      extra?: { payMethod?: WholesalePayMethod; payRef?: string },
+    ) => {
       if (apiModeRef.current) {
         try {
-          await api.submitInvoicePayment(id, receiptName, receiptData)
+          await api.submitInvoicePayment(id, receiptName, receiptData, extra)
           await applyBootstrap()
           return null
         } catch (e) {
@@ -2658,6 +2691,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                 ...row,
                 receiptName,
                 receiptData,
+                payMethod: extra?.payMethod || row.payMethod,
+                payRef: extra?.payRef ?? row.payRef,
                 paidDeclaredAt: Date.now(),
                 adminReview: undefined,
                 superReview: undefined,

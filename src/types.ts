@@ -238,6 +238,10 @@ export type InvoiceProfile = {
   /** Remittance box intro. */
   paymentLead: string
   paymentMethod: string
+  /** Optional USDT wallet shown on wholesale pay dialog. */
+  usdtWallet?: string
+  /** e.g. TRC-20 / ERC-20 */
+  usdtNetwork?: string
   bankFeesNote: string
   attachNote: string
   /** Shown under totals when fee applies. Supports {feePct}. */
@@ -392,6 +396,7 @@ export type SiteSettings = {
     maker: boolean
     grade: boolean
     capacity: boolean
+    origin: boolean
     price: boolean
   }
   grades: Grade[]
@@ -406,6 +411,8 @@ export type SiteSettings = {
    * Default 30. 0 = $1 floor only.
    */
   offerFloorPct?: number
+  /** Pickup / delivery / buyer-owned courier policy (Super). */
+  fulfillment?: FulfillmentSettings
   defaultMoq: number
   reopenHours: number
   extendHours: number
@@ -509,6 +516,7 @@ export type Bid = {
 }
 
 export type InvoiceStatus = 'draft' | 'unpaid' | 'pending_review' | 'paid' | 'declined'
+export type WholesalePayMethod = 'bank' | 'usdt' | 'cash'
 export type PayDecision = 'accepted' | 'declined'
 export type PayReviewSide = 'admin' | 'super'
 
@@ -546,6 +554,10 @@ export type Invoice = {
   accountId?: string
   receiptName?: string
   receiptData?: string
+  /** How the buyer intends to pay (bank / USDT / cash). */
+  payMethod?: WholesalePayMethod
+  /** Optional USDT TX hash or bank remittance ref. */
+  payRef?: string
   paidDeclaredAt?: number
   adminReview?: PayReview
   superReview?: PayReview
@@ -570,6 +582,44 @@ export type Invoice = {
   billEmail?: string
   billPhone?: string
   billAttn?: string
+  /** pickup | delivery | buyer_courier */
+  fulfillmentMode?: FulfillmentMode
+  courierCarrier?: string
+  courierAccount?: string
+  shippingFee?: number
+  /** False when delivery fee is TBD (staff must quote). */
+  shippingFeeQuoted?: boolean
+  shippingPayer?: ShippingPayer
+  /** Staff: goods ready for pickup / buyer courier collect */
+  readyForCollect?: boolean
+  /** Buyer pickup appointment YYYY-MM-DD */
+  pickupDate?: string
+  /** e.g. 10:00-12:00 */
+  pickupSlot?: string
+  /** Separate unpaid freight invoice created after TBD quote. */
+  shippingAddendum?: boolean
+  parentInvoiceId?: string
+  shippingAddendumId?: string
+}
+
+export type FulfillmentMode = 'pickup' | 'delivery' | 'buyer_courier'
+export type ShippingPayer = 'buyer' | 'seller' | 'platform' | 'admin_decide'
+
+export type FulfillmentSettings = {
+  storeModes: FulfillmentMode[]
+  wholesaleModes: FulfillmentMode[]
+  defaultStoreMode: FulfillmentMode
+  defaultWholesaleMode: FulfillmentMode
+  deliveryFeeFlat: number
+  freeDeliveryMin: number
+  deliveryPayer: ShippingPayer
+  pickupLabel: string
+  pickupHours: string
+  courierHints: string
+  pickupSlots: string[]
+  pickupLeadDays: number
+  /** Max collects per date+slot. 0 = unlimited. */
+  pickupSlotCap: number
 }
 
 export type NoticeKind =
@@ -678,6 +728,10 @@ export type Account = {
   phone?: string
   /** Printed Buyer # on invoices; derived from accountId when omitted. */
   buyerNumber?: string
+  /** Default pickup / delivery / own courier for wholesale. */
+  preferredFulfillmentMode?: FulfillmentMode
+  courierCarrier?: string
+  courierAccount?: string
   role: AccountRole
   status: AccountStatus
   emailVerified?: boolean

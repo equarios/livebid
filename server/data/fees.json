@@ -8,5 +8,20 @@
     "hongkong": 2,
     "china": 2,
     "india": 2
+  },
+  "fulfillment": {
+    "storeModes": ["pickup", "delivery"],
+    "wholesaleModes": ["pickup", "delivery", "buyer_courier"],
+    "defaultStoreMode": "delivery",
+    "defaultWholesaleMode": "pickup",
+    "deliveryFeeFlat": 12,
+    "freeDeliveryMin": 200,
+    "deliveryPayer": "buyer",
+    "pickupLabel": "Warehouse pickup",
+    "pickupHours": "Mon-Fri 10:00-18:00",
+    "courierHints": "FedEx, UPS, DHL, or Other",
+    "pickupSlots": ["10:00-12:00", "12:00-14:00", "14:00-16:00", "16:00-18:00"],
+    "pickupLeadDays": 0,
+    "pickupSlotCap": 8
   }
 }

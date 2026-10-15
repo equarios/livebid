@@ -14,6 +14,7 @@ import { imeiRoutes } from './routes/imei'
 import { noticeRoutes } from './routes/notices'
 import { settingsRoutes } from './routes/settings'
 import { storeRoutes } from './routes/store'
+import { enquiryRoutes } from './routes/enquiry'
 import { marketingHookRoutes, marketingRoutes } from './routes/marketing'
 import { startCareLoop } from './careLoop'
 import { cacheBackend, initCache } from './cache'
@@ -120,6 +121,7 @@ app.route('/api/marketing', marketingRoutes)
 app.route('/api/marketing/hooks', marketingHookRoutes)
 app.route('/api/notices', noticeRoutes)
 app.route('/api/settings', settingsRoutes)
+app.route('/api/enquiry', enquiryRoutes)
 
 const port = Number(process.env.PORT || 8787)
 

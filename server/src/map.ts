@@ -1,4 +1,5 @@
 import type { Account, Bid, Invoice, Lot, MarketOffer, CartOrder, CartItem, WatchItem, Notice, InventorySku } from '@prisma/client'
+import { normalizeOrigin } from './origins'
 
 function migrateAuctionType(value?: string | null) {
   if (value === 'sealed' || value === 'hybrid') return 'offline'
@@ -33,7 +34,7 @@ export function mapLot(lot: Lot) {
     operator: lot.operator ?? undefined,
     simLocked: lot.simLocked ?? undefined,
     activationLocked: lot.activationLocked ?? undefined,
-    origin: lot.origin ?? undefined,
+    origin: lot.origin != null && lot.origin !== '' ? normalizeOrigin(lot.origin) : undefined,
   }
 }
 
@@ -139,7 +140,7 @@ export function mapSku(s: InventorySku) {
     color: s.color,
     grade: s.grade,
     battery: s.battery,
-    origin: s.origin,
+    origin: normalizeOrigin(s.origin),
     operator: s.operator ?? undefined,
     simLocked: s.simLocked ?? undefined,
     activationLocked: s.activationLocked ?? undefined,

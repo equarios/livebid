@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { FillBar } from './FillBar'
 import { InlineBid } from './InlineBid'
 import { ItemLink } from './ItemLink'
+import { PastPriceComps } from './PastPriceComps'
 import { bidStatus, fillStats, type FillStats } from '../lib/allocate'
 import {
   auctionClockRows,
@@ -375,6 +376,7 @@ function LotCells({
             {isInExtraSealed(lot) && !row.closed ? (
               <span className="cell-chip soft">High</span>
             ) : null}
+            <PastPriceComps lotId={lot.id} />
           </div>
         )}
       </td>
@@ -446,6 +448,7 @@ function LotCardBlock({
               {isInExtraSealed(lot) && !closed ? (
                 <span className="cell-chip soft">High</span>
               ) : null}
+              <PastPriceComps lotId={lot.id} />
             </>
           )}
         </div>

@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { originLabel } from '../lib/auctionLists'
 import { ModalShell } from './ModalShell'
 import { StoreGallery } from './StoreGallery'
+import { BatteryMark } from './BatteryMark'
 import { usd } from '../lib/format'
 import type { StoreProductDto } from '../lib/api'
 import { storeProductBrand } from '../lib/storeBrand'
@@ -18,6 +20,8 @@ export function StoreProductPreview({ product, onClose }: Props) {
   const [msg, setMsg] = useState<string | null>(null)
   const soldOut = product.stock < 1
   const brand = storeProductBrand(product)
+  const battery = Math.max(0, Math.floor(Number(product.battery) || 0))
+  const title = [brand, product.title, product.modelNumber].filter(Boolean).join(' ')
 
   useEffect(() => {
     if (!msg) return
@@ -38,7 +42,7 @@ export function StoreProductPreview({ product, onClose }: Props) {
           <div>
             <span className="pill pill-hybrid">Retail</span>
             {brand ? <p className="deal-card-maker store-card-maker">{brand}</p> : null}
-            <h2 id="store-preview-title">{product.title}</h2>
+            <h2 id="store-preview-title">{title || product.title}</h2>
             <p className="muted">
               {usd(product.price)} / pc
               {product.compareAt && product.compareAt > product.price
@@ -62,21 +66,57 @@ export function StoreProductPreview({ product, onClose }: Props) {
               <dd>{brand}</dd>
             </div>
           ) : null}
+          {product.modelNumber ? (
+            <div>
+              <dt>Model #</dt>
+              <dd>{product.modelNumber}</dd>
+            </div>
+          ) : null}
+          {product.capacity ? (
+            <div>
+              <dt>Capacity</dt>
+              <dd>{product.capacity}</dd>
+            </div>
+          ) : null}
+          {product.color ? (
+            <div>
+              <dt>Color</dt>
+              <dd>{product.color}</dd>
+            </div>
+          ) : null}
+          {product.grade ? (
+            <div>
+              <dt>Grade</dt>
+              <dd>Grade {product.grade}</dd>
+            </div>
+          ) : null}
+          <div>
+            <dt>Origin</dt>
+            <dd>{originLabel(product.origin)}</dd>
+          </div>
+          {battery > 0 ? (
+            <div>
+              <dt>Battery</dt>
+              <dd>
+                <BatteryMark value={battery} size={22} />
+              </dd>
+            </div>
+          ) : null}
+          <div>
+            <dt>SIM</dt>
+            <dd>{product.simLocked ? 'Locked' : 'Unlocked'}</dd>
+          </div>
+          <div>
+            <dt>Activation</dt>
+            <dd>{product.activationLocked ? 'Locked' : 'Open'}</dd>
+          </div>
           <div>
             <dt>Category</dt>
             <dd>{product.category}</dd>
           </div>
           <div>
-            <dt>Price</dt>
-            <dd>{usd(product.price)}</dd>
-          </div>
-          <div>
             <dt>Availability</dt>
             <dd>{soldOut ? 'Sold out' : `${product.stock} units`}</dd>
-          </div>
-          <div>
-            <dt>Channel</dt>
-            <dd>Consumer store</dd>
           </div>
         </dl>
 
@@ -110,9 +150,6 @@ export function StoreProductPreview({ product, onClose }: Props) {
             </button>
             <Link to="/store/cart" className="btn btn-primary" onClick={onClose}>
               Checkout
-            </Link>
-            <Link to={`/store/p/${product.slug}`} className="btn btn-primary" onClick={onClose}>
-              Product Details
             </Link>
           </div>
         </div>

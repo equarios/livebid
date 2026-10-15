@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
+import { api } from '../lib/api'
 import { buildDigestPreviewLines } from '../lib/digestPreview'
+import { DEFAULT_FULFILLMENT, FULFILLMENT_LABELS } from '../lib/fulfillment'
 import { useNow, useStore } from '../store'
-import type { EmailPrefs } from '../types'
+import type { EmailPrefs, FulfillmentMode } from '../types'
 
 const PREF_ROWS: Array<{ key: keyof EmailPrefs; label: string; hint: string }> = [
   { key: 'win', label: 'Auction wins', hint: 'When you win units and an invoice is drafted' },
@@ -47,12 +49,22 @@ export function Account() {
     lots,
     bids,
     invoices,
+    settings,
   } = useStore()
   const now = useNow()
-  const address = accounts.find((a) => a.accountId === user?.accountId)?.address
+  const account = accounts.find((a) => a.accountId === user?.accountId)
   const [prefs, setPrefs] = useState<EmailPrefs | null>(emailPrefs)
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
+  const fulfillCfg = settings.fulfillment || DEFAULT_FULFILLMENT
+  const [mode, setMode] = useState<FulfillmentMode | ''>(
+    account?.preferredFulfillmentMode || '',
+  )
+  const [courierCarrier, setCourierCarrier] = useState(account?.courierCarrier || 'FedEx')
+  const [courierAccount, setCourierAccount] = useState(account?.courierAccount || '')
+  const [shipAddress, setShipAddress] = useState(account?.address || '')
+  const [logisticsMsg, setLogisticsMsg] = useState<string | null>(null)
+  const [logisticsBusy, setLogisticsBusy] = useState(false)
 
   const digestPreview = useMemo(() => {
     if (!user) return []
@@ -73,6 +85,23 @@ export function Account() {
     if (emailPrefs) setPrefs(emailPrefs)
   }, [emailPrefs])
 
+  useEffect(() => {
+    let alive = true
+    void api
+      .getLogistics()
+      .then((res) => {
+        if (!alive) return
+        setMode(res.logistics.preferredFulfillmentMode || '')
+        setCourierCarrier(res.logistics.courierCarrier || 'FedEx')
+        setCourierAccount(res.logistics.courierAccount || '')
+        setShipAddress(res.logistics.address || '')
+      })
+      .catch(() => undefined)
+    return () => {
+      alive = false
+    }
+  }, [])
+
   async function toggle(key: keyof EmailPrefs) {
     if (!prefs) return
     const next = { ...prefs, [key]: !prefs[key] }
@@ -81,6 +110,24 @@ export function Account() {
     const err = await saveEmailPrefs({ [key]: next[key] })
     setSaving(false)
     setMsg(err || (apiMode ? 'Saved.' : 'Saved for this session (start API for persistence).'))
+  }
+
+  async function saveLogistics() {
+    setLogisticsBusy(true)
+    setLogisticsMsg(null)
+    try {
+      await api.saveLogistics({
+        preferredFulfillmentMode: mode || null,
+        courierCarrier: mode === 'buyer_courier' ? courierCarrier : null,
+        courierAccount: mode === 'buyer_courier' ? courierAccount || null : null,
+        address: shipAddress.trim() || null,
+      })
+      setLogisticsMsg('Logistics defaults saved — used on new invoices and checkout.')
+    } catch (e) {
+      setLogisticsMsg(e instanceof Error ? e.message : 'Could not save logistics.')
+    } finally {
+      setLogisticsBusy(false)
+    }
   }
 
   const roleLabel =
@@ -115,7 +162,7 @@ export function Account() {
             </div>
             <div>
               <dt>Ship / bill to</dt>
-              <dd className="account-address">{address || 'Set by Super admin'}</dd>
+              <dd className="account-address">{shipAddress || account?.address || 'Not set'}</dd>
             </div>
             <div>
               <dt>Role</dt>
@@ -130,14 +177,86 @@ export function Account() {
               <dd>USD</dd>
             </div>
             <div>
-              <dt>Courier</dt>
-              <dd>DHL · UPS · FedEx</dd>
+              <dt>Default ship</dt>
+              <dd>
+                {mode ? FULFILLMENT_LABELS[mode] : 'Not set'}
+                {mode === 'buyer_courier' && courierCarrier ? ` · ${courierCarrier}` : ''}
+              </dd>
             </div>
             <div>
               <dt>Time zone</dt>
               <dd>Asia/Tokyo (JST)</dd>
             </div>
           </dl>
+        </section>
+
+        <section className="account-desk-block">
+          <h3>Default logistics</h3>
+          <p className="muted tiny">
+            Auto-fills wholesale invoices and store checkout. Use your own FedEx / UPS / DHL account
+            when you prefer.
+          </p>
+          <label className="field">
+            <span>Preferred mode</span>
+            <select
+              value={mode}
+              onChange={(e) => setMode((e.target.value || '') as FulfillmentMode | '')}
+            >
+              <option value="">No default</option>
+              {fulfillCfg.wholesaleModes.map((m) => (
+                <option key={m} value={m}>
+                  {FULFILLMENT_LABELS[m]}
+                </option>
+              ))}
+            </select>
+          </label>
+          {mode === 'buyer_courier' ? (
+            <>
+              <label className="field">
+                <span>Courier</span>
+                <select
+                  value={courierCarrier}
+                  onChange={(e) => setCourierCarrier(e.target.value)}
+                >
+                  {['FedEx', 'UPS', 'DHL', 'Other'].map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>Your account #</span>
+                <input
+                  value={courierAccount}
+                  onChange={(e) => setCourierAccount(e.target.value)}
+                  placeholder="Optional until collect"
+                />
+              </label>
+            </>
+          ) : null}
+          <label className="field">
+            <span>Default ship address</span>
+            <textarea
+              rows={3}
+              value={shipAddress}
+              onChange={(e) => setShipAddress(e.target.value)}
+              placeholder="Used for delivery mode"
+            />
+          </label>
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            disabled={logisticsBusy}
+            onClick={() => void saveLogistics()}
+          >
+            {logisticsBusy ? 'Saving…' : 'Save logistics'}
+          </button>
+          {logisticsMsg ? (
+            <p className={logisticsMsg.includes('saved') || logisticsMsg.includes('Saved') ? 'ok' : 'error'}>
+              {logisticsMsg}
+            </p>
+          ) : null}
         </section>
 
         <section className="account-desk-block">

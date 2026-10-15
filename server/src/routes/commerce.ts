@@ -1,7 +1,10 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { requireStaff, requireUser, requireWholesale, type AuthedEnv } from '../auth'
-import { feeForMarketplace, minOfferUnitPrice, offerFloorPct, withFee } from '../feeConfig'
+import { feeForMarketplace, minOfferUnitPrice, offerFloorPct, readFulfillment, withFee } from '../feeConfig'
+import { isValidPickupDate, resolveShippingQuote } from '../fulfillment'
+import { assertPickupSlotOpen } from '../pickupCapacity'
+import { ensureShippingAddendum } from '../shippingAddendum'
 import { isCloseToFill, myPcs } from '../allocate'
 import { prisma } from '../db'
 import { mapLotRow } from '../lotDto'
@@ -167,6 +170,9 @@ commerceRoutes.get('/bootstrap', requireUser, async (c) => {
       address: a.address ?? undefined,
       phone: a.phone ?? undefined,
       buyerNumber: a.buyerNumber ?? undefined,
+      preferredFulfillmentMode: a.preferredFulfillmentMode ?? undefined,
+      courierCarrier: a.courierCarrier ?? undefined,
+      courierAccount: a.courierAccount ?? undefined,
       role: a.role,
       status: a.status,
       emailVerified: a.emailVerified,
@@ -895,6 +901,161 @@ commerceRoutes.get('/invoices', requireUser, async (c) => {
   return c.json({ invoices: rows.map(mapInvoice) })
 })
 
+/** Buyer sets pickup / delivery / own-courier preference on their invoice. */
+commerceRoutes.patch('/invoices/:id/fulfillment', requireUser, async (c) => {
+  const user = c.get('user')!
+  const staff = user.role === 'admin' || user.role === 'superadmin'
+  const id = (c.req.param('id') ?? '').trim().toUpperCase()
+  const body = z
+    .object({
+      fulfillmentMode: z.enum(['pickup', 'delivery', 'buyer_courier']),
+      courierCarrier: z.string().max(80).optional(),
+      courierAccount: z.string().max(80).optional(),
+      shipAddress: z.string().max(500).optional(),
+      shipPhone: z.string().max(80).optional(),
+      shippingFee: z.number().min(0).optional(),
+      readyForCollect: z.boolean().optional(),
+      pickupDate: z.string().max(12).optional(),
+      pickupSlot: z.string().max(40).optional(),
+    })
+    .safeParse(await c.req.json().catch(() => ({})))
+  if (!body.success) return c.json({ error: 'Invalid fulfillment.' }, 400)
+
+  const cfg = readFulfillment()
+  if (!cfg.wholesaleModes.includes(body.data.fulfillmentMode)) {
+    return c.json({ error: 'That fulfillment option is not enabled.' }, 400)
+  }
+
+  const existing = await prisma.invoice.findUnique({ where: { id } })
+  if (!existing) return c.json({ error: 'Invoice not found.' }, 404)
+  if (!staff && existing.accountId !== user.accountId) {
+    return c.json({ error: 'Invoice not found.' }, 404)
+  }
+
+  const mapped = mapInvoice(existing) as Record<string, unknown>
+  const mode = body.data.fulfillmentMode
+  if (mode === 'delivery' && !staff) {
+    const addr = (body.data.shipAddress || String(mapped.shipAddress || '')).trim()
+    if (addr.length < 8) return c.json({ error: 'Enter a delivery address.' }, 400)
+  }
+  if (mode === 'buyer_courier' && !staff) {
+    const carrier = (body.data.courierCarrier || '').trim()
+    if (carrier.length < 2) return c.json({ error: 'Choose your courier account carrier.' }, 400)
+  }
+  let pickupDate: string | undefined
+  let pickupSlot: string | undefined
+  if (mode === 'pickup') {
+    pickupDate = (body.data.pickupDate || String(mapped.pickupDate || '')).trim() || undefined
+    pickupSlot = (body.data.pickupSlot || String(mapped.pickupSlot || '')).trim() || undefined
+    if (!staff) {
+      if (!pickupDate || !isValidPickupDate(pickupDate, cfg)) {
+        return c.json({ error: 'Choose a valid pickup date.' }, 400)
+      }
+      if (!pickupSlot || !cfg.pickupSlots.includes(pickupSlot)) {
+        return c.json({ error: 'Choose a pickup time window.' }, 400)
+      }
+    }
+    if (pickupDate && pickupSlot && cfg.pickupSlots.includes(pickupSlot)) {
+      const sameSlot =
+        String(mapped.pickupDate || '') === pickupDate &&
+        String(mapped.pickupSlot || '') === pickupSlot
+      if (!sameSlot) {
+        const cap = await assertPickupSlotOpen({
+          date: pickupDate,
+          slot: pickupSlot,
+          cfg,
+          excludeInvoiceId: id,
+        })
+        if (!cap.ok) return c.json({ error: cap.error }, 409)
+      }
+    }
+  }
+
+  const goods = Number(mapped.amount) || existing.amount
+  const staffQuoted = staff && body.data.shippingFee != null
+  const wasUnquoted = mapped.shippingFeeQuoted === false
+  const quote = resolveShippingQuote({
+    mode,
+    subtotal: goods,
+    cfg,
+    overrideFee: body.data.shippingFee,
+    quoted: staffQuoted || Boolean(mapped.shippingFeeQuoted),
+  })
+
+  const next: Record<string, unknown> = {
+    ...mapped,
+    fulfillmentMode: mode,
+    courierCarrier:
+      mode === 'buyer_courier'
+        ? (body.data.courierCarrier || String(mapped.courierCarrier || '')).trim() || undefined
+        : undefined,
+    courierAccount:
+      mode === 'buyer_courier'
+        ? (body.data.courierAccount || String(mapped.courierAccount || '')).trim() || undefined
+        : undefined,
+    shipAddress:
+      mode === 'delivery'
+        ? (body.data.shipAddress || String(mapped.shipAddress || '')).trim() || undefined
+        : mapped.shipAddress,
+    shipPhone: body.data.shipPhone?.trim() || mapped.shipPhone,
+    shippingFee: quote.fee,
+    shippingFeeQuoted: quote.quoted,
+    shippingPayer: cfg.deliveryPayer,
+    pickupDate: mode === 'pickup' ? pickupDate : undefined,
+    pickupSlot: mode === 'pickup' ? pickupSlot : undefined,
+  }
+  if (staff && body.data.readyForCollect !== undefined) {
+    next.readyForCollect = body.data.readyForCollect
+  }
+
+  const becomingReady =
+    staff && body.data.readyForCollect === true && !mapped.readyForCollect && existing.accountId
+
+  let shippingInvoiceId: string | null = null
+  if (staffQuoted && wasUnquoted && quote.fee > 0) {
+    const add = await ensureShippingAddendum({
+      parentId: id,
+      accountId: existing.accountId,
+      fee: quote.fee,
+      wasUnquoted: true,
+      channel: String(mapped.channel || existing.channel || 'marketplace'),
+      lotId: String(mapped.lotId || existing.lotId || 'SHIPPING'),
+      shipAddress: String(next.shipAddress || mapped.shipAddress || '') || undefined,
+      shipEmail: String(mapped.shipEmail || '') || undefined,
+      shipPhone: String(next.shipPhone || mapped.shipPhone || '') || undefined,
+      shipCompany: String(mapped.shipCompany || '') || undefined,
+      parentLabel: id,
+    })
+    shippingInvoiceId = add.invoiceId
+    if (shippingInvoiceId) next.shippingAddendumId = shippingInvoiceId
+  }
+
+  const row = splitInvoiceRow(next)
+  const saved = await prisma.invoice.update({
+    where: { id },
+    data: { dataJson: row.dataJson },
+  })
+
+  if (becomingReady && existing.accountId) {
+    const label =
+      mode === 'pickup'
+        ? 'Ready for warehouse pickup'
+        : mode === 'buyer_courier'
+          ? 'Ready for your courier collect'
+          : 'Shipment ready'
+    await notify({
+      id: `N-INV-READY-${id}`,
+      accountId: existing.accountId,
+      kind: 'shipping',
+      title: label,
+      body: `Invoice ${id} is ready${mode === 'buyer_courier' && next.courierCarrier ? ` · ${next.courierCarrier}` : ''}.`,
+      href: '/account/invoices',
+    })
+  }
+
+  return c.json({ invoice: mapInvoice(saved), shippingInvoiceId })
+})
+
 /** Staff create / update draft (and shipping fields, fee, etc.). */
 commerceRoutes.put('/invoices', requireUser, requireStaff, async (c) => {
   const body = z
@@ -912,6 +1073,7 @@ commerceRoutes.put('/invoices', requireUser, requireStaff, async (c) => {
   const replaceId = (body.data.previousId || id).trim().toUpperCase()
   const existing = await prisma.invoice.findUnique({ where: { id: replaceId } })
   const existingMapped = existing ? (mapInvoice(existing) as Record<string, unknown>) : null
+  const wasUnquoted = existingMapped?.shippingFeeQuoted === false
   const merged: Record<string, unknown> = {
     ...(existingMapped || {}),
     ...incoming,
@@ -919,6 +1081,29 @@ commerceRoutes.put('/invoices', requireUser, requireStaff, async (c) => {
     createdAt: existingMapped?.createdAt ?? incoming.createdAt ?? Date.now(),
     status: existingMapped?.status || incoming.status || 'draft',
   }
+
+  const quoteFee = Math.max(0, Number(merged.shippingFee) || 0)
+  const nowQuoted = merged.shippingFeeQuoted !== false && quoteFee > 0
+  if (wasUnquoted && nowQuoted && !merged.shippingAddendum) {
+    const add = await ensureShippingAddendum({
+      parentId: id,
+      accountId: String(merged.accountId || existing?.accountId || '') || null,
+      fee: quoteFee,
+      wasUnquoted: true,
+      channel: String(merged.channel || 'marketplace'),
+      lotId: String(merged.lotId || 'SHIPPING'),
+      shipAddress: String(merged.shipAddress || '') || undefined,
+      shipEmail: String(merged.shipEmail || '') || undefined,
+      shipPhone: String(merged.shipPhone || '') || undefined,
+      shipCompany: String(merged.shipCompany || '') || undefined,
+      parentLabel: id,
+    })
+    if (add.invoiceId) {
+      merged.shippingAddendumId = add.invoiceId
+      merged.shippingFeeQuoted = true
+    }
+  }
+
   const row = splitInvoiceRow(merged)
 
   if (existing && replaceId !== id) {
@@ -1023,6 +1208,8 @@ commerceRoutes.post('/invoices/:id/pay', requireUser, async (c) => {
     .object({
       receiptName: z.string().min(1).max(240),
       receiptData: z.string().min(1).max(4_500_000),
+      payMethod: z.enum(['bank', 'usdt', 'cash']).optional(),
+      payRef: z.string().max(240).optional(),
     })
     .safeParse(await c.req.json().catch(() => ({})))
   if (!body.success) return c.json({ error: 'Receipt required (image or PDF, under ~3 MB).' }, 400)
@@ -1032,6 +1219,7 @@ commerceRoutes.post('/invoices/:id/pay', requireUser, async (c) => {
   const mapped = mapInvoice(row) as Record<string, unknown> & {
     status: string
     accountId?: string
+    fulfillmentMode?: string
   }
   const staff = user.role === 'admin' || user.role === 'superadmin'
   if (!staff && mapped.accountId !== user.accountId) {
@@ -1045,10 +1233,23 @@ commerceRoutes.post('/invoices/:id/pay', requireUser, async (c) => {
     return c.json({ error: 'Payment already submitted — waiting for staff review.' }, 400)
   }
 
+  const payMethod = body.data.payMethod || 'bank'
+  if (payMethod === 'cash' && mapped.fulfillmentMode !== 'pickup') {
+    return c.json({ error: 'Cash is only available for pickup invoices.' }, 400)
+  }
+  const receiptData = body.data.receiptData
+  const isCash = payMethod === 'cash' || receiptData.startsWith('cash:')
+  const isTextRef = receiptData.startsWith('text:')
+  if (!isCash && !isTextRef && !receiptData.startsWith('data:')) {
+    return c.json({ error: 'Receipt required (image or PDF, under ~3 MB).' }, 400)
+  }
+
   const next = settleInvoice({
     ...mapped,
     receiptName: body.data.receiptName,
-    receiptData: body.data.receiptData,
+    receiptData,
+    payMethod,
+    payRef: body.data.payRef?.trim() || undefined,
     paidDeclaredAt: Date.now(),
     adminReview: undefined,
     superReview: undefined,
@@ -1057,10 +1258,11 @@ commerceRoutes.post('/invoices/:id/pay', requireUser, async (c) => {
     where: { id },
     data: invoiceUpdateData(next as Record<string, unknown>),
   })
+  const methodLabel = payMethod === 'usdt' ? 'USDT' : payMethod === 'cash' ? 'cash' : 'bank'
   await notifyStaff(
     'payment',
     'Payment receipt uploaded',
-    `${id} awaiting Admin + Super accept`,
+    `${id} (${methodLabel}) awaiting Admin + Super accept`,
     '/admin?section=money',
     `N-PAY-${id}`,
   )
@@ -1123,6 +1325,8 @@ commerceRoutes.post('/invoices/:id/clear-payment', requireUser, requireStaff, as
     ...mapped,
     receiptName: undefined,
     receiptData: undefined,
+    payMethod: undefined,
+    payRef: undefined,
     paidDeclaredAt: undefined,
     adminReview: undefined,
     superReview: undefined,

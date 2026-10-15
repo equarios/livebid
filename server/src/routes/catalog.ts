@@ -1,9 +1,11 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { requireStaff, requireUser, type AuthedEnv } from '../auth'
+import { optionalUser, requireStaff, requireUser, type AuthedEnv } from '../auth'
 import { computeExtraSealedEndsAt } from '../auctionPhase'
 import { prisma } from '../db'
 import { mapLot, mapSku } from '../map'
+import { normalizeOrigin } from '../origins'
+import { findPriceComps } from '../priceComps'
 import { notifyWatchersForLots } from '../watchFilters'
 
 export const catalogRoutes = new Hono<AuthedEnv>()
@@ -102,7 +104,7 @@ catalogRoutes.post('/lots/batch', requireUser, requireStaff, async (c) => {
       operator: row.operator ?? null,
       simLocked: row.simLocked ?? null,
       activationLocked: row.activationLocked ?? null,
-      origin: row.origin ?? null,
+      origin: row.origin != null ? normalizeOrigin(row.origin) : null,
     }
     const lot = await prisma.lot.upsert({
       where: { id: row.id },
@@ -120,6 +122,15 @@ catalogRoutes.get('/lots/:id', requireUser, async (c) => {
   const lot = await prisma.lot.findUnique({ where: { id: c.req.param('id') } })
   if (!lot) return c.json({ error: 'Lot not found.' }, 404)
   return c.json({ lot: mapLot(lot) })
+})
+
+/** Last comparable sold / clearing prices (same type + model). */
+catalogRoutes.get('/lots/:id/comps', optionalUser, async (c) => {
+  const id = (c.req.param('id') || '').trim()
+  if (!id) return c.json({ error: 'Lot required.' }, 400)
+  const result = await findPriceComps(id)
+  if (!result) return c.json({ error: 'Lot not found.' }, 404)
+  return c.json(result)
 })
 
 catalogRoutes.put('/lots/:id', requireUser, requireStaff, async (c) => {
@@ -180,6 +191,7 @@ catalogRoutes.post('/inventory', requireUser, requireStaff, async (c) => {
   if (!body.success) return c.json({ error: 'Invalid SKU.' }, 400)
 
   const onHand = body.data.onHand ?? 0
+  const origin = normalizeOrigin(body.data.origin)
   const sku = await prisma.inventorySku.upsert({
     where: { id: body.data.id },
     create: {
@@ -191,7 +203,7 @@ catalogRoutes.post('/inventory', requireUser, requireStaff, async (c) => {
       color: body.data.color,
       grade: body.data.grade,
       battery: body.data.battery,
-      origin: body.data.origin,
+      origin,
       description: body.data.description,
       operator: body.data.operator,
       defaultMoq: body.data.defaultMoq,
@@ -206,7 +218,7 @@ catalogRoutes.post('/inventory', requireUser, requireStaff, async (c) => {
       color: body.data.color,
       grade: body.data.grade,
       battery: body.data.battery,
-      origin: body.data.origin,
+      origin,
       description: body.data.description,
       operator: body.data.operator,
       defaultMoq: body.data.defaultMoq,

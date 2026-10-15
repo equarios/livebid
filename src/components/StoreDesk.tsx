@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { ORIGINS, normalizeOrigin } from '../lib/auctionLists'
 import { api, type StoreOrderDto, type StoreProductDto } from '../lib/api'
 import { usd } from '../lib/format'
 import { storeProductImage } from '../lib/storePhotos'
@@ -19,6 +20,14 @@ export function StoreDesk() {
   const [stock, setStock] = useState('10')
   const [category, setCategory] = useState('Phones')
   const [brand, setBrand] = useState('')
+  const [modelNumber, setModelNumber] = useState('')
+  const [capacity, setCapacity] = useState('')
+  const [color, setColor] = useState('')
+  const [grade, setGrade] = useState('A')
+  const [battery, setBattery] = useState('90')
+  const [origin, setOrigin] = useState('USA')
+  const [simLocked, setSimLocked] = useState(false)
+  const [activationLocked, setActivationLocked] = useState(false)
   const [description, setDescription] = useState('')
   const [imageUrl, setImageUrl] = useState('')
   const [images, setImages] = useState<string[]>([])
@@ -50,6 +59,14 @@ export function StoreDesk() {
     setStock('10')
     setCategory('Phones')
     setBrand('')
+    setModelNumber('')
+    setCapacity('')
+    setColor('')
+    setGrade('A')
+    setBattery('90')
+    setOrigin('USA')
+    setSimLocked(false)
+    setActivationLocked(false)
   }
 
   async function onPickFiles(fileList: FileList | null) {
@@ -111,6 +128,14 @@ export function StoreDesk() {
         stock: Math.max(0, Math.floor(Number(stock) || 0)),
         category: category.trim() || 'Phones',
         brand: brand.trim(),
+        modelNumber: modelNumber.trim(),
+        capacity: capacity.trim(),
+        color: color.trim(),
+        grade: grade.trim(),
+        battery: Math.max(0, Math.min(100, Math.floor(Number(battery) || 0))),
+        origin: normalizeOrigin(origin),
+        simLocked,
+        activationLocked,
         description: description.trim(),
         images,
         imageUrl: images[0] || null,
@@ -140,6 +165,14 @@ export function StoreDesk() {
     setStock(String(p.stock))
     setCategory(p.category)
     setBrand(p.brand || '')
+    setModelNumber(p.modelNumber || '')
+    setCapacity(p.capacity || '')
+    setColor(p.color || '')
+    setGrade(p.grade || 'A')
+    setBattery(String(p.battery ?? 90))
+    setOrigin(normalizeOrigin(p.origin))
+    setSimLocked(Boolean(p.simLocked))
+    setActivationLocked(Boolean(p.activationLocked))
     setDescription(p.description || '')
     setImages(p.images?.length ? [...p.images] : p.imageUrl ? [p.imageUrl] : [])
     setImageUrl('')
@@ -191,6 +224,19 @@ export function StoreDesk() {
     try {
       await api.updateStoreOrder(o.id, { status })
       setMsg(`${o.id} → ${status}`)
+      await refresh()
+    } catch (ex) {
+      setErr(ex instanceof Error ? ex.message : 'Order update failed.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function markReadyCollect(o: StoreOrderDto) {
+    setBusy(true)
+    try {
+      await api.updateStoreOrder(o.id, { readyForCollect: true })
+      setMsg(`${o.id} → ready for collect`)
       await refresh()
     } catch (ex) {
       setErr(ex instanceof Error ? ex.message : 'Order update failed.')
@@ -264,6 +310,48 @@ export function StoreDesk() {
             <label className="field">
               <span>Category</span>
               <input value={category} onChange={(e) => setCategory(e.target.value)} />
+            </label>
+            <label className="field">
+              <span>Model #</span>
+              <input value={modelNumber} onChange={(e) => setModelNumber(e.target.value)} placeholder="A2882" />
+            </label>
+            <label className="field">
+              <span>Capacity</span>
+              <input value={capacity} onChange={(e) => setCapacity(e.target.value)} placeholder="128GB" />
+            </label>
+            <label className="field">
+              <span>Color</span>
+              <input value={color} onChange={(e) => setColor(e.target.value)} placeholder="Midnight" />
+            </label>
+            <label className="field">
+              <span>Grade</span>
+              <input value={grade} onChange={(e) => setGrade(e.target.value)} placeholder="A" />
+            </label>
+            <label className="field">
+              <span>Battery %</span>
+              <input value={battery} onChange={(e) => setBattery(e.target.value)} placeholder="90" />
+            </label>
+            <label className="field">
+              <span>Origin</span>
+              <select value={origin} onChange={(e) => setOrigin(e.target.value)}>
+                {ORIGINS.map((o) => (
+                  <option key={o} value={o}>
+                    {o}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="check-inline">
+              <input type="checkbox" checked={simLocked} onChange={(e) => setSimLocked(e.target.checked)} />
+              SIM locked
+            </label>
+            <label className="check-inline">
+              <input
+                type="checkbox"
+                checked={activationLocked}
+                onChange={(e) => setActivationLocked(e.target.checked)}
+              />
+              Act locked
             </label>
             <label className="field imei-note-field">
               <span>Description</span>
@@ -426,6 +514,11 @@ export function StoreDesk() {
                     <div className="muted tiny">
                       {o.lines.map((l) => `${l.qty}× ${l.title}`).join(', ')}
                     </div>
+                    <div className="muted tiny">
+                      {(o.fulfillmentMode || 'delivery').replace(/_/g, ' ')}
+                      {o.readyForCollect ? ' · ready' : ''}
+                      {o.courierCarrier ? ` · ${o.courierCarrier}` : ''}
+                    </div>
                   </td>
                   <td>
                     {o.name}
@@ -445,6 +538,18 @@ export function StoreDesk() {
                         Mark paid
                       </button>
                     ) : null}
+                    {o.status === 'paid' &&
+                    (o.fulfillmentMode === 'pickup' || o.fulfillmentMode === 'buyer_courier') &&
+                    !o.readyForCollect ? (
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        disabled={busy}
+                        onClick={() => void markReadyCollect(o)}
+                      >
+                        Ready for collect
+                      </button>
+                    ) : null}
                     {o.status === 'paid' ? (
                       <button
                         type="button"
@@ -452,7 +557,9 @@ export function StoreDesk() {
                         disabled={busy}
                         onClick={() => void setOrderStatus(o, 'shipped')}
                       >
-                        Mark shipped
+                        {o.fulfillmentMode === 'pickup' || o.fulfillmentMode === 'buyer_courier'
+                          ? 'Mark collected'
+                          : 'Mark shipped'}
                       </button>
                     ) : null}
                     {o.status !== 'cancelled' && o.status !== 'shipped' ? (

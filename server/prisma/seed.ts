@@ -248,7 +248,7 @@ async function main() {
       currentPrice: 295,
       endsAt: now + 3 * day,
       description: 'Demo auction lot',
-      origin: 'US',
+      origin: 'USA',
     }),
     lot({
       id: 'LOT-1002',
@@ -267,7 +267,7 @@ async function main() {
       currentPrice: 310,
       endsAt: now + 2 * day,
       description: 'Sealed demo lot',
-      origin: 'EU',
+      origin: 'EUR',
     }),
     lot({
       id: 'MP-11021',
@@ -286,7 +286,7 @@ async function main() {
       buyNowPrice: 245,
       endsAt: now + 30 * day,
       description: 'Marketplace demo listing',
-      origin: 'AE',
+      origin: 'ARE',
     }),
     lot({
       id: 'MP-11022',
@@ -305,7 +305,7 @@ async function main() {
       buyNowPrice: 98,
       endsAt: now + 30 * day,
       description: 'Marketplace demo listing',
-      origin: 'TW',
+      origin: 'TWN',
     }),
   ]
 

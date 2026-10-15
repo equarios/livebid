@@ -27,6 +27,12 @@ model Account {
   emailPrefsJson String @default("{\"win\":true,\"offer\":true,\"cart\":true,\"invoice\":true,\"payment\":true,\"shipping\":true,\"auth\":true,\"outbid\":false,\"closing\":false,\"fill\":false}")
   /// JSON: saved Device/Condition watch filters for offline match emails
   watchFiltersJson String @default("[]")
+  /// Default fulfillment: pickup | delivery | buyer_courier
+  preferredFulfillmentMode String?
+  /// FedEx / UPS / DHL / Other — for buyer_courier default
+  courierCarrier String?
+  /// Buyer's own logistics account number
+  courierAccount String?
   createdAt    DateTime @default(now())
   sessions     Session[]
   bids         Bid[]
@@ -154,6 +160,16 @@ model StoreProduct {
   category    String   @default("Phones")
   /// Maker / brand shown on store cards (e.g. Apple, Samsung).
   brand       String   @default("")
+  /// Same structured specs as auction lots (shown on cards).
+  modelNumber String   @default("")
+  capacity    String   @default("")
+  color       String   @default("")
+  grade       String   @default("")
+  /// 0 = unknown / hide on card.
+  battery     Int      @default(0)
+  origin      String   @default("INT")
+  simLocked   Boolean  @default(false)
+  activationLocked Boolean @default(false)
   /// Cover / legacy single image.
   imageUrl    String?
   /// Ordered gallery URLs (JSON string[]). First is cover; synced to imageUrl.
@@ -172,7 +188,21 @@ model StoreOrder {
   email         String
   name          String
   phone         String?
-  address       String
+  address       String   @default("")
+  /// pickup | delivery | buyer_courier
+  fulfillmentMode String @default("delivery")
+  /// FedEx / UPS / DHL / Other — used when fulfillmentMode = buyer_courier
+  courierCarrier  String?
+  /// Buyer's own logistics account number (optional until collect)
+  courierAccount  String?
+  /// Staff marked goods ready for warehouse pickup / buyer courier collect
+  readyForCollect Boolean @default(false)
+  /// When delivery payer is admin_decide: false = fee TBD until staff quotes
+  shippingFeeQuoted Boolean @default(true)
+  /// Buyer-requested pickup day (YYYY-MM-DD)
+  pickupDate    String?
+  /// Slot window e.g. 10:00-12:00
+  pickupSlot    String?
   status        String   @default("pending_payment")
   paymentMethod String
   paymentRef    String?
@@ -189,6 +219,7 @@ model StoreOrder {
   @@index([accountId])
   @@index([email])
   @@index([status])
+  @@index([fulfillmentMode])
 }
 
 model StoreOrderLine {

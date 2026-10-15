@@ -1,6 +1,13 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { InvoicePreview } from '../components/InvoicePreview'
 import { PaymentSubmitDialog } from '../components/PaymentSubmitDialog'
+import { api } from '../lib/api'
+import {
+  DEFAULT_FULFILLMENT,
+  FULFILLMENT_LABELS,
+  earliestPickupDate,
+} from '../lib/fulfillment'
 import {
   buyerNumber,
   clientInvoiceLabel,
@@ -13,7 +20,7 @@ import {
 } from '../lib/invoices'
 import { gbsDate, moneyPlain, moneyUsd } from '../lib/format'
 import { useNow, useStore } from '../store'
-import type { Invoice } from '../types'
+import type { FulfillmentMode, Invoice } from '../types'
 
 function EnvelopeIcon() {
   return (
@@ -51,13 +58,29 @@ function rowMeta(inv: Invoice) {
 
 export function Invoices() {
   const now = useNow()
+  const [params, setParams] = useSearchParams()
   const { invoices, lots, settings, user, accounts, markInvoiceOpened } = useStore()
   const [payId, setPayId] = useState<string | null>(null)
   const [previewId, setPreviewId] = useState<string | null>(null)
+  const [fulfillId, setFulfillId] = useState<string | null>(null)
+  const [fulfillMode, setFulfillMode] = useState<FulfillmentMode>('pickup')
+  const [courierCarrier, setCourierCarrier] = useState('FedEx')
+  const [courierAccount, setCourierAccount] = useState('')
+  const [shipAddress, setShipAddress] = useState('')
+  const [pickupDate, setPickupDate] = useState('')
+  const [pickupSlot, setPickupSlot] = useState('')
+  const [slotOcc, setSlotOcc] = useState<
+    Array<{ slot: string; remaining: number | null; full: boolean }>
+  >([])
+  const [fulfillBusy, setFulfillBusy] = useState(false)
+  const [localFulfill, setLocalFulfill] = useState<
+    Record<string, Partial<Invoice>>
+  >({})
   const [notice, setNotice] = useState<string | null>(null)
   const [unopened, setUnopened] = useState(false)
   const [poOnly, setPoOnly] = useState(false)
   const copy = settings.copy
+  const fulfillCfg = settings.fulfillment || DEFAULT_FULFILLMENT
 
   const rows = useMemo(() => {
     return invoices
@@ -65,8 +88,89 @@ export function Invoices() {
       .filter((inv) => !inv.accountId || inv.accountId === user?.accountId)
       .filter((inv) => (unopened ? !inv.opened : true))
       .filter((inv) => (poOnly ? Boolean(inv.poNumber) : true))
+      .map((inv) => ({ ...inv, ...(localFulfill[inv.id] || {}) }))
       .sort((a, b) => b.createdAt - a.createdAt)
-  }, [invoices, user, unopened, poOnly])
+  }, [invoices, user, unopened, poOnly, localFulfill])
+
+  function openFulfill(inv: Invoice) {
+    const acct = accounts.find((a) => a.accountId === user?.accountId)
+    setFulfillId(inv.id)
+    setFulfillMode(
+      inv.fulfillmentMode ||
+        acct?.preferredFulfillmentMode ||
+        fulfillCfg.defaultWholesaleMode,
+    )
+    setCourierCarrier(inv.courierCarrier || acct?.courierCarrier || 'FedEx')
+    setCourierAccount(inv.courierAccount || acct?.courierAccount || '')
+    setShipAddress(inv.shipAddress || acct?.address || '')
+    setPickupDate(inv.pickupDate || earliestPickupDate(fulfillCfg))
+    setPickupSlot(inv.pickupSlot || fulfillCfg.pickupSlots[0] || '')
+  }
+
+  useEffect(() => {
+    if (!fulfillId || fulfillMode !== 'pickup' || !pickupDate) {
+      setSlotOcc([])
+      return
+    }
+    let alive = true
+    void api
+      .storePickupSlots(pickupDate)
+      .then((res) => {
+        if (!alive) return
+        setSlotOcc(res.slots)
+        setPickupSlot((cur) => {
+          const stillOpen = res.slots.find((s) => s.slot === cur && !s.full)
+          if (stillOpen) return cur
+          return res.slots.find((s) => !s.full)?.slot || cur
+        })
+      })
+      .catch(() => {
+        if (alive) setSlotOcc([])
+      })
+    return () => {
+      alive = false
+    }
+  }, [fulfillId, fulfillMode, pickupDate])
+
+  async function saveFulfillment() {
+    if (!fulfillId) return
+    if (fulfillMode === 'pickup' && (!pickupDate || !pickupSlot)) {
+      setNotice('Choose a pickup date and time window.')
+      return
+    }
+    setFulfillBusy(true)
+    try {
+      const res = await api.setInvoiceFulfillment(fulfillId, {
+        fulfillmentMode: fulfillMode,
+        courierCarrier: fulfillMode === 'buyer_courier' ? courierCarrier : undefined,
+        courierAccount: fulfillMode === 'buyer_courier' ? courierAccount || undefined : undefined,
+        shipAddress: fulfillMode === 'delivery' ? shipAddress : undefined,
+        pickupDate: fulfillMode === 'pickup' ? pickupDate : undefined,
+        pickupSlot: fulfillMode === 'pickup' ? pickupSlot : undefined,
+      })
+      const patched = res.invoice as Invoice
+      setLocalFulfill((prev) => ({
+        ...prev,
+        [fulfillId]: {
+          fulfillmentMode: patched.fulfillmentMode || fulfillMode,
+          courierCarrier: patched.courierCarrier,
+          courierAccount: patched.courierAccount,
+          shipAddress: patched.shipAddress,
+          shippingFee: patched.shippingFee,
+          shippingFeeQuoted: patched.shippingFeeQuoted,
+          readyForCollect: patched.readyForCollect,
+          pickupDate: patched.pickupDate,
+          pickupSlot: patched.pickupSlot,
+        },
+      }))
+      setNotice(`Fulfillment saved on ${fulfillId}.`)
+      setFulfillId(null)
+    } catch (e) {
+      setNotice(e instanceof Error ? e.message : 'Could not save fulfillment.')
+    } finally {
+      setFulfillBusy(false)
+    }
+  }
 
   const paying = rows.find((inv) => inv.id === payId) || invoices.find((inv) => inv.id === payId) || null
   const preview = rows.find((inv) => inv.id === previewId) || invoices.find((inv) => inv.id === previewId) || null
@@ -74,6 +178,20 @@ export function Invoices() {
   const company = (account?.company || user?.company || '').trim()
   const myBuyerNo = user ? buyerNumber(user.accountId, account?.buyerNumber) : ''
   const currency = settings.invoice.currency || 'USD'
+
+  useEffect(() => {
+    const raw = (params.get('pay') || '').trim().toUpperCase()
+    if (!raw || !user) return
+    const inv = invoices.find((i) => i.id === raw)
+    if (!inv) return
+    if (inv.accountId && inv.accountId !== user.accountId) return
+    if (clientInvoiceLabel(inv) !== 'Awaiting Payment') return
+    markInvoiceOpened(inv.id)
+    setPayId(inv.id)
+    const next = new URLSearchParams(params)
+    next.delete('pay')
+    setParams(next, { replace: true })
+  }, [params, setParams, invoices, user, markInvoiceOpened])
 
   function openInvoice(invId: string, payIfAwaiting = false) {
     const inv = invoices.find((i) => i.id === invId)
@@ -231,8 +349,15 @@ export function Invoices() {
                 </button>
               </div>
               <StepDots steps={steps} />
-              <strong>{inv.auctionLabel || (lot ? `${lot.manufacturer} ${lot.model}` : inv.lotId)}</strong>
-              <div className="muted tiny mono">{inv.id}</div>
+              <strong>
+                {inv.shippingAddendum
+                  ? `Shipping · ${inv.parentInvoiceId || inv.id}`
+                  : inv.auctionLabel || (lot ? `${lot.manufacturer} ${lot.model}` : inv.lotId)}
+              </strong>
+              <div className="muted tiny mono">
+                {inv.id}
+                {inv.shippingAddendum ? ' · freight addendum' : ''}
+              </div>
               <div className="inv-card-meta">
                 <span>{totals.qty.toLocaleString()} pcs</span>
                 {lines.length > 1 ? <span>{lines.length} lines</span> : null}
@@ -242,10 +367,149 @@ export function Invoices() {
                 {gbsDate(inv.issuedAt || inv.createdAt)}
                 {invoiceDueLabel(inv, now, settings) ? ` · ${invoiceDueLabel(inv, now, settings)}` : ''}
               </div>
+              {inv.shippingAddendum ? (
+                <div className="tiny" style={{ marginTop: 8 }}>
+                  Freight for {inv.parentInvoiceId || 'order'}
+                </div>
+              ) : (
+                <div className="tiny" style={{ marginTop: 8 }}>
+                  {FULFILLMENT_LABELS[inv.fulfillmentMode || fulfillCfg.defaultWholesaleMode]}
+                  {inv.readyForCollect ? ' · Ready for collect' : ''}
+                  {inv.courierCarrier ? ` · ${inv.courierCarrier}` : ''}
+                  {inv.fulfillmentMode === 'delivery' && inv.shippingFeeQuoted === false
+                    ? ' · Shipping TBD (pay goods now)'
+                    : inv.shippingAddendumId
+                      ? ` · Ship due on ${inv.shippingAddendumId}`
+                      : inv.shippingFee
+                        ? ` · Ship ${moneyUsd(inv.shippingFee, currency)}`
+                        : ''}
+                  {inv.fulfillmentMode === 'pickup' && inv.pickupDate
+                    ? ` · ${inv.pickupDate}${inv.pickupSlot ? ` ${inv.pickupSlot}` : ''}`
+                    : ''}
+                </div>
+              )}
+              {!inv.shippingAddendum && inv.status !== 'paid' && inv.status !== 'declined' ? (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  style={{ marginTop: 8 }}
+                  onClick={() => openFulfill(inv)}
+                >
+                  Set pickup / delivery
+                </button>
+              ) : null}
             </article>
           )
         })}
       </div>
+
+      {fulfillId ? (
+        <div className="modal-backdrop" role="dialog" aria-modal="true">
+          <div className="modal-card" style={{ maxWidth: 420 }}>
+            <h3>Fulfillment · {fulfillId}</h3>
+            <p className="muted tiny">
+              Pickup, platform delivery, or ship with your own FedEx / UPS / DHL account.
+            </p>
+            <label className="field">
+              <span>Mode</span>
+              <select
+                value={fulfillMode}
+                onChange={(e) => setFulfillMode(e.target.value as FulfillmentMode)}
+              >
+                {fulfillCfg.wholesaleModes.map((m) => (
+                  <option key={m} value={m}>
+                    {FULFILLMENT_LABELS[m]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {fulfillMode === 'delivery' ? (
+              <label className="field">
+                <span>Delivery address</span>
+                <textarea
+                  rows={3}
+                  value={shipAddress}
+                  onChange={(e) => setShipAddress(e.target.value)}
+                />
+              </label>
+            ) : null}
+            {fulfillMode === 'buyer_courier' ? (
+              <>
+                <label className="field">
+                  <span>Courier</span>
+                  <select
+                    value={courierCarrier}
+                    onChange={(e) => setCourierCarrier(e.target.value)}
+                  >
+                    {['FedEx', 'UPS', 'DHL', 'Other'].map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Your account # (optional)</span>
+                  <input
+                    value={courierAccount}
+                    onChange={(e) => setCourierAccount(e.target.value)}
+                  />
+                </label>
+              </>
+            ) : null}
+            {fulfillMode === 'pickup' ? (
+              <>
+                <p className="muted tiny">
+                  {fulfillCfg.pickupLabel} — {fulfillCfg.pickupHours}
+                </p>
+                <label className="field">
+                  <span>Pickup date</span>
+                  <input
+                    type="date"
+                    min={earliestPickupDate(fulfillCfg)}
+                    value={pickupDate}
+                    onChange={(e) => setPickupDate(e.target.value)}
+                  />
+                </label>
+                <label className="field">
+                  <span>Time window</span>
+                  <select value={pickupSlot} onChange={(e) => setPickupSlot(e.target.value)}>
+                    {(fulfillCfg.pickupSlots || []).map((s) => {
+                      const occ = slotOcc.find((o) => o.slot === s)
+                      const full = Boolean(occ?.full)
+                      const left =
+                        occ?.remaining != null ? ` · ${occ.remaining} left` : ''
+                      return (
+                        <option key={s} value={s} disabled={full}>
+                          {s}
+                          {full ? ' · full' : left}
+                        </option>
+                      )
+                    })}
+                  </select>
+                </label>
+              </>
+            ) : null}
+            <div className="modal-actions" style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                disabled={fulfillBusy}
+                onClick={() => void saveFulfillment()}
+              >
+                {fulfillBusy ? 'Saving…' : 'Save'}
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => setFulfillId(null)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {preview ? <InvoicePreview invoice={preview} onClose={() => setPreviewId(null)} /> : null}
       {paying ? (

@@ -1304,6 +1304,61 @@ label { display: grid; gap: 6px; font-size: 13px; color: var(--muted); margin-bo
 .lot-actions { display: flex; gap: 8px; }
 .lot-actions .btn { flex: 1; text-align: center; }
 
+.past-comps { position: relative; display: inline-block; margin-top: 4px; }
+.past-comps-chip {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: var(--card, #fff);
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  padding: 2px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  line-height: 1.3;
+}
+.past-comps-chip:hover,
+.past-comps-chip.is-open {
+  color: var(--navy);
+  border-color: var(--navy);
+}
+.past-comps-pop {
+  position: absolute;
+  z-index: 40;
+  left: 0;
+  top: calc(100% + 6px);
+  min-width: 180px;
+  max-width: 240px;
+  padding: 10px 12px;
+  background: var(--card, #fff);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 10px 28px rgba(18, 44, 62, 0.14);
+}
+.past-comps-lead {
+  margin: 0 0 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.past-comps-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.past-comps-list li {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 12px;
+}
+.past-comps-type { font-weight: 650; color: var(--navy); }
+.past-comps-median { margin: 8px 0 0; }
+
 .pill {
   display: inline-block; padding: 2px 8px; border-radius: 99px; font-size: 11px; font-weight: 700;
   background: #e8eef3; color: var(--navy);
@@ -2515,6 +2570,30 @@ p.item-specs {
 .confirm-summary dd { margin: 0; font-weight: 700; }
 .ack { display: flex; gap: 8px; align-items: flex-start; color: var(--ink); font-size: 13px; }
 .ack input { width: auto; margin-top: 3px; }
+.wholesale-pay-methods {
+  margin: 0 0 10px;
+  padding: 0;
+  border: 0;
+}
+.wholesale-pay-methods legend {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.wholesale-pay-hint {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  background: #f4f8f9;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  font-family: inherit;
+  color: var(--ink);
+}
+.inv-q-pay-method { display: block; margin-bottom: 4px; }
 .receipt-thumb {
   width: 56px;
   height: 56px;
@@ -7533,6 +7612,74 @@ html[dir='rtl'] .lang-menu-panel button {
   to { opacity: 1; transform: none; }
 }
 
+.store-origin-filters {
+  margin: 0 0 14px;
+}
+
+/* Sold-out: soft blur + badge; still browsable */
+.store-lot-card.is-sold,
+.auction-card.is-sold,
+.market-page tr.is-sold td {
+  opacity: 0.78;
+}
+.store-lot-card.is-sold .store-lot-card-media,
+.auction-card.is-sold .item-thumb,
+.auction-card.is-sold .item-link {
+  filter: grayscale(0.4) blur(1.2px);
+}
+.market-page tr.is-sold .item-thumb,
+.market-page tr.is-sold .item-link {
+  filter: grayscale(0.35) blur(0.8px);
+}
+.sold-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 2;
+  padding: 3px 8px;
+  border-radius: 5px;
+  background: rgba(40, 48, 56, 0.88);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+}
+.sold-badge-card {
+  position: relative;
+  top: 0;
+  left: 0;
+  display: inline-flex;
+  margin-bottom: 6px;
+}
+.sold-badge-inline {
+  position: static;
+  display: inline-flex;
+  margin-top: 4px;
+}
+.sold-row-note {
+  margin: 0;
+  font-weight: 700;
+  color: var(--muted);
+}
+.store-pdp-media {
+  position: relative;
+}
+.store-pdp-media.is-sold .store-gallery,
+.store-pdp-media.is-sold img {
+  filter: grayscale(0.4) blur(1.2px);
+}
+.store-similar {
+  margin: 28px 0 8px;
+}
+.store-similar-title {
+  margin: 0 0 4px;
+  font-size: 1.15rem;
+}
+.store-similar-note {
+  margin: 0 0 12px;
+}
+
 .store-lot-grid {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -7714,6 +7861,31 @@ html[dir='rtl'] .lang-menu-panel button {
   flex: 1;
   margin: 0;
 }
+.store-lot-card .item-chips,
+.store-card-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.store-lot-card .item-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 5px;
+  background: #eef3f6;
+  color: var(--ink);
+  white-space: nowrap;
+  line-height: 1.25;
+}
+.store-lot-card .item-chip.lock {
+  background: #fdecea;
+  color: #9b2c2c;
+}
+.store-lot-card .item-chip .batt-mark { margin: 0; }
 .store-lot-card .lot-price-row {
   margin-top: auto;
   padding-top: 4px;

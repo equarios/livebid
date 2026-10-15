@@ -5,6 +5,8 @@ import { ImeiDesk } from '../components/ImeiDesk'
 import { InventoryDesk } from '../components/InventoryDesk'
 import { InvoiceDesk } from '../components/InvoiceDesk'
 import { StoreDesk } from '../components/StoreDesk'
+import { FulfillmentQueue } from '../components/FulfillmentQueue'
+import { ProductEnquiryDesk } from '../components/ProductEnquiryDesk'
 import { ClientsDesk } from '../components/ClientsDesk'
 import { WholesaleReviewDesk } from '../components/WholesaleReviewDesk'
 import { ItemLink } from '../components/ItemLink'
@@ -12,7 +14,7 @@ import { OfferDesk } from '../components/OfferDesk'
 import { OpsShell, type OpsSection } from '../components/OpsShell'
 import { OpsToday } from '../components/OpsToday'
 import { TimeLeft } from '../components/TimeLeft'
-import { isInExtraSealed, ORIGINS, typePillClass } from '../lib/auctionLists'
+import { isInExtraSealed, ORIGINS, normalizeOrigin, originLabel, typePillClass } from '../lib/auctionLists'
 import { listingLabel, listingMinutes } from '../lib/duration'
 import { lotTypeLabel, usd } from '../lib/format'
 import { api } from '../lib/api'
@@ -31,7 +33,7 @@ const ADMIN_SECTIONS = new Set([
   'clients',
 ])
 const CATALOG_DESKS = new Set(['inventory', 'lots'])
-const COMMERCE_DESKS = new Set(['carts', 'offers', 'bids'])
+const COMMERCE_DESKS = new Set(['carts', 'offers', 'asks', 'bids'])
 
 type ListingDraft = {
   key: string
@@ -66,7 +68,7 @@ function draftSpecLine(draft: ListingDraft) {
   const act = draft.actLocked === '1' ? 'Act locked' : 'Act open'
   const moqN = Number(draft.moq)
   const moq = draft.moq.trim() && Number.isInteger(moqN) && moqN > 1 ? `MOQ ${moqN}` : 'No MOQ'
-  return `${draft.color || 'Color'} · Grade ${draft.grade} · ${draft.origin || 'INT'} · ${draft.battery || '—'}% · ${sim} · ${act}${draft.operator.trim() ? ` · ${draft.operator.trim()}` : ''} · ${moq}`
+  return `${draft.color || 'Color'} · Grade ${draft.grade} · ${originLabel(draft.origin)} · ${draft.battery || '—'}% · ${sim} · ${act}${draft.operator.trim() ? ` · ${draft.operator.trim()}` : ''} · ${moq}`
 }
 
 function newLotId() {
@@ -94,7 +96,7 @@ function blankDraft(
     price: seed?.price || '100',
     hours: seed?.hours || '4',
     minutes: seed?.minutes || '0',
-    origin: seed?.origin || 'INT',
+    origin: normalizeOrigin(seed?.origin),
     operator: seed?.operator || '',
     simLocked: seed?.simLocked || '0',
     actLocked: seed?.actLocked || '0',
@@ -127,10 +129,17 @@ export function Admin() {
   const now = useNow()
   const [params, setParams] = useSearchParams()
   const [wholesaleStuck, setWholesaleStuck] = useState(0)
+  const [productAsks, setProductAsks] = useState(0)
   useEffect(() => {
     void api
       .staffWholesaleStuck()
       .then((r) => setWholesaleStuck(r.stuck.length))
+      .catch(() => undefined)
+  }, [])
+  useEffect(() => {
+    void api
+      .productEnquiryCount()
+      .then((r) => setProductAsks(r.openCount))
       .catch(() => undefined)
   }, [])
   const live = lots.filter((l) => l.channel === 'auction' && l.endsAt > now)
@@ -142,6 +151,7 @@ export function Admin() {
     invoices,
     accounts,
     wholesaleStuck,
+    productAsks,
   })
   const waitingSuper = (listingDrops || []).filter((d) => d.status === 'pending')
 
@@ -207,7 +217,7 @@ export function Admin() {
         price: String(lot.buyNowPrice ?? lot.currentPrice),
         hours: String(Math.floor(left / 60)),
         minutes: String(left % 60),
-        origin: lot.origin || 'INT',
+        origin: normalizeOrigin(lot.origin),
         operator: lot.operator || '',
         simLocked: lot.simLocked ? '1' : '0',
         actLocked: lot.activationLocked ? '1' : '0',
@@ -260,7 +270,7 @@ export function Admin() {
           : existing?.endsAt || Date.now() + Math.max(1, totalMins) * 60 * 1000,
       description: draft.description.trim() || existing?.description || 'Added from admin.',
       accent: existing?.accent ?? '#1d3348',
-      origin: draft.origin,
+      origin: normalizeOrigin(draft.origin),
       operator: draft.operator.trim() || existing?.operator,
       simLocked: draft.simLocked === '1',
       activationLocked: draft.actLocked === '1',
@@ -310,12 +320,21 @@ export function Admin() {
         desks: [
           { id: 'carts', label: 'Carts', count: queues.pendingCarts || undefined },
           { id: 'offers', label: 'Offers', count: queues.pendingOffers || undefined },
+          { id: 'asks', label: 'Asks', count: queues.productAsks || undefined },
           { id: 'bids', label: 'Bids' },
         ],
       },
       { id: 'money', label: 'Money', count: queues.money || undefined },
       { id: 'imei', label: 'IMEI' },
-      { id: 'store', label: 'Store' },
+      {
+        id: 'store',
+        label: 'Store',
+        count: queues.fulfillment || undefined,
+        desks: [
+          { id: 'catalog', label: 'Catalog' },
+          { id: 'fulfill', label: 'Fulfillment', count: queues.fulfillment || undefined },
+        ],
+      },
       { id: 'buyers', label: 'Buyers', count: queues.wholesaleApps || undefined },
       { id: 'clients', label: 'Clients' },
     ],
@@ -389,6 +408,8 @@ export function Admin() {
         </section>
       ) : null}
 
+      {section === 'commerce' && desk === 'asks' ? <ProductEnquiryDesk /> : null}
+
       {section === 'commerce' && desk === 'bids' ? (
         <section className="mh-desk">
           <header className="mh-desk-head">
@@ -445,7 +466,8 @@ export function Admin() {
 
       {section === 'catalog' && desk === 'inventory' ? <InventoryDesk /> : null}
       {section === 'imei' ? <ImeiDesk /> : null}
-      {section === 'store' ? <StoreDesk /> : null}
+      {section === 'store' && desk === 'fulfill' ? <FulfillmentQueue /> : null}
+      {section === 'store' && desk !== 'fulfill' ? <StoreDesk /> : null}
       {section === 'buyers' ? <WholesaleReviewDesk /> : null}
       {section === 'clients' ? <ClientsDesk /> : null}
 

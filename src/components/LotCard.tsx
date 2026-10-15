@@ -12,6 +12,7 @@ import { FavHeart } from './FavHeart'
 import { FillBar } from './FillBar'
 import { InlineBid } from './InlineBid'
 import { useLotPreview } from './LotPreview'
+import { PastPriceComps } from './PastPriceComps'
 import { EndsIn } from './TimeLeft'
 
 export function LotCard({ lot }: { lot: Lot }) {
@@ -76,6 +77,7 @@ export function LotCard({ lot }: { lot: Lot }) {
               )}
               {lot.qty > 1 ? <small> / unit</small> : null}
             </div>
+            <PastPriceComps lotId={lot.id} />
           </div>
           <div className="right">
             {lot.channel === 'auction' ? (

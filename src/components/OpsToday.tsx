@@ -62,12 +62,32 @@ export function OpsToday({
             tone: queues.pendingOffers ? 'urgent' : 'muted',
           },
           {
+            id: 'asks',
+            section: 'commerce',
+            desk: 'asks',
+            title: 'Product questions',
+            count: queues.productAsks,
+            hint: 'Store / auction / marketplace item asks',
+            tone: queues.productAsks ? 'open' : 'muted',
+          },
+          {
             id: 'money',
             section: 'money',
             title: 'Invoices / payments',
             count: queues.money,
             hint: 'Draft issue queue and payment stamps',
             tone: queues.money ? 'open' : 'muted',
+          },
+          {
+            id: 'fulfill',
+            section: 'store',
+            desk: 'fulfill',
+            title: 'Fulfillment',
+            count: queues.fulfillment,
+            hint: queues.fulfillment
+              ? `${queues.todayCollects} today · ${queues.readyCollect} ready · ${queues.awaitCourier} courier · ${queues.shipQuoteTbd} fee TBD`
+              : 'No pickup / courier / quote queue',
+            tone: queues.fulfillment ? 'urgent' : 'muted',
           },
           {
             id: 'catalog',
@@ -128,6 +148,26 @@ export function OpsToday({
             count: queues.money,
             hint: 'Issue drafts and final-confirm receipts',
             tone: queues.money ? 'urgent' : 'muted',
+          },
+          {
+            id: 'asks',
+            section: 'store',
+            desk: 'asks',
+            title: 'Product questions',
+            count: queues.productAsks,
+            hint: 'Store / auction / marketplace item asks',
+            tone: queues.productAsks ? 'open' : 'muted',
+          },
+          {
+            id: 'fulfill',
+            section: 'store',
+            desk: 'fulfill',
+            title: 'Fulfillment',
+            count: queues.fulfillment,
+            hint: queues.fulfillment
+              ? `${queues.todayCollects} today · ${queues.readyCollect} ready · ${queues.awaitCourier} courier · ${queues.shipQuoteTbd} fee TBD`
+              : 'No pickup / courier / quote queue',
+            tone: queues.fulfillment ? 'urgent' : 'muted',
           },
           {
             id: 'people',

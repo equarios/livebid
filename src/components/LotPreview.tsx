@@ -1,7 +1,9 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { AskAboutItem } from './AskAboutItem'
 import { LotPhotos } from './LotPhotos'
 import { ModalShell } from './ModalShell'
-import { effectiveEndsAt, hideAuctionHigh, typePillClass } from '../lib/auctionLists'
+import { PastPriceComps } from './PastPriceComps'
+import { isSealedLot, originLabel, typePillClass } from '../lib/auctionLists'
 import { lotTypeLabel, specLocks, usd } from '../lib/format'
 import { BatteryMark } from './BatteryMark'
 import { moqLabel } from '../lib/moq'
@@ -84,6 +86,7 @@ function LotDetailDialog({ lotId, onClose }: { lotId: string; onClose: () => voi
                 ''
               )}
             </p>
+            <PastPriceComps lotId={lot.id} />
           </div>
           <button type="button" className="btn btn-ghost" onClick={onClose}>
             Close
@@ -105,7 +108,7 @@ function LotDetailDialog({ lotId, onClose }: { lotId: string; onClose: () => voi
           </div>
           <div>
             <dt>Origin</dt>
-            <dd>{lot.origin || 'INT'}</dd>
+            <dd>{originLabel(lot.origin)}</dd>
           </div>
           <div>
             <dt>Battery</dt>
@@ -135,6 +138,14 @@ function LotDetailDialog({ lotId, onClose }: { lotId: string; onClose: () => voi
         </p>
         <h3 className="detail-notes-title">Condition notes</h3>
         <p>{lot.description}</p>
+        <div className="lot-modal-ask" style={{ marginTop: 12 }}>
+          <AskAboutItem
+            channel={lot.channel === 'marketplace' ? 'marketplace' : 'auction'}
+            itemId={lot.id}
+            itemTitle={`${lot.manufacturer} ${lot.model}${lot.modelNumber ? ` ${lot.modelNumber}` : ''} ${lot.capacity}`.trim()}
+            itemHref={lot.channel === 'marketplace' ? '/marketplace' : '/'}
+          />
+        </div>
         <SimilarLots lot={lot} />
       </div>
     </ModalShell>

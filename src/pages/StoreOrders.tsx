@@ -4,8 +4,10 @@ import { PublicShell } from '../components/PublicShell'
 import { StoreRail } from '../components/StoreRail'
 import { StoreBlockSkeleton } from '../components/StoreSkeleton'
 import { api, type StoreOrderDto } from '../lib/api'
+import { FULFILLMENT_LABELS } from '../lib/fulfillment'
 import { usd } from '../lib/format'
 import { useStore } from '../store'
+import type { FulfillmentMode } from '../types'
 
 const STATUS_LABEL: Record<string, string> = {
   pending_payment: 'Awaiting payment',
@@ -18,6 +20,8 @@ const PAY_LABEL: Record<string, string> = {
   card: 'Card',
   paypal: 'PayPal',
   bank: 'Bank transfer',
+  usdt: 'USDT',
+  cash: 'Cash',
 }
 
 function statusLabel(status: string) {
@@ -88,9 +92,13 @@ export function StoreOrders() {
               Order <strong className="mono">{placed}</strong> placed
               {pay === 'bank'
                 ? ' — awaiting bank transfer confirmation.'
-                : pay === 'paypal' || pay === 'card'
-                  ? ' — payment recorded (demo).'
-                  : '.'}{' '}
+                : pay === 'usdt'
+                  ? ' — awaiting USDT confirmation.'
+                  : pay === 'cash'
+                    ? ' — pay cash when you collect.'
+                    : pay === 'paypal' || pay === 'card'
+                      ? ' — payment recorded (demo).'
+                      : '.'}{' '}
               Thank you.
             </p>
             <Link to="/store" className="btn btn-primary btn-sm">
@@ -143,12 +151,40 @@ export function StoreOrders() {
                         {o.name} · {o.email}
                         {o.phone ? ` · ${o.phone}` : ''}
                       </p>
+                      <p className="tiny">
+                        <strong>
+                          {FULFILLMENT_LABELS[(o.fulfillmentMode as FulfillmentMode) || 'delivery']}
+                        </strong>
+                        {o.readyForCollect ? (
+                          <span className="ok"> · Ready for collect</span>
+                        ) : null}
+                        {o.courierCarrier ? (
+                          <span className="muted">
+                            {' '}
+                            · {o.courierCarrier}
+                            {o.courierAccount ? ` · ${o.courierAccount}` : ''}
+                          </span>
+                        ) : null}
+                      </p>
                       <p className="store-order-address">{o.address}</p>
                       {o.note ? <p className="tiny muted">Note: {o.note}</p> : null}
                       {o.paymentMethod === 'bank' && o.status === 'pending_payment' ? (
                         <p className="tiny store-order-bank-hint">
                           Bank transfer — staff will confirm when funds clear. Include order{' '}
                           <span className="mono">{o.id}</span> in the remittance.
+                        </p>
+                      ) : null}
+                      {o.paymentMethod === 'usdt' && o.status === 'pending_payment' ? (
+                        <p className="tiny store-order-bank-hint">
+                          USDT — staff will confirm when the transfer clears. Include order{' '}
+                          <span className="mono">{o.id}</span> in the memo / note, and ask staff for
+                          the wallet address and network (e.g. TRC-20 / ERC-20).
+                        </p>
+                      ) : null}
+                      {o.paymentMethod === 'cash' && o.status === 'pending_payment' ? (
+                        <p className="tiny store-order-bank-hint">
+                          Cash — bring exact amount when you collect. Staff marks paid on receipt.
+                          Order <span className="mono">{o.id}</span>.
                         </p>
                       ) : null}
                       <ul className="store-order-lines">

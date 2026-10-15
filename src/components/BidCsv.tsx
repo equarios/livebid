@@ -4,7 +4,13 @@ import { FilterPanel } from './FilterPanel'
 import { ModalShell } from './ModalShell'
 import { csvAuctionMatches, downloadCsv, parseBidCsv, type CsvBidRow } from '../lib/csv'
 import { isoDate, lotTypeLabel, usd } from '../lib/format'
-import { isSealedLot, listLabel, slugAuctionType, type AuctionListKind } from '../lib/auctionLists'
+import {
+  isSealedLot,
+  listLabel,
+  originLabel,
+  slugAuctionType,
+  type AuctionListKind,
+} from '../lib/auctionLists'
 import { checkBidPrice, checkOrderQty, minBidPrice } from '../lib/moq'
 import { useNow, useStore } from '../store'
 import type { Lot } from '../types'
@@ -113,7 +119,7 @@ export function BidCsv({
         lot.auctionType || 'live',
         lotTypeLabel(lot, settings),
         `${lot.manufacturer} ${lot.model} ${lot.capacity}`,
-        lot.origin || 'INT',
+        originLabel(lot.origin),
         lot.qty,
         '',
         '',
@@ -147,7 +153,7 @@ export function BidCsv({
         row.lot.auctionType || 'live',
         row.typeName,
         `${row.lot.manufacturer} ${row.lot.model} ${row.lot.capacity}`,
-        row.lot.origin || 'INT',
+        originLabel(row.lot.origin),
         row.lot.qty,
         row.qty,
         row.amount,

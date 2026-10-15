@@ -2,10 +2,80 @@ import { Hono } from 'hono'
 import { z } from 'zod'
 import { requireStaff, requireUser, type AuthedEnv } from '../auth'
 import { prisma } from '../db'
+import { isFulfillmentMode } from '../fulfillment'
 import { notify, notifyStaff } from '../notify'
 import { parseWatchFilters } from '../watchFilters'
 
 export const accountOnboardingRoutes = new Hono<AuthedEnv>()
+
+function mapLogistics(a: {
+  preferredFulfillmentMode: string | null
+  courierCarrier: string | null
+  courierAccount: string | null
+  address: string | null
+}) {
+  return {
+    preferredFulfillmentMode: isFulfillmentMode(a.preferredFulfillmentMode)
+      ? a.preferredFulfillmentMode
+      : null,
+    courierCarrier: a.courierCarrier || null,
+    courierAccount: a.courierAccount || null,
+    address: a.address || null,
+  }
+}
+
+/** Buyer default logistics (pickup / delivery / own FedEx·UPS·DHL). */
+accountOnboardingRoutes.get('/logistics', requireUser, async (c) => {
+  const user = c.get('user')
+  const acc = await prisma.account.findUnique({ where: { accountId: user.accountId } })
+  if (!acc) return c.json({ error: 'Account not found.' }, 404)
+  return c.json({ logistics: mapLogistics(acc) })
+})
+
+accountOnboardingRoutes.put('/logistics', requireUser, async (c) => {
+  const user = c.get('user')
+  const body = z
+    .object({
+      preferredFulfillmentMode: z
+        .enum(['pickup', 'delivery', 'buyer_courier'])
+        .nullable()
+        .optional(),
+      courierCarrier: z.string().max(80).nullable().optional(),
+      courierAccount: z.string().max(80).nullable().optional(),
+      address: z.string().max(500).nullable().optional(),
+    })
+    .safeParse(await c.req.json().catch(() => ({})))
+  if (!body.success) return c.json({ error: 'Invalid logistics.' }, 400)
+
+  const mode = body.data.preferredFulfillmentMode
+  if (mode === 'buyer_courier') {
+    const carrier = (body.data.courierCarrier || '').trim()
+    if (carrier.length < 2) {
+      return c.json({ error: 'Choose a courier for your own-account shipping.' }, 400)
+    }
+  }
+
+  const updated = await prisma.account.update({
+    where: { accountId: user.accountId },
+    data: {
+      preferredFulfillmentMode:
+        body.data.preferredFulfillmentMode === undefined
+          ? undefined
+          : body.data.preferredFulfillmentMode,
+      courierCarrier:
+        body.data.courierCarrier === undefined
+          ? undefined
+          : body.data.courierCarrier?.trim() || null,
+      courierAccount:
+        body.data.courierAccount === undefined
+          ? undefined
+          : body.data.courierAccount?.trim() || null,
+      address:
+        body.data.address === undefined ? undefined : body.data.address?.trim() || null,
+    },
+  })
+  return c.json({ logistics: mapLogistics(updated) })
+})
 
 function parsePayload(raw: string) {
   try {

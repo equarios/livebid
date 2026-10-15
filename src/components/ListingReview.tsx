@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { originLabel } from '../lib/auctionLists'
 import {
   groupDropItems,
   previewDropClocks,
@@ -170,7 +171,7 @@ export function ListingReview() {
                       {item.manufacturer} {item.model}
                       {item.modelNumber ? ` ${item.modelNumber}` : ''} {item.capacity}
                       <p className="muted tiny item-specs">
-                        {item.color} · Grade {item.grade} · {item.origin || 'INT'}
+                        {item.color} · Grade {item.grade} · {originLabel(item.origin)}
                       </p>
                     </td>
                     <td className="num">{item.qty}</td>
@@ -492,7 +493,7 @@ export function ListingReview() {
                           </strong>
                           <p className="muted tiny item-specs">
                             {item.id} · {g.label} · {item.color} · Grade {item.grade} ·{' '}
-                            {item.origin || 'INT'} · {item.qty} pcs · {usd(item.currentPrice)}
+                            {originLabel(item.origin)} · {item.qty} pcs · {usd(item.currentPrice)}
                           </p>
                         </div>
                       ),

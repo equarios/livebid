@@ -16,6 +16,7 @@ import {
   capacityOptions,
   CheckMenu,
   makerOptions,
+  originFilterOptions,
   toggleValue,
 } from '../components/CheckMenu'
 import { isFilterUiTarget } from '../components/FilterPanel'
@@ -27,6 +28,7 @@ import {
   isAuctionListKind,
   listPath,
   migrateLotAuctionType,
+  originLabel,
   type AuctionListKind,
 } from '../lib/auctionLists'
 import { usd } from '../lib/format'
@@ -66,7 +68,10 @@ function AuctionList() {
   const [grades, setGrades] = useState<Grade[]>([])
   const [makers, setMakers] = useState<string[]>([])
   const [memories, setMemories] = useState<string[]>([])
-  const [open, setOpen] = useState<'type' | 'maker' | 'grade' | 'memory' | 'csv' | null>(null)
+  const [origins, setOrigins] = useState<string[]>([])
+  const [open, setOpen] = useState<'type' | 'maker' | 'grade' | 'memory' | 'origin' | 'csv' | null>(
+    null,
+  )
   const filtersRef = useRef<HTMLDivElement>(null)
   const toolsRef = useRef<HTMLDivElement>(null)
   const skipHashWrite = useRef(false)
@@ -130,6 +135,7 @@ function AuctionList() {
   )
   const makersList = useMemo(() => makerOptions(catalog), [catalog])
   const capacities = useMemo(() => capacityOptions(catalog), [catalog])
+  const originsList = useMemo(() => originFilterOptions(catalog), [catalog])
 
   useEffect(() => {
     setCompareIds([])
@@ -162,6 +168,7 @@ function AuctionList() {
     if (grades.length && !grades.includes(l.grade)) return false
     if (makers.length && !makers.includes(l.manufacturer)) return false
     if (memories.length && !memories.includes(l.capacity)) return false
+    if (origins.length && !origins.includes(originLabel(l.origin))) return false
     const hay = `${l.id} ${l.manufacturer} ${l.model} ${l.modelNumber} ${l.capacity} ${l.color} ${l.origin || ''}`.toLowerCase()
     return hay.includes(q.toLowerCase())
   })
@@ -282,6 +289,18 @@ function AuctionList() {
                 selected={memories}
                 onToggle={(value) =>
                   startTransition(() => setMemories((prev) => toggleValue(prev, value)))
+                }
+              />
+            ) : null}
+            {settings.filters.origin ? (
+              <CheckMenu
+                title="Origin"
+                open={open === 'origin'}
+                onOpen={() => setOpen((v) => (v === 'origin' ? null : 'origin'))}
+                options={originsList}
+                selected={origins}
+                onToggle={(value) =>
+                  startTransition(() => setOrigins((prev) => toggleValue(prev, value)))
                 }
               />
             ) : null}

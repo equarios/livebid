@@ -8,12 +8,23 @@ import {
   capacityOptions,
   CheckMenu,
   makerOptions,
+  originFilterOptions,
   toggleValue,
 } from '../components/CheckMenu'
 import { isFilterUiTarget } from '../components/FilterPanel'
+import { originLabel } from '../lib/auctionLists'
 import { ItemLink } from '../components/ItemLink'
 import { ConfirmBidDialog } from '../components/ConfirmBidDialog'
 import { fillCopy, usd, usdCents } from '../lib/format'
+import {
+  STOCK_FILTER_LABEL,
+  STOCK_FILTER_OPTIONS,
+  isPubliclyListed,
+  matchesStockFilter,
+  sortStockLast,
+  type StockFilter,
+} from '../lib/stockFilter'
+import { AskAboutItem } from '../components/AskAboutItem'
 import {
   checkOfferPrice,
   checkOrderQty,
@@ -29,6 +40,7 @@ function MarketLot({ lot, asCard }: { lot: Lot; asCard?: boolean }) {
   const { addToCart, invoices, settings, cart, offers, user, placeOffer, confirmOffer } = useStore()
   const inCart = cart.find((c) => c.lotId === lot.id)?.qty ?? 0
   const left = Math.max(0, lot.qty - inCart)
+  const soldOut = lot.qty < 1
   const lotMoney = moneyForLot(invoices, lot.id, settings)
   const lineTotal = (lot.buyNowPrice ?? lot.currentPrice) * lot.qty
   const [msg, setMsg] = useState<string | null>(null)
@@ -175,7 +187,21 @@ function MarketLot({ lot, asCard }: { lot: Lot; asCard?: boolean }) {
     })
   }
 
-  const orderUi = (
+  const orderUi = soldOut ? (
+    <div className={`inline-bid${asCard ? ' stacked' : ''}`}>
+      <p className="tiny sold-row-note">Sold out</p>
+      <AskAboutItem
+        channel="marketplace"
+        itemId={lot.id}
+        itemTitle={`${lot.manufacturer} ${lot.model}`}
+        itemHref={`/marketplace?q=${encodeURIComponent(lot.id)}`}
+        className="btn btn-ghost btn-sm"
+        label="Notify me"
+        dialogTitle="Notify when back"
+        presetMessage={`Please notify me when lot ${lot.id} (${lot.manufacturer} ${lot.model}) is available again.`}
+      />
+    </div>
+  ) : (
     <div className={`inline-bid${asCard ? ' stacked' : ''}`}>
       <div className="inline-bid-row">
         <label className="inline-field">
@@ -305,14 +331,17 @@ function MarketLot({ lot, asCard }: { lot: Lot; asCard?: boolean }) {
 
   if (asCard) {
     return (
-      <article className="auction-card">
+      <article className={`auction-card${soldOut ? ' is-sold' : ''}`}>
+        {soldOut ? <span className="sold-badge sold-badge-card">Sold out</span> : null}
         <ItemLink lot={lot} showMoq={false} showGrade={false} showLotId />
         <div className="auction-card-meta">
           <span className={`grade-inline grade-${lot.grade}`}>{lot.grade}</span>
           <div className="cell-stack lot-qty">
             <span className="cell-primary">{lot.qty.toLocaleString()}</span>
             <span className="cell-secondary">
-              pcs · {left.toLocaleString()} left{inCart ? ` · ${inCart} in cart` : ''}
+              {soldOut
+                ? 'Sold out'
+                : `pcs · ${left.toLocaleString()} left${inCart ? ` · ${inCart} in cart` : ''}`}
             </span>
             <span className="cell-chip">{moqLabel(lot, settings.copy.noMoq)}</span>
           </div>
@@ -334,9 +363,10 @@ function MarketLot({ lot, asCard }: { lot: Lot; asCard?: boolean }) {
   }
 
   return (
-    <tr>
+    <tr className={soldOut ? 'is-sold' : undefined}>
       <td className="item-col">
         <ItemLink lot={lot} showMoq={false} showGrade={false} showLotId />
+        {soldOut ? <span className="sold-badge sold-badge-inline">Sold out</span> : null}
       </td>
       <td>
         <span className={`grade-inline grade-${lot.grade}`}>{lot.grade}</span>
@@ -345,7 +375,9 @@ function MarketLot({ lot, asCard }: { lot: Lot; asCard?: boolean }) {
         <div className="cell-stack">
           <span className="cell-primary">{lot.qty.toLocaleString()}</span>
           <span className="cell-secondary">
-            pcs · {left.toLocaleString()} left{inCart ? ` · ${inCart} in cart` : ''}
+            {soldOut
+              ? 'Sold out'
+              : `pcs · ${left.toLocaleString()} left${inCart ? ` · ${inCart} in cart` : ''}`}
           </span>
           <span className="cell-chip">{moqLabel(lot, settings.copy.noMoq)}</span>
         </div>
@@ -386,7 +418,9 @@ export function Marketplace() {
   const [grades, setGrades] = useState<Grade[]>([])
   const [makers, setMakers] = useState<string[]>([])
   const [memories, setMemories] = useState<string[]>([])
-  const [open, setOpen] = useState<'maker' | 'grade' | 'memory' | null>(null)
+  const [origins, setOrigins] = useState<string[]>([])
+  const [stock, setStock] = useState<StockFilter[]>(['available'])
+  const [open, setOpen] = useState<'maker' | 'grade' | 'memory' | 'origin' | 'stock' | null>(null)
   const [deskCollapsed, setDeskCollapsed] = useState(() => readDeskCollapsed(MARKET_DESK_KEY))
   const filtersRef = useRef<HTMLDivElement>(null)
   function toggleDesk() {
@@ -409,6 +443,7 @@ export function Marketplace() {
   const marketLots = useMemo(() => lots.filter((l) => l.channel === 'marketplace'), [lots])
   const makersList = useMemo(() => makerOptions(marketLots), [marketLots])
   const capacities = useMemo(() => capacityOptions(marketLots), [marketLots])
+  const originsList = useMemo(() => originFilterOptions(marketLots), [marketLots])
 
   useEffect(() => {
     function onDoc(e: MouseEvent) {
@@ -418,18 +453,23 @@ export function Marketplace() {
     return () => document.removeEventListener('mousedown', onDoc)
   }, [])
 
-  const rows = useMemo(
-    () =>
-      lots.filter((l) => {
-        if (l.channel !== 'marketplace') return false
-        if (grades.length && !grades.includes(l.grade)) return false
-        if (makers.length && !makers.includes(l.manufacturer)) return false
-        if (memories.length && !memories.includes(l.capacity)) return false
-        const hay = `${l.id} ${l.manufacturer} ${l.model} ${l.modelNumber} ${l.capacity} ${l.color}`.toLowerCase()
-        return hay.includes(q.toLowerCase())
-      }),
-    [lots, q, grades, makers, memories],
-  )
+  const rows = useMemo(() => {
+    const now = Date.now()
+    const list = lots.filter((l) => {
+      if (l.channel !== 'marketplace') return false
+      const inStock = l.qty > 0
+      // Marketplace has no soldOutAt — use endsAt as age anchor when sold.
+      if (!isPubliclyListed(inStock, l.endsAt, now)) return false
+      if (!matchesStockFilter(inStock, stock)) return false
+      if (grades.length && !grades.includes(l.grade)) return false
+      if (makers.length && !makers.includes(l.manufacturer)) return false
+      if (memories.length && !memories.includes(l.capacity)) return false
+      if (origins.length && !origins.includes(originLabel(l.origin))) return false
+      const hay = `${l.id} ${l.manufacturer} ${l.model} ${l.modelNumber} ${l.capacity} ${l.color} ${l.origin || ''}`.toLowerCase()
+      return hay.includes(q.toLowerCase())
+    })
+    return sortStockLast(list, (l) => l.qty > 0)
+  }, [lots, q, grades, makers, memories, origins, stock])
 
   const openCartOrders = (cartOrders || []).filter(
     (o) =>
@@ -457,6 +497,17 @@ export function Marketplace() {
           <div className="auction-desk-filters">
             <div className="filters filters-no-search" ref={filtersRef}>
               <div className="filter-groups market-filters">
+                <CheckMenu
+                  title="Stock"
+                  open={open === 'stock'}
+                  onOpen={() => setOpen((v) => (v === 'stock' ? null : 'stock'))}
+                  options={STOCK_FILTER_OPTIONS}
+                  selected={stock}
+                  labelFor={(v) => STOCK_FILTER_LABEL[v]}
+                  onToggle={(value) =>
+                    startTransition(() => setStock((prev) => toggleValue(prev, value)))
+                  }
+                />
                 {settings.filters.maker ? (
                   <CheckMenu
                     title="Maker"
@@ -490,6 +541,18 @@ export function Marketplace() {
                     selected={memories}
                     onToggle={(value) =>
                       startTransition(() => setMemories((prev) => toggleValue(prev, value)))
+                    }
+                  />
+                ) : null}
+                {settings.filters.origin ? (
+                  <CheckMenu
+                    title="Origin"
+                    open={open === 'origin'}
+                    onOpen={() => setOpen((v) => (v === 'origin' ? null : 'origin'))}
+                    options={originsList}
+                    selected={origins}
+                    onToggle={(value) =>
+                      startTransition(() => setOrigins((prev) => toggleValue(prev, value)))
                     }
                   />
                 ) : null}
