@@ -21,7 +21,7 @@ function isStaff(user: SessionUser | undefined) {
 
 const listingBody = z.object({
   title: z.string().trim().min(3).max(160),
-  description: z.string().trim().max(4000).optional(),
+  description: z.string().trim().max(2000).optional(),
   category: z.string().trim().max(64).optional(),
   manufacturer: z.string().trim().max(80).optional(),
   model: z.string().trim().max(80).optional(),
@@ -308,11 +308,11 @@ communityRoutes.post('/listings/:id/interest', async (c) => {
 
   const parsed = z
     .object({
-      message: z.string().trim().min(4).max(2000),
+      message: z.string().trim().min(8).max(2000),
       qtyWanted: z.number().int().min(1).max(100_000).optional(),
     })
     .safeParse(await c.req.json().catch(() => null))
-  if (!parsed.success) return c.json({ error: 'Invalid interest.' }, 400)
+  if (!parsed.success) return c.json({ error: 'Write at least a short message (8–2000 characters).' }, 400)
 
   const listing = await prisma.communityListing.findUnique({ where: { id: c.req.param('id') } })
   if (!listing || listing.status !== 'live') {

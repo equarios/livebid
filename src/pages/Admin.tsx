@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { CartDesk } from '../components/CartDesk'
+import { CloseDesk, closesNeedingInvoice } from '../components/CloseDesk'
 import { ImeiDesk } from '../components/ImeiDesk'
 import { InventoryDesk } from '../components/InventoryDesk'
 import { InvoiceDesk } from '../components/InvoiceDesk'
@@ -34,7 +35,7 @@ const ADMIN_SECTIONS = new Set([
   'clients',
 ])
 const CATALOG_DESKS = new Set(['inventory', 'lots'])
-const COMMERCE_DESKS = new Set(['carts', 'offers', 'asks', 'bids'])
+const COMMERCE_DESKS = new Set(['carts', 'offers', 'asks', 'bids', 'closes'])
 
 type ListingDraft = {
   key: string
@@ -328,6 +329,11 @@ export function Admin() {
           { id: 'offers', label: 'Offers', count: queues.pendingOffers || undefined },
           { id: 'asks', label: 'Asks', count: queues.productAsks || undefined },
           { id: 'bids', label: 'Bids' },
+          {
+            id: 'closes',
+            label: 'Closes',
+            count: closesNeedingInvoice(lots, bids, invoices, now).length || undefined,
+          },
         ],
       },
       { id: 'money', label: 'Money', count: queues.money || undefined },
@@ -344,7 +350,7 @@ export function Admin() {
       { id: 'buyers', label: 'Buyers', count: queues.wholesaleApps || undefined },
       { id: 'clients', label: 'Clients' },
     ],
-    [queues, waitingSuper, live.length],
+    [queues, waitingSuper, live.length, lots, bids, invoices, now],
   )
 
   const lotsActions =
@@ -415,6 +421,8 @@ export function Admin() {
       ) : null}
 
       {section === 'commerce' && desk === 'asks' ? <ProductEnquiryDesk /> : null}
+
+      {section === 'commerce' && desk === 'closes' ? <CloseDesk /> : null}
 
       {section === 'commerce' && desk === 'bids' ? (
         <section className="mh-desk">

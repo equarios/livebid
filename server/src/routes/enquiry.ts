@@ -20,7 +20,7 @@ const createSchema = z.object({
   itemHref: z.string().max(300).optional(),
   name: z.string().min(1).max(120),
   email: z.string().email().max(160),
-  message: z.string().min(3).max(2000),
+  message: z.string().trim().min(8).max(2000),
 })
 
 function enquiryInboxTo() {

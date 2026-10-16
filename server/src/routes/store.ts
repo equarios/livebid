@@ -149,6 +149,7 @@ function mapOrder(o: {
   createdAt: Date
   paidAt: Date | null
   shippedAt: Date | null
+  trackingNo?: string | null
   lines: Array<{
     id: string
     productId: string | null
@@ -182,6 +183,7 @@ function mapOrder(o: {
     createdAt: o.createdAt.toISOString(),
     paidAt: o.paidAt?.toISOString() ?? null,
     shippedAt: o.shippedAt?.toISOString() ?? null,
+    trackingNo: o.trackingNo ?? null,
     lines: o.lines.map((l) => ({
       id: l.id,
       productId: l.productId,
@@ -587,6 +589,8 @@ storeRoutes.patch('/orders/:id', requireUser, requireStaff, async (c) => {
       readyForCollect: z.boolean().optional(),
       shippingFee: z.number().min(0).optional(),
       shippingFeeQuoted: z.boolean().optional(),
+      trackingNo: z.string().max(80).optional(),
+      courierCarrier: z.string().max(80).optional(),
     })
     .safeParse(await c.req.json())
   if (!body.success) return c.json({ error: 'Invalid update.' }, 400)
@@ -630,6 +634,12 @@ storeRoutes.patch('/orders/:id', requireUser, requireStaff, async (c) => {
           : body.data.status && body.data.status !== 'shipped'
             ? existing.shippedAt
             : undefined,
+      trackingNo:
+        body.data.trackingNo === undefined ? undefined : body.data.trackingNo.trim() || null,
+      courierCarrier:
+        body.data.courierCarrier === undefined
+          ? undefined
+          : body.data.courierCarrier.trim() || null,
     },
     include: { lines: true },
   })

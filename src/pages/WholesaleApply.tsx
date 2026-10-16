@@ -16,6 +16,20 @@ const STEPS = [
   { id: 'review', title: 'Review' },
 ] as const
 
+function phoneProblem(raw: string) {
+  const digits = raw.replace(/\D/g, '')
+  if (digits.length < 8 || digits.length > 15) return 'Enter a phone number with 8 to 15 digits.'
+  return null
+}
+
+function taxProblem(raw: string) {
+  const t = raw.trim()
+  if (t.length < 5 || t.length > 32 || !/^[A-Za-z0-9][A-Za-z0-9\s./-]*$/.test(t)) {
+    return 'Enter a tax or resale ID (5–32 letters or numbers).'
+  }
+  return null
+}
+
 const EMPTY: Payload = {
   companyLegal: '',
   dba: '',
@@ -116,6 +130,20 @@ export function WholesaleApply() {
 
   async function onNext(e: FormEvent) {
     e.preventDefault()
+    if (step === 1 || step === STEPS.length - 1) {
+      const phoneErr = phoneProblem(payload.phone || '')
+      if (phoneErr) {
+        setError(phoneErr)
+        return
+      }
+    }
+    if (step === 2 || step === STEPS.length - 1) {
+      const taxErr = taxProblem(payload.taxId || '')
+      if (taxErr) {
+        setError(taxErr)
+        return
+      }
+    }
     if (step < STEPS.length - 1) {
       await save(false)
       setStep((s) => s + 1)

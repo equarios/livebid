@@ -213,6 +213,8 @@ model StoreOrder {
   createdAt     DateTime @default(now())
   paidAt        DateTime?
   shippedAt     DateTime?
+  /// Outbound tracking number when we ship (delivery). Pickup stays collect-only.
+  trackingNo    String?
   account       Account? @relation(fields: [accountId], references: [accountId], onDelete: SetNull)
   lines         StoreOrderLine[]
 

@@ -169,6 +169,17 @@ accountOnboardingRoutes.put('/wholesale-application', requireUser, async (c) => 
     ? { ...parsePayload(app.payloadJson), ...body.data.payload }
     : parsePayload(app.payloadJson)
   const submit = Boolean(body.data.submit)
+  if (submit) {
+    const phone = typeof nextPayload.phone === 'string' ? nextPayload.phone : ''
+    const phoneDigits = phone.replace(/\D/g, '')
+    if (phoneDigits.length < 8 || phoneDigits.length > 15) {
+      return c.json({ error: 'Enter a phone number with 8 to 15 digits.' }, 400)
+    }
+    const tax = typeof nextPayload.taxId === 'string' ? nextPayload.taxId.trim() : ''
+    if (tax.length < 5 || tax.length > 32 || !/^[A-Za-z0-9][A-Za-z0-9\s./-]*$/.test(tax)) {
+      return c.json({ error: 'Enter a tax or resale ID (5–32 letters or numbers).' }, 400)
+    }
+  }
   const updated = await prisma.wholesaleApplication.update({
     where: { id: app.id },
     data: {

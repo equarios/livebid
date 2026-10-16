@@ -23,7 +23,7 @@ export function pushToast(text: string, tone: ToastTone = 'ok', action?: ToastAc
 export function toastMsg(text: string | null | undefined) {
   if (!text) return
   const bad =
-    /fail|could not|error|invalid|not found|cannot|only staff|declined nothing|must be valid|no warehouse|exceeds|at least 1|picker first|fill list/i.test(
+    /fail|could not|error|invalid|not found|cannot|only staff|declined nothing|must be valid|no warehouse|exceeds|at least 1|at least one|required|picker first|fill list/i.test(
       text,
     )
   pushToast(text, bad ? 'err' : 'ok')

@@ -13,6 +13,7 @@ import { WholesaleReviewDesk } from '../components/WholesaleReviewDesk'
 import { NumberField } from '../components/NumberField'
 import { TimeLeft } from '../components/TimeLeft'
 import { DEFAULT_SETTINGS } from '../data'
+import { toastMsg } from '../lib/toast'
 import { api } from '../lib/api'
 import { isInExtraSealed, RESERVED_LIST_SLUGS, slugAuctionType } from '../lib/auctionLists'
 import { BODY_FONT_PRESETS, DISPLAY_FONT_PRESETS } from '../lib/fontPresets'
@@ -417,7 +418,11 @@ export function Super() {
     },
     pages: mergePagesDraft(settings.pages),
   }))
-  const [settingsMsg, setSettingsMsg] = useState<string | null>(null)
+  const [settingsMsg, setSettingsMsgState] = useState<string | null>(null)
+  function setSettingsMsg(next: string | null) {
+    setSettingsMsgState(next)
+    toastMsg(next)
+  }
   const invoiceDraft = { ...DEFAULT_SETTINGS.invoice, ...draft.invoice }
   const contactDraft: SiteContact = {
     ...DEFAULT_SETTINGS.contact,

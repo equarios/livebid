@@ -72,7 +72,12 @@ export function AskAboutItem({
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
-    if (!name.trim() || !email.trim() || !message.trim()) return
+    const text = message.trim()
+    if (!name.trim() || !email.trim()) return
+    if (text.length < 8 || text.length > 2000) {
+      setErr('Write at least a short question (8–2000 characters).')
+      return
+    }
     setBusy(true)
     setErr(null)
     try {
@@ -83,7 +88,7 @@ export function AskAboutItem({
         itemHref,
         name: name.trim(),
         email: email.trim(),
-        message: message.trim(),
+        message: text,
       })
       setDone(true)
     } catch (ex) {
@@ -164,6 +169,7 @@ export function AskAboutItem({
                     onChange={(ev) => setMessage(ev.target.value)}
                     placeholder="Condition, qty, shipping, compatibility…"
                     required
+                    minLength={8}
                     maxLength={2000}
                   />
                 </label>

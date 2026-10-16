@@ -1402,6 +1402,21 @@ export function InvoiceDesk({
                       ))}
                     </select>
                   </label>
+                  {fulfillmentMode === 'delivery' ? (
+                    <label>
+                      Carrier
+                      <select
+                        value={courierCarrier}
+                        onChange={(e) => setCourierCarrier(e.target.value)}
+                      >
+                        {['FedEx', 'UPS', 'DHL', 'Other'].map((c) => (
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
                   {fulfillmentMode === 'buyer_courier' ? (
                     <>
                       <label>
@@ -1444,14 +1459,22 @@ export function InvoiceDesk({
                     />
                     Ready for collect / pickup
                   </label>
-                  <label>
-                    Tracking no
-                    <input value={trackingNo} onChange={(e) => setTrackingNo(e.target.value)} />
-                  </label>
-                  <label>
-                    Shipping date
-                    <input type="date" value={shippedDate} onChange={(e) => setShippedDate(e.target.value)} />
-                  </label>
+                  {fulfillmentMode === 'pickup' ? null : (
+                    <>
+                      <label>
+                        Tracking no
+                        <input value={trackingNo} onChange={(e) => setTrackingNo(e.target.value)} />
+                      </label>
+                      <label>
+                        Shipping date
+                        <input
+                          type="date"
+                          value={shippedDate}
+                          onChange={(e) => setShippedDate(e.target.value)}
+                        />
+                      </label>
+                    </>
+                  )}
                 </div>
               ) : null}
               {editingId && selected?.receiptName ? (

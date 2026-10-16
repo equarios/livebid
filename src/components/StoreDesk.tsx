@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { ORIGINS, normalizeOrigin } from '../lib/auctionLists'
 import { api, type StoreOrderDto, type StoreProductDto } from '../lib/api'
+import { SHIP_CARRIERS } from '../lib/fulfillment'
 import { usd } from '../lib/format'
 import { storeProductImage } from '../lib/storePhotos'
 import { toastMsg } from '../lib/toast'
@@ -14,6 +15,7 @@ export function StoreDesk() {
   const [orders, setOrders] = useState<StoreOrderDto[]>([])
   const [msg, setMsgState] = useState<string | null>(null)
   const [err, setErrState] = useState<string | null>(null)
+  const [shipDraft, setShipDraft] = useState<Record<string, { carrier: string; tracking: string }>>({})
   function setMsg(next: string | null) {
     setMsgState(next)
     toastMsg(next)
@@ -228,10 +230,22 @@ export function StoreDesk() {
     }
   }
 
-  async function setOrderStatus(o: StoreOrderDto, status: 'paid' | 'shipped' | 'cancelled') {
+  async function setOrderStatus(
+    o: StoreOrderDto,
+    status: 'paid' | 'shipped' | 'cancelled',
+    ship?: { carrier: string; tracking: string },
+  ) {
     setBusy(true)
     try {
-      await api.updateStoreOrder(o.id, { status })
+      await api.updateStoreOrder(o.id, {
+        status,
+        ...(status === 'shipped' && o.fulfillmentMode === 'delivery'
+          ? {
+              courierCarrier: ship?.carrier || undefined,
+              trackingNo: ship?.tracking.trim() || undefined,
+            }
+          : {}),
+      })
       setMsg(`${o.id} → ${status}`)
       await refresh()
     } catch (ex) {
@@ -559,12 +573,55 @@ export function StoreDesk() {
                         Ready for collect
                       </button>
                     ) : null}
+                    {o.status === 'paid' && o.fulfillmentMode === 'delivery' ? (
+                      <>
+                        <select
+                          aria-label={`Carrier for ${o.id}`}
+                          value={shipDraft[o.id]?.carrier || 'FedEx'}
+                          onChange={(e) =>
+                            setShipDraft((prev) => ({
+                              ...prev,
+                              [o.id]: {
+                                carrier: e.target.value,
+                                tracking: prev[o.id]?.tracking || '',
+                              },
+                            }))
+                          }
+                        >
+                          {SHIP_CARRIERS.map((c) => (
+                            <option key={c} value={c}>
+                              {c}
+                            </option>
+                          ))}
+                        </select>
+                        <input
+                          aria-label={`Tracking for ${o.id}`}
+                          placeholder="Tracking no"
+                          value={shipDraft[o.id]?.tracking || ''}
+                          onChange={(e) =>
+                            setShipDraft((prev) => ({
+                              ...prev,
+                              [o.id]: {
+                                carrier: prev[o.id]?.carrier || 'FedEx',
+                                tracking: e.target.value,
+                              },
+                            }))
+                          }
+                        />
+                      </>
+                    ) : null}
                     {o.status === 'paid' ? (
                       <button
                         type="button"
                         className="btn btn-primary btn-sm"
                         disabled={busy}
-                        onClick={() => void setOrderStatus(o, 'shipped')}
+                        onClick={() =>
+                          void setOrderStatus(
+                            o,
+                            'shipped',
+                            shipDraft[o.id] || { carrier: 'FedEx', tracking: '' },
+                          )
+                        }
                       >
                         {o.fulfillmentMode === 'pickup' || o.fulfillmentMode === 'buyer_courier'
                           ? 'Mark collected'

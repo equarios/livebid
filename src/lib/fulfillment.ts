@@ -16,6 +16,19 @@ export const DEFAULT_FULFILLMENT: FulfillmentSettings = {
   pickupSlotCap: 8,
 }
 
+export const SHIP_CARRIERS = ['FedEx', 'UPS', 'DHL', 'Other'] as const
+
+/** Public tracking page for a known carrier. Other or a blank carrier has no link. */
+export function trackingHref(carrier: string | null | undefined, trackingNo: string) {
+  const no = trackingNo.trim()
+  if (!no) return null
+  const c = (carrier || '').trim().toLowerCase()
+  if (c.startsWith('fedex')) return `https://www.fedex.com/fedextrack/?trknbr=${encodeURIComponent(no)}`
+  if (c.startsWith('ups')) return `https://www.ups.com/track?tracknum=${encodeURIComponent(no)}`
+  if (c.startsWith('dhl')) return `https://www.dhl.com/en/express/tracking.html?AWB=${encodeURIComponent(no)}`
+  return null
+}
+
 export function localIsoDate(d = new Date()) {
   const y = d.getFullYear()
   const m = String(d.getMonth() + 1).padStart(2, '0')

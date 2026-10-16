@@ -844,6 +844,8 @@ export const api = {
       readyForCollect?: boolean
       shippingFee?: number
       shippingFeeQuoted?: boolean
+      trackingNo?: string
+      courierCarrier?: string
     },
   ) =>
     req<{ order: StoreOrderDto; shippingInvoiceId?: string | null }>(
@@ -958,6 +960,7 @@ export type StoreOrderDto = {
   createdAt: string
   paidAt: string | null
   shippedAt: string | null
+  trackingNo?: string | null
   lines: Array<{
     id: string
     productId: string | null

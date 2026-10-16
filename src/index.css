@@ -2987,6 +2987,48 @@ p.item-specs {
   font-size: 9px;
   padding: 0 5px;
 }
+.close-desk-filters {
+  display: flex;
+  gap: 6px;
+  margin: 8px 0 4px;
+}
+.close-desk-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.close-lot {
+  padding: 12px 14px;
+}
+.close-lot-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  align-items: baseline;
+  margin-bottom: 8px;
+}
+.close-lot h3 {
+  margin: 10px 0 6px;
+  font-size: 12px;
+}
+.close-miss {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+}
+.close-bid-open {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.close-bid-lots {
+  margin: 4px 0 8px;
+}
 .mypage-more {
   position: relative;
 }

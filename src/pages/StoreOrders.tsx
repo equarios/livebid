@@ -4,7 +4,7 @@ import { PublicShell } from '../components/PublicShell'
 import { StoreRail } from '../components/StoreRail'
 import { StoreBlockSkeleton } from '../components/StoreSkeleton'
 import { api, type StoreOrderDto } from '../lib/api'
-import { FULFILLMENT_LABELS } from '../lib/fulfillment'
+import { FULFILLMENT_LABELS, trackingHref } from '../lib/fulfillment'
 import { usd } from '../lib/format'
 import { useStore } from '../store'
 import type { FulfillmentMode } from '../types'
@@ -30,6 +30,24 @@ function statusLabel(status: string) {
 
 function payLabel(method: string) {
   return PAY_LABEL[method] || method
+}
+
+function TrackingBit({
+  carrier,
+  trackingNo,
+}: {
+  carrier?: string | null
+  trackingNo: string
+}) {
+  const href = trackingHref(carrier, trackingNo)
+  const label = carrier ? `${carrier} · ${trackingNo}` : trackingNo
+  if (!href) return <span className="mono"> · {label}</span>
+  return (
+    <a className="inv-track" href={href} target="_blank" rel="noreferrer">
+      {' '}
+      · {label}
+    </a>
+  )
 }
 
 export function StoreOrders() {
@@ -155,8 +173,15 @@ export function StoreOrders() {
                         <strong>
                           {FULFILLMENT_LABELS[(o.fulfillmentMode as FulfillmentMode) || 'delivery']}
                         </strong>
-                        {o.readyForCollect ? (
-                          <span className="ok"> · Ready for collect</span>
+                        {o.fulfillmentMode === 'pickup' || o.fulfillmentMode === 'buyer_courier' ? (
+                          o.readyForCollect || o.status === 'shipped' ? (
+                            <span className="ok">
+                              {' '}
+                              · {o.status === 'shipped' ? 'Collected' : 'Ready for collect'}
+                            </span>
+                          ) : null
+                        ) : o.trackingNo ? (
+                          <TrackingBit carrier={o.courierCarrier} trackingNo={o.trackingNo} />
                         ) : null}
                         {o.courierCarrier ? (
                           <span className="muted">

@@ -7,6 +7,7 @@ import {
   DEFAULT_FULFILLMENT,
   FULFILLMENT_LABELS,
   earliestPickupDate,
+  trackingHref,
 } from '../lib/fulfillment'
 import {
   buyerNumber,
@@ -22,6 +23,23 @@ import { gbsDate, moneyPlain, moneyUsd } from '../lib/format'
 import { pushToast } from '../lib/toast'
 import { useNow, useStore } from '../store'
 import type { FulfillmentMode, Invoice } from '../types'
+
+function TrackingLink({
+  carrier,
+  trackingNo,
+}: {
+  carrier?: string | null
+  trackingNo: string
+}) {
+  const href = trackingHref(carrier, trackingNo)
+  const label = carrier ? `${carrier} · ${trackingNo}` : trackingNo
+  if (!href) return <span className="mono">{label}</span>
+  return (
+    <a className="inv-track" href={href} target="_blank" rel="noreferrer">
+      {label}
+    </a>
+  )
+}
 
 function EnvelopeIcon() {
   return (
@@ -298,15 +316,12 @@ export function Invoices() {
                     <td className="inv-qty">{totals.qty.toLocaleString()}</td>
                     <td className="inv-total">{moneyUsd(totals.total, currency)}</td>
                     <td>
-                      {inv.trackingNo ? (
-                        <a
-                          className="inv-track"
-                          href={`https://www.dhl.com/en/express/tracking.html?AWB=${inv.trackingNo}`}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          {inv.trackingNo}
-                        </a>
+                      {inv.fulfillmentMode === 'pickup' ? (
+                        <span className="muted">
+                          {inv.shippedAt ? 'Collected' : inv.readyForCollect ? 'Ready for collect' : '—'}
+                        </span>
+                      ) : inv.trackingNo ? (
+                        <TrackingLink carrier={inv.courierCarrier} trackingNo={inv.trackingNo} />
                       ) : (
                         <span className="muted">—</span>
                       )}

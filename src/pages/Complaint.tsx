@@ -38,6 +38,7 @@ export function Complaint() {
   const [reference, setReference] = useState('')
   const [message, setMessage] = useState('')
   const [status, setStatus] = useState<'idle' | 'ready' | 'copied' | 'missing'>('idle')
+  const [formError, setFormError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!user) return
@@ -69,7 +70,16 @@ export function Complaint() {
       setStatus('missing')
       return
     }
-    if (!name.trim() || !email.trim() || !message.trim()) return
+    const text = message.trim()
+    if (!name.trim() || !email.trim() || text.length < 12) {
+      setFormError('Describe what went wrong in at least a short sentence.')
+      return
+    }
+    if (text.length > 2000) {
+      setFormError('Keep the complaint under 2000 characters.')
+      return
+    }
+    setFormError(null)
 
     const subject = encodeURIComponent(`${brand} complaint — ${topicLabel}`)
     const body = encodeURIComponent(composed)
@@ -96,7 +106,7 @@ export function Complaint() {
         <Link to="/support#enquiry">Support enquiry</Link>.
       </p>
 
-      <form className="complaint-form support-enquiry-form" onSubmit={onSubmit}>
+      <form className="complaint-form support-enquiry-form" noValidate onSubmit={onSubmit}>
         <div className="support-enquiry-row">
           <label className="field">
             <span>Name</span>
@@ -148,6 +158,8 @@ export function Complaint() {
             onChange={(e) => setMessage(e.target.value)}
             placeholder="What happened, when, and what you need…"
             required
+            minLength={12}
+            maxLength={2000}
           />
         </label>
 
@@ -160,6 +172,11 @@ export function Complaint() {
           </button>
         </div>
 
+        {formError ? (
+          <p className="error tiny" role="alert">
+            {formError}
+          </p>
+        ) : null}
         {status === 'ready' ? (
           <p className="ok tiny" role="status">
             Your mail app should open with this complaint. If it doesn’t, use Copy message.

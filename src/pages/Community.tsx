@@ -442,12 +442,24 @@ export function Community() {
       navigate('/login', { state: { from: `${BASE}?post=1` } })
       return
     }
+    const title = form.title.trim()
+    const description = (form.description || '').trim()
+    if (title.length < 3 || title.length > 160) {
+      setErr('Title needs 3 to 160 characters.')
+      return
+    }
+    if (description.length > 2000) {
+      setErr('Description must stay under 2000 characters.')
+      return
+    }
     setSaving(true)
     setErr(null)
     setOk(null)
     try {
       const body: CommunityListingInput = {
         ...form,
+        title,
+        description,
         qty: Number(form.qty) || 1,
         price: priceMode === 'offer' ? null : Number(form.price) || 0,
         imageUrl: form.imageUrl?.trim() || null,
@@ -485,11 +497,16 @@ export function Community() {
       navigate('/login', { state: { from: BASE } })
       return
     }
+    const note = interestMsg.trim()
+    if (note.length < 8 || note.length > 2000) {
+      setErr('Write at least a short message (8–2000 characters).')
+      return
+    }
     setSaving(true)
     setErr(null)
     try {
       await api.communityInterest(inquire.id, {
-        message: interestMsg.trim(),
+        message: note,
         qtyWanted: Number(interestQty) || undefined,
       })
       setOk('Interest sent — seller and Equarios ops were notified.')
@@ -837,6 +854,8 @@ export function Community() {
                   Title
                   <input
                     required
+                    minLength={3}
+                    maxLength={160}
                     value={form.title}
                     onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
                     placeholder="20x iPhone 13 128GB Grade A"
@@ -945,6 +964,7 @@ export function Community() {
                   Description
                   <textarea
                     rows={3}
+                    maxLength={2000}
                     value={form.description || ''}
                     onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
                     placeholder="Condition, lock status, location, shipping…"
@@ -1039,6 +1059,8 @@ export function Community() {
                 <textarea
                   required
                   rows={3}
+                  minLength={8}
+                  maxLength={2000}
                   value={interestMsg}
                   onChange={(e) => setInterestMsg(e.target.value)}
                   placeholder="Need, target price, timing…"
