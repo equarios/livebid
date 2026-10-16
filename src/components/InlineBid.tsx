@@ -42,6 +42,7 @@ export function InlineBid({
   const [msg, setMsg] = useState<string | null>(null)
   const [pending, setPending] = useState<{ qty: number; unitPrice: number } | null>(null)
   const [takeAllOpen, setTakeAllOpen] = useState(false)
+  const [bidding, setBidding] = useState(false)
 
   // After a successful bid, put that qty/price back in the boxes (no refresh).
   useEffect(() => {
@@ -103,7 +104,9 @@ export function InlineBid({
     }
     setMsg(null)
     if (!settings.features.confirmBid) {
+      setBidding(true)
       void placeBid(lot.id, parsed.unitPrice, parsed.qty).then((err) => {
+        setBidding(false)
         if (err) setMsg(err)
         else afterBidOk(parsed)
       })
@@ -116,7 +119,9 @@ export function InlineBid({
     if (!pending) return
     const pendingBid = pending
     setPending(null)
+    setBidding(true)
     void placeBid(lot.id, pendingBid.unitPrice, pendingBid.qty).then((err) => {
+      setBidding(false)
       if (err) setMsg(err)
       else afterBidOk(pendingBid)
     })
@@ -217,9 +222,9 @@ export function InlineBid({
           <button
             className="btn btn-primary"
             type="submit"
-            disabled={closed || !settings.features.bidding}
+            disabled={closed || bidding || !settings.features.bidding}
           >
-            {copy.btnBid}
+            {bidding ? 'Placing bid…' : copy.btnBid}
           </button>
         </div>
         {liveQuote ? (

@@ -1,8 +1,9 @@
-import { useLayoutEffect, useMemo } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { AuctionTypeHead } from '../components/AuctionTypeHead'
 import { DeskIntro } from '../components/DeskIntro'
 import { canUseWholesaleDesk } from '../lib/channelAccess'
+import { useDismissOnOutside } from '../lib/useDismissOnOutside'
 import { resolveDeskBannerSlides } from '../lib/deskBanner'
 import { usd } from '../lib/format'
 import { invoiceTotals, invoiceVisibleToBuyer } from '../lib/invoices'
@@ -15,6 +16,9 @@ export function MyPage() {
   const { invoices, user, isStaff, settings, cart, cartOrders, offers, watchlist } = useStore()
   const wholesaleOk = canUseWholesaleDesk(user, isStaff)
   const onMarket = pathname.startsWith('/account/marketplace-history')
+  const [moreOpen, setMoreOpen] = useState(false)
+  const moreRef = useRef<HTMLDivElement>(null)
+  useDismissOnOutside(moreOpen, moreRef, () => setMoreOpen(false))
 
   const mine = invoices.filter(
     (i) => invoiceVisibleToBuyer(i) && (isStaff || !i.accountId || i.accountId === user?.accountId),
@@ -34,6 +38,17 @@ export function MyPage() {
   ).length
   const favCount = watchlist.length
 
+  const more = useMemo((): Tab[] => {
+    const extra: Tab[] = []
+    if (wholesaleOk && settings.showCommunity !== false) {
+      extra.push({ to: '/account/community', label: 'Community' })
+    }
+    if (wholesaleOk) extra.push({ to: '/account/imei', label: 'IMEI' })
+    extra.push({ to: '/account/complaint', label: 'Complaint' })
+    return extra
+  }, [wholesaleOk, settings.showCommunity])
+  const moreOn = more.some((tab) => pathname.startsWith(tab.to))
+
   const tabs = useMemo((): Tab[] => {
     const base: Tab[] = [{ to: '/account', label: 'Overview', end: true }]
     // Application desk only — approved buyers already have the full trading bar.
@@ -46,14 +61,9 @@ export function MyPage() {
         { to: '/account/bids', label: 'Bids' },
         {
           to: '/account/marketplace-history',
-          label: 'Marketplace',
+          label: 'Cart',
           badge: cartCount || undefined,
         },
-      )
-      if (settings.showCommunity !== false) {
-        base.push({ to: '/account/community', label: 'Community' })
-      }
-      base.push(
         {
           to: '/account/favourites',
           label: 'Favorites',
@@ -64,15 +74,11 @@ export function MyPage() {
           label: 'Invoice',
           badge: unpaid.length || undefined,
         },
-        { to: '/account/imei', label: 'IMEI' },
       )
     }
-    base.push(
-      { to: '/account/settings', label: 'Settings' },
-      { to: '/account/complaint', label: 'Complaint' },
-    )
+    base.push({ to: '/account/settings', label: 'Settings' })
     return base
-  }, [wholesaleOk, settings.showCommunity, cartCount, favCount, unpaid.length])
+  }, [wholesaleOk, cartCount, favCount, unpaid.length])
 
   useLayoutEffect(() => {
     document.documentElement.style.setProperty('--auction-desk-h', '0px')
@@ -105,6 +111,30 @@ export function MyPage() {
                   {tab.badge ? <em>{tab.badge}</em> : null}
                 </NavLink>
               ))}
+              <div className={`mypage-more${moreOpen ? ' open' : ''}`} ref={moreRef}>
+                <button
+                  type="button"
+                  className={`ops-nav-btn${moreOn || moreOpen ? ' on' : ''}`}
+                  aria-expanded={moreOpen}
+                  onClick={() => setMoreOpen((v) => !v)}
+                >
+                  More
+                </button>
+                {moreOpen ? (
+                  <div className="mypage-more-panel">
+                    {more.map((tab) => (
+                      <NavLink
+                        key={tab.to}
+                        to={tab.to}
+                        className={({ isActive }) => `ops-nav-btn${isActive ? ' on' : ''}`}
+                        onClick={() => setMoreOpen(false)}
+                      >
+                        {tab.label}
+                      </NavLink>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
             </nav>
             <div className="ops-nav-actions">
               {onMarket && cartCount ? (

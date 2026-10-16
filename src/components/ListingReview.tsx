@@ -7,6 +7,7 @@ import {
   type DropListClockPlan,
 } from '../lib/listingDrops'
 import { formatDateTime, usd } from '../lib/format'
+import { toastMsg } from '../lib/toast'
 import { useNow, useStore } from '../store'
 import type { ListingDrop } from '../types'
 import { NumberField } from './NumberField'
@@ -30,7 +31,11 @@ export function ListingReview() {
   const pending = listingDrops.filter((d) => d.status === 'pending')
   const [preview, setPreview] = useState<ListingDrop | null>(null)
   const [clockOverrides, setClockOverrides] = useState<DropClockOverrides>({})
-  const [msg, setMsg] = useState<string | null>(null)
+  const [msg, setMsgState] = useState<string | null>(null)
+  function setMsg(next: string | null) {
+    setMsgState(next)
+    toastMsg(next)
+  }
   const [openId, setOpenId] = useState<string | null>(null)
   const [launching, setLaunching] = useState(false)
 

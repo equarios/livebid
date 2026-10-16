@@ -8,6 +8,7 @@ import { skuSpecLine, skuTitle } from '../lib/inventory'
 import { dropClockHint, dropListKey, groupDropItems } from '../lib/listingDrops'
 import { usd } from '../lib/format'
 import { TimeLeft } from './TimeLeft'
+import { toastMsg } from '../lib/toast'
 import { useNow, useStore } from '../store'
 import type { AuctionType, Channel, Grade, InventorySku, ListingDropItem } from '../types'
 
@@ -68,7 +69,11 @@ export function InventoryDesk() {
   const [query, setQuery] = useState('')
   const [form, setForm] = useState<InventorySku>(emptySku)
   const [showForm, setShowForm] = useState(false)
-  const [msg, setMsg] = useState<string | null>(null)
+  const [msg, setMsgState] = useState<string | null>(null)
+  function setMsg(next: string | null) {
+    setMsgState(next)
+    toastMsg(next)
+  }
   const [list, setList] = useState(settings.auctionTypes[0]?.value || 'live')
   const [hours, setHours] = useState('4')
   const [minutes, setMinutes] = useState('0')

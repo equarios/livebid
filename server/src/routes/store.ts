@@ -215,15 +215,24 @@ storeRoutes.get('/products', optionalUser, async (c) => {
   const q = String(c.req.query('q') || '').trim()
 
   const soldFreshSince = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000)
+  const archiveSince = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000)
+  const archive = c.req.query('archive') === '1'
   const products = await prisma.storeProduct.findMany({
     where: {
-      // Public: active only; sold-out kept for 14 days (updatedAt), then hidden. Staff sees all.
-      ...(staff
-        ? {}
-        : {
+      // Shop: in stock, plus sold-out from the last 14 days. Archive: sold 15–180 days.
+      // Staff shop still sees inactive rows; the archive is sold history only.
+      ...(archive
+        ? {
             active: true,
-            OR: [{ stock: { gt: 0 } }, { stock: 0, updatedAt: { gte: soldFreshSince } }],
-          }),
+            stock: 0,
+            updatedAt: { lt: soldFreshSince, gte: archiveSince },
+          }
+        : staff
+          ? {}
+          : {
+              active: true,
+              OR: [{ stock: { gt: 0 } }, { stock: 0, updatedAt: { gte: soldFreshSince } }],
+            }),
       ...(category ? { category } : {}),
       ...(q
         ? {
@@ -240,7 +249,7 @@ storeRoutes.get('/products', optionalUser, async (c) => {
           }
         : {}),
     },
-    orderBy: { createdAt: 'desc' },
+    orderBy: archive ? { updatedAt: 'desc' } : { createdAt: 'desc' },
   })
   return c.json({ products: products.map(mapProduct) })
 })

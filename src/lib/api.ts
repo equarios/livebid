@@ -445,6 +445,10 @@ export const api = {
         body: JSON.stringify({ side, decision }),
       },
     ),
+  markInvoicePaid: (id: string) =>
+    req<{ invoice: unknown }>(`/api/commerce/invoices/${encodeURIComponent(id)}/mark-paid`, {
+      method: 'POST',
+    }),
   clearInvoicePayment: (id: string) =>
     req<{ invoice: unknown }>(`/api/commerce/invoices/${encodeURIComponent(id)}/clear-payment`, {
       method: 'POST',
@@ -764,10 +768,11 @@ export const api = {
       }>
     }>(`/api/imei/devices${suffix}`)
   },
-  storeProducts: (params?: { q?: string; category?: string }) => {
+  storeProducts: (params?: { q?: string; category?: string; archive?: boolean }) => {
     const qs = new URLSearchParams()
     if (params?.q) qs.set('q', params.q)
     if (params?.category) qs.set('category', params.category)
+    if (params?.archive) qs.set('archive', '1')
     const suffix = qs.toString() ? `?${qs}` : ''
     return req<{ products: StoreProductDto[] }>(`/api/store/products${suffix}`)
   },

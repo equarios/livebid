@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { api, type StoreOrderDto } from '../lib/api'
 import { FULFILLMENT_LABELS, formatShippingMoney, localIsoDate } from '../lib/fulfillment'
 import { usd } from '../lib/format'
+import { toastMsg } from '../lib/toast'
 import { useStore } from '../store'
 import type { FulfillmentMode, Invoice } from '../types'
 
@@ -21,7 +22,11 @@ export function FulfillmentQueue() {
   const [orders, setOrders] = useState<StoreOrderDto[]>([])
   const [filter, setFilter] = useState<Filter>('today')
   const [busy, setBusy] = useState(false)
-  const [msg, setMsg] = useState<string | null>(null)
+  const [msg, setMsgState] = useState<string | null>(null)
+  function setMsg(next: string | null) {
+    setMsgState(next)
+    toastMsg(next)
+  }
   const [quoteId, setQuoteId] = useState<string | null>(null)
   const [quoteFee, setQuoteFee] = useState('12')
   const today = localIsoDate()

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { api } from '../lib/api'
 import { buildDigestPreviewLines } from '../lib/digestPreview'
 import { DEFAULT_FULFILLMENT, FULFILLMENT_LABELS } from '../lib/fulfillment'
+import { pushToast } from '../lib/toast'
 import { useNow, useStore } from '../store'
 import type { EmailPrefs, FulfillmentMode } from '../types'
 
@@ -109,7 +110,9 @@ export function Account() {
     setSaving(true)
     const err = await saveEmailPrefs({ [key]: next[key] })
     setSaving(false)
-    setMsg(err || (apiMode ? 'Saved.' : 'Saved for this session (start API for persistence).'))
+    const text = err || (apiMode ? 'Email preference saved.' : 'Saved for this session.')
+    setMsg(text)
+    pushToast(text, err ? 'err' : 'ok')
   }
 
   async function saveLogistics() {
@@ -122,9 +125,13 @@ export function Account() {
         courierAccount: mode === 'buyer_courier' ? courierAccount || null : null,
         address: shipAddress.trim() || null,
       })
-      setLogisticsMsg('Logistics defaults saved — used on new invoices and checkout.')
+      const text = 'Delivery preference saved.'
+      setLogisticsMsg(text)
+      pushToast(text)
     } catch (e) {
-      setLogisticsMsg(e instanceof Error ? e.message : 'Could not save logistics.')
+      const text = e instanceof Error ? e.message : 'Could not save logistics.'
+      setLogisticsMsg(text)
+      pushToast(text, 'err')
     } finally {
       setLogisticsBusy(false)
     }

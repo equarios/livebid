@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { api } from '../lib/api'
 import { downloadCsv, parseImeiCsv, type CsvImeiRow } from '../lib/csv'
+import { toastMsg } from '../lib/toast'
 import { useStore } from '../store'
 
 type PackSummary = {
@@ -42,8 +43,16 @@ export function ImeiDesk() {
   const fileRef = useRef<HTMLInputElement>(null)
   const [packs, setPacks] = useState<PackSummary[]>([])
   const [loading, setLoading] = useState(true)
-  const [msg, setMsg] = useState<string | null>(null)
-  const [err, setErr] = useState<string | null>(null)
+  const [msg, setMsgState] = useState<string | null>(null)
+  const [err, setErrState] = useState<string | null>(null)
+  function setMsg(next: string | null) {
+    setMsgState(next)
+    toastMsg(next)
+  }
+  function setErr(next: string | null) {
+    setErrState(next)
+    toastMsg(next)
+  }
   const [title, setTitle] = useState('')
   const [accountId, setAccountId] = useState('')
   const [invoiceId, setInvoiceId] = useState('')

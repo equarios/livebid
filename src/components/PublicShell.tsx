@@ -100,25 +100,39 @@ export function PublicShell({
   /** Same wording family as the app header — only the channel word changes. */
   const placeholder = consumer
     ? settings.copy.searchGeneric
-    : settings.copy.searchAuctions || settings.copy.searchGeneric
+    : location.pathname.startsWith('/marketplace')
+      ? settings.copy.searchMarket
+      : location.pathname.startsWith('/auctions')
+        ? settings.copy.searchAuctions
+        : settings.copy.searchGeneric
 
   function onSearch(e: FormEvent) {
     e.preventDefault()
     const qs = q.trim()
+    const query = qs ? `?q=${encodeURIComponent(qs)}` : ''
     if (consumer) {
-      navigate(qs ? `/store?q=${encodeURIComponent(qs)}` : '/store')
+      navigate(`/store${query}`)
       return
     }
     if (!user) {
       /* Guests search the wholesale deal board — empty query still goes to For Buyers. */
-      navigate(qs ? `/wholesale?q=${encodeURIComponent(qs)}` : '/buyers')
+      navigate(qs ? `/wholesale${query}` : '/buyers')
       return
     }
     if (!deskOk) {
       navigate('/account')
       return
     }
-    navigate(`/auctions${qs ? `?q=${encodeURIComponent(qs)}` : ''}`)
+    const path = location.pathname.startsWith('/marketplace')
+      ? '/marketplace'
+      : location.pathname.startsWith('/auctions')
+        ? '/auctions'
+        : location.pathname.startsWith('/wholesale')
+          ? '/wholesale'
+          : settings.showAuctions
+            ? '/auctions'
+            : '/marketplace'
+    navigate(`${path}${query}`)
   }
 
   return (

@@ -3,6 +3,7 @@ import { ORIGINS, normalizeOrigin } from '../lib/auctionLists'
 import { api, type StoreOrderDto, type StoreProductDto } from '../lib/api'
 import { usd } from '../lib/format'
 import { storeProductImage } from '../lib/storePhotos'
+import { toastMsg } from '../lib/toast'
 import { NumberField } from './NumberField'
 
 const MAX_IMAGES = 8
@@ -11,8 +12,16 @@ export function StoreDesk() {
   const [tab, setTab] = useState<'products' | 'orders'>('products')
   const [products, setProducts] = useState<StoreProductDto[]>([])
   const [orders, setOrders] = useState<StoreOrderDto[]>([])
-  const [msg, setMsg] = useState<string | null>(null)
-  const [err, setErr] = useState<string | null>(null)
+  const [msg, setMsgState] = useState<string | null>(null)
+  const [err, setErrState] = useState<string | null>(null)
+  function setMsg(next: string | null) {
+    setMsgState(next)
+    toastMsg(next)
+  }
+  function setErr(next: string | null) {
+    setErrState(next)
+    toastMsg(next)
+  }
   const [busy, setBusy] = useState(false)
   const [title, setTitle] = useState('')
   const [price, setPrice] = useState('199')

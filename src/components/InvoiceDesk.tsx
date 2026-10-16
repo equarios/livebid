@@ -21,6 +21,7 @@ import {
   wholesalePayLink,
   wholesalePayMailto,
 } from '../lib/wholesalePay'
+import { pushToast } from '../lib/toast'
 import { useStore } from '../store'
 import type { CartOrder, Invoice, InvoiceLine, Lot, MarketOffer, PayReview } from '../types'
 
@@ -121,6 +122,7 @@ export function InvoiceDesk({
     removeInvoice,
     clearPaymentConfirmation,
     reviewPayment,
+    markInvoicePaid,
     reviewInvoiceIssue,
   } = useStore()
   const copy = settings.copy
@@ -168,7 +170,13 @@ export function InvoiceDesk({
   const [billEmail, setBillEmail] = useState(() => clients[0]?.email || '')
   const [billPhone, setBillPhone] = useState(() => clients[0]?.phone || '')
   const [billAttn, setBillAttn] = useState('')
-  const [msg, setMsg] = useState<string | null>(null)
+  const [msg, setMsgState] = useState<string | null>(null)
+  function setMsg(next: string | null) {
+    setMsgState(next)
+    if (!next) return
+    const bad = /fail|could not|error|invalid|no fee|not found/i.test(next)
+    pushToast(next, bad ? 'err' : 'ok')
+  }
   const [err, setErr] = useState<string | null>(null)
 
   const selectedClient = clients.find((a) => a.accountId === accountId)
@@ -812,7 +820,28 @@ export function InvoiceDesk({
             ) : null}
           </>
         ) : null}
-        {inv.receiptData && inv.status !== 'paid' && inv.status !== 'draft' ? (
+        {(inv.payMethod === 'cash' || inv.payMethod === 'usdt') &&
+        inv.status !== 'paid' &&
+        inv.status !== 'draft' &&
+        (canAdmin || canSuper) ? (
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            onClick={() =>
+              void markInvoicePaid(inv.id).then((err) => {
+                setErr(err)
+                setMsg(err ? null : `Marked ${inv.id} paid`)
+              })
+            }
+          >
+            Mark paid
+          </button>
+        ) : null}
+        {inv.receiptData &&
+        inv.status !== 'paid' &&
+        inv.status !== 'draft' &&
+        inv.payMethod !== 'cash' &&
+        inv.payMethod !== 'usdt' ? (
           <>
             {canAdmin ? (
               <>
@@ -1699,8 +1728,12 @@ export function InvoiceDesk({
                     {inv.payMethod ? (
                       <span className="tiny muted inv-q-pay-method">
                         {WHOLESALE_PAY_LABEL[inv.payMethod] || inv.payMethod}
-                        {inv.payRef ? ` · ${inv.payRef.slice(0, 16)}` : ''}
                       </span>
+                    ) : null}
+                    {inv.payMethod === 'usdt' && inv.payRef ? (
+                      <code className="inv-q-tx" title={inv.payRef}>
+                        {inv.payRef}
+                      </code>
                     ) : null}
                     {inv.receiptData ? (
                       <>
@@ -1772,6 +1805,13 @@ export function InvoiceDesk({
           <article key={inv.id} className="auction-card">
             <strong>{inv.id}</strong>
             <div className="muted tiny">{inv.accountId || '—'}</div>
+            {inv.payMethod === 'usdt' && inv.payRef ? (
+              <code className="inv-q-tx" title={inv.payRef}>
+                {inv.payRef}
+              </code>
+            ) : inv.payMethod ? (
+              <div className="muted tiny">{WHOLESALE_PAY_LABEL[inv.payMethod]}</div>
+            ) : null}
             <div>
               {invoiceLines(inv).length} lines · {inv.qty} pcs
             </div>

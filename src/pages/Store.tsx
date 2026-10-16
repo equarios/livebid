@@ -308,7 +308,6 @@ export function Store() {
                 product={p}
                 index={i}
                 onOpen={setPreview}
-                onAdded={(title) => setToast(`Added ${title}`)}
               />
             ))}
           </div>

@@ -9,6 +9,8 @@ export const STOCK_FILTER_LABEL: Record<StockFilter, string> = {
 
 /** Sold listings older than this drop from the public catalog (unless staff). */
 export const SOLD_HIDE_AFTER_MS = 14 * 24 * 60 * 60 * 1000
+/** Sold history kept in the archive after it leaves the shop. */
+export const SOLD_ARCHIVE_MS = 180 * 24 * 60 * 60 * 1000
 
 /** Empty or both → all. One selected → that bucket only. */
 export function matchesStockFilter(inStock: boolean, selected: StockFilter[]) {
@@ -36,6 +38,14 @@ export function isSoldStale(soldAnchorMs: number, now = Date.now()) {
 export function isPubliclyListed(inStock: boolean, soldAnchorMs: number, now = Date.now()) {
   if (inStock) return true
   return !isSoldStale(soldAnchorMs, now)
+}
+
+/** Sold, off the shop (older than 14 days), still inside the archive window. */
+export function isSoldArchive(inStock: boolean, soldAnchorMs: number, now = Date.now()) {
+  if (inStock) return false
+  if (!Number.isFinite(soldAnchorMs) || soldAnchorMs <= 0) return false
+  const age = now - soldAnchorMs
+  return age >= SOLD_HIDE_AFTER_MS && age < SOLD_ARCHIVE_MS
 }
 
 export function parseTimeMs(raw: string | number | null | undefined) {

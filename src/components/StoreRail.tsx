@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { storeCartCount } from '../lib/storeCart'
 
-type RailPage = 'store' | 'cart' | 'orders' | 'product'
+type RailPage = 'store' | 'cart' | 'orders' | 'product' | 'sold'
 
 /** Shared Store desk head — lander / cart / orders / PDP. */
 export function StoreRail({
@@ -41,6 +41,11 @@ export function StoreRail({
       to: '/store/orders',
       children: 'Orders',
       show: page !== 'orders',
+    },
+    {
+      to: '/store/sold',
+      children: 'Recently sold',
+      show: page !== 'sold',
     },
   ]
 

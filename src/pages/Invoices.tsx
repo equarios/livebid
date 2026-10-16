@@ -19,6 +19,7 @@ import {
   type InvoiceStep,
 } from '../lib/invoices'
 import { gbsDate, moneyPlain, moneyUsd } from '../lib/format'
+import { pushToast } from '../lib/toast'
 import { useNow, useStore } from '../store'
 import type { FulfillmentMode, Invoice } from '../types'
 
@@ -163,10 +164,14 @@ export function Invoices() {
           pickupSlot: patched.pickupSlot,
         },
       }))
-      setNotice(`Fulfillment saved on ${fulfillId}.`)
+      const text = `Fulfillment saved on ${fulfillId}.`
+      setNotice(text)
+      pushToast(text, 'ok', { href: '/account/invoices', label: 'Invoices' })
       setFulfillId(null)
     } catch (e) {
-      setNotice(e instanceof Error ? e.message : 'Could not save fulfillment.')
+      const text = e instanceof Error ? e.message : 'Could not save fulfillment.'
+      setNotice(text)
+      pushToast(text, 'err')
     } finally {
       setFulfillBusy(false)
     }

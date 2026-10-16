@@ -8,6 +8,7 @@ import { usd } from '../lib/format'
 import type { StoreProductDto } from '../lib/api'
 import { storeProductBrand } from '../lib/storeBrand'
 import { addToStoreCart } from '../lib/storeCart'
+import { pushToast } from '../lib/toast'
 
 type Props = {
   product: StoreProductDto
@@ -143,7 +144,10 @@ export function StoreProductPreview({ product, onClose }: Props) {
               disabled={soldOut}
               onClick={() => {
                 addToStoreCart(product.id, qty)
-                setMsg(`Added ${qty} to cart`)
+                pushToast(`Added ${qty} × ${product.title} to cart`, 'ok', {
+                  href: '/store/cart',
+                  label: 'View cart',
+                })
               }}
             >
               Add to cart

@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
+import { canUseWholesaleDesk } from '../lib/channelAccess'
 import { storeCartCount } from '../lib/storeCart'
 import { useStore } from '../store'
 
 /** Retail-only nav — GoDaddy-style text links + cart count. */
 export function ConsumerNav({ onNavigate }: { onNavigate?: () => void }) {
-  const { settings } = useStore()
+  const { settings, user, isStaff } = useStore()
+  const wholesaleOk = canUseWholesaleDesk(user, isStaff)
   const location = useLocation()
   const [cartN, setCartN] = useState(() => storeCartCount())
 
@@ -42,6 +44,9 @@ export function ConsumerNav({ onNavigate }: { onNavigate?: () => void }) {
       <NavLink to="/store/orders" className={ordersOpen ? 'active' : undefined}>
         {settings.copy.navOrders}
       </NavLink>
+      {wholesaleOk ? (
+        <NavLink to="/wholesale">{settings.copy.navWholesale}</NavLink>
+      ) : null}
       <NavLink to="/support" className={supportOpen ? 'active' : undefined}>
         {settings.copy.navSupport}
       </NavLink>

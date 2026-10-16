@@ -20,6 +20,7 @@ import {
   STOCK_FILTER_LABEL,
   STOCK_FILTER_OPTIONS,
   isPubliclyListed,
+  isSoldArchive,
   matchesStockFilter,
   sortStockLast,
   type StockFilter,
@@ -48,6 +49,7 @@ function MarketLot({ lot, asCard }: { lot: Lot; asCard?: boolean }) {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [offerOpen, setOfferOpen] = useState(false)
   const [acceptOpen, setAcceptOpen] = useState(false)
+  const [working, setWorking] = useState<'buy' | 'offer' | null>(null)
   const price = lot.buyNowPrice ?? lot.currentPrice
   const mine = (offers || [])
     .filter((o) => o.lotId === lot.id && o.accountId === user?.accountId)
@@ -105,7 +107,9 @@ function MarketLot({ lot, asCard }: { lot: Lot; asCard?: boolean }) {
 
   function commitAdd(q: number) {
     setConfirmOpen(false)
+    setWorking('buy')
     void addToCart(lot.id, q).then((err) => {
+      setWorking(null)
       if (err) {
         setOk(false)
         setMsg(err)
@@ -160,7 +164,9 @@ function MarketLot({ lot, asCard }: { lot: Lot; asCard?: boolean }) {
       setMsg(priceErr)
       return
     }
+    setWorking('offer')
     void placeOffer(lot.id, q, p).then((err) => {
+      setWorking(null)
       if (err) {
         setOk(false)
         setMsg(err)
@@ -245,17 +251,17 @@ function MarketLot({ lot, asCard }: { lot: Lot; asCard?: boolean }) {
             type="button"
             className="btn btn-primary"
             onClick={add}
-            disabled={!settings.features.cart}
+            disabled={!settings.features.cart || working === 'buy'}
           >
-            {settings.copy.btnBuy}
+            {working === 'buy' ? 'Adding…' : settings.copy.btnBuy}
           </button>
           <button
             type="button"
             className="btn"
             onClick={startOffer}
-            disabled={!settings.features.offers || liveOffer?.status === 'accepted'}
+            disabled={!settings.features.offers || liveOffer?.status === 'accepted' || working === 'offer'}
           >
-            {settings.copy.btnOffer}
+            {working === 'offer' ? 'Sending…' : settings.copy.btnOffer}
           </button>
           {liveOffer?.status === 'accepted' ? (
             <button type="button" className="btn btn-primary" onClick={() => setAcceptOpen(true)}>
@@ -471,6 +477,13 @@ export function Marketplace() {
     return sortStockLast(list, (l) => l.qty > 0)
   }, [lots, q, grades, makers, memories, origins, stock])
 
+  const soldArchive = useMemo(() => {
+    const now = Date.now()
+    return lots
+      .filter((l) => l.channel === 'marketplace' && isSoldArchive(l.qty > 0, l.endsAt, now))
+      .sort((a, b) => b.endsAt - a.endsAt)
+  }, [lots])
+
   const openCartOrders = (cartOrders || []).filter(
     (o) =>
       o.accountId === user?.accountId &&
@@ -642,6 +655,19 @@ export function Marketplace() {
             <p>{marketLots.length ? settings.copy.emptyFilters : settings.copy.emptyMarket}</p>
           </div>
         )}
+        {soldArchive.length ? (
+          <details className="sold-archive">
+            <summary>
+              Recently sold <em>{soldArchive.length}</em>
+            </summary>
+            <p className="muted tiny">Off the shop after 14 days. Kept here for 180 days.</p>
+            <div className="auction-cards market-cards" aria-label="Recently sold lots">
+              {soldArchive.map((lot) => (
+                <MarketLot key={lot.id} lot={lot} asCard />
+              ))}
+            </div>
+          </details>
+        ) : null}
       </section>
     </div>
   )

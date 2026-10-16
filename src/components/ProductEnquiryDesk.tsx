@@ -2,13 +2,18 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, type ProductEnquiryDto } from '../lib/api'
 import { gbsDate } from '../lib/format'
+import { toastMsg } from '../lib/toast'
 
 /** Staff inbox for product questions from store / auction / marketplace. */
 export function ProductEnquiryDesk() {
   const [rows, setRows] = useState<ProductEnquiryDto[]>([])
   const [filter, setFilter] = useState<'open' | 'done' | 'all'>('open')
   const [busy, setBusy] = useState(false)
-  const [msg, setMsg] = useState<string | null>(null)
+  const [msg, setMsgState] = useState<string | null>(null)
+  function setMsg(next: string | null) {
+    setMsgState(next)
+    toastMsg(next)
+  }
 
   const refresh = useCallback(async () => {
     const res = await api.productEnquiries(filter === 'all' ? undefined : filter)

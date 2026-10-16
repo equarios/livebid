@@ -42,6 +42,7 @@ import {
   settleInvoiceIssue,
 } from './lib/invoices'
 import { api, isApiAvailable, resetApiProbe, type ApiUser } from './lib/api'
+import { pushToast } from './lib/toast'
 import { pullWatchFiltersFromServer } from './lib/watchFilters'
 import { onLotTick, startRealtime, stopRealtime } from './lib/realtime'
 import { buyerCareNotices, settleClosedAuctions } from './lib/settle'
@@ -67,6 +68,22 @@ import type {
   User,
   WholesalePayMethod,
 } from './types'
+
+const BUYER_NEXT: Record<string, { href: string; label: string }> = {
+  'Bid placed': { href: '/account/bids', label: 'View bids' },
+  'Added to cart': { href: '/account/marketplace-history#cart', label: 'View cart' },
+  'Cart sent for review': { href: '/account/marketplace-history#cart', label: 'View cart' },
+  'Cart confirmed — invoice created': { href: '/account/invoices', label: 'View invoices' },
+  'Purchase recorded': { href: '/account/invoices', label: 'View invoices' },
+  'Offer sent': { href: '/account/marketplace-history#offers', label: 'View offers' },
+  'Invoice created from your offer': { href: '/account/invoices', label: 'View invoices' },
+  'Payment submitted for review': { href: '/account/invoices', label: 'View invoices' },
+}
+
+function buyerNote(err: string | null, ok: string): string | null {
+  pushToast(err ?? ok, err ? 'err' : 'ok', err ? undefined : BUYER_NEXT[ok])
+  return err
+}
 
 const DEFAULT_EMAIL_PREFS: EmailPrefs = {
   win: true,
@@ -159,6 +176,7 @@ type Store = {
     extra?: { payMethod?: WholesalePayMethod; payRef?: string },
   ) => Promise<string | null>
   reviewPayment: (id: string, side: PayReviewSide, decision: PayDecision) => Promise<string | null>
+  markInvoicePaid: (id: string) => Promise<string | null>
   reviewInvoiceIssue: (id: string, side: PayReviewSide, decision: PayDecision) => Promise<string | null>
   saveInvoice: (invoice: Invoice, previousId?: string) => Promise<string | null>
   removeInvoice: (id: string) => Promise<string | null>
@@ -1528,26 +1546,29 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             ]
             return { ...prev, lots, bids }
           })
-          return null
+          return buyerNote(null, 'Bid placed')
         } catch (e) {
           const msg = e instanceof Error ? e.message : data.settings.copy.warnNoBid
           if (/lot not found/i.test(msg)) {
             void applyBootstrap(user)
-            return 'That lot is not on the server. Refreshing the desk — publish the catalog from Super if it was only a local draft.'
+            return buyerNote(
+              'That lot is not on the server. Refreshing the desk — publish the catalog from Super if it was only a local draft.',
+              '',
+            )
           }
-          return msg
+          return buyerNote(msg, '')
         }
       }
       const lot = data.lots.find((l) => l.id === lotId)
-      if (!data.settings.features.bidding) return data.settings.copy.warnNoBid
-      if (!user) return data.settings.copy.warnLogin
-      if (!lot || lot.channel !== 'auction') return data.settings.copy.warnLotMissing
+      if (!data.settings.features.bidding) return buyerNote(data.settings.copy.warnNoBid, '')
+      if (!user) return buyerNote(data.settings.copy.warnLogin, '')
+      if (!lot || lot.channel !== 'auction') return buyerNote(data.settings.copy.warnLotMissing, '')
       const nowTs = Date.now()
-      if (!isAuctionOpen(lot, nowTs)) return data.settings.copy.warnClosed
+      if (!isAuctionOpen(lot, nowTs)) return buyerNote(data.settings.copy.warnClosed, '')
       const accountId = user.accountId
       const mine = data.bids.filter((b) => b.lotId === lotId && b.accountId === accountId)
       if (isInExtraSealed(lot, nowTs) && !mine.length) {
-        return 'Extra sealed: only prior bidders can bid on this lot.'
+        return buyerNote('Extra sealed: only prior bidders can bid on this lot.', '')
       }
       const independent = isSealedLot(lot, data.settings, nowTs)
       const lastBid = mine.length ? mine.reduce((a, b) => (a.at > b.at ? a : b)) : undefined
@@ -1556,13 +1577,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         lastOwnAmount: lastBid?.amount,
         amount,
       })
-      if (qtyErr) return qtyErr
+      if (qtyErr) return buyerNote(qtyErr, '')
       const priceErr = checkBidPrice(lot, amount, data.settings.copy, {
         independent,
         lastOwnAmount: lastBid?.amount,
         lastOwnQty: lastBid?.qty,
       })
-      if (priceErr) return priceErr
+      if (priceErr) return buyerNote(priceErr, '')
       setData((prev) =>
         applySettleCare(
           {
@@ -1581,7 +1602,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           accountId,
         ),
       )
-      return null
+      return buyerNote(null, 'Bid placed')
     },
     [data.lots, data.bids, data.settings, user, applyBootstrap],
   )
@@ -1666,6 +1687,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }
         return applySettleCare({ ...prev, lots, bids }, accountId)
       })
+      if (ok.length) pushToast(errors.length ? `Placed ${ok.length} bids · ${errors.length} skipped` : `Placed ${ok.length} bids`)
+      else if (errors[0]) pushToast(errors[0].message, 'err')
       return { ok: ok.length, errors }
     },
     [data.lots, data.bids, data.settings, user],
@@ -1719,7 +1742,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           ...(prev.notices || []),
         ],
       }))
-      return null
+      return buyerNote(null, 'Purchase recorded')
     },
     [data.lots, data.settings, user],
   )
@@ -1731,21 +1754,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           const already = data.cart.find((c) => c.lotId === lotId)?.qty ?? 0
           await api.addToCart(lotId, already + qty)
           await applyBootstrap()
-          return null
+          return buyerNote(null, 'Added to cart')
         } catch (e) {
-          return e instanceof Error ? e.message : data.settings.copy.warnCart
+          return buyerNote(e instanceof Error ? e.message : data.settings.copy.warnCart, '')
         }
       }
       const lot = data.lots.find((l) => l.id === lotId)
-      if (!data.settings.features.cart) return data.settings.copy.warnCart
+      if (!data.settings.features.cart) return buyerNote(data.settings.copy.warnCart, '')
       if (!lot || lot.channel !== 'marketplace' || !lot.buyNowPrice) {
-        return data.settings.copy.warnListingGone.replace('{id}', lotId)
+        return buyerNote(data.settings.copy.warnListingGone.replace('{id}', lotId), '')
       }
-      if (!Number.isInteger(qty) || qty < 1) return data.settings.copy.warnQty
+      if (!Number.isInteger(qty) || qty < 1) return buyerNote(data.settings.copy.warnQty, '')
       const already = data.cart.find((c) => c.lotId === lotId)?.qty ?? 0
       const nextQty = already + qty
       const qtyErr = checkOrderQty(lot, nextQty, data.settings.copy)
-      if (qtyErr) return qtyErr
+      if (qtyErr) return buyerNote(qtyErr, '')
       setData((prev) => {
         const exists = prev.cart.some((c) => c.lotId === lotId)
         const cart = exists
@@ -1753,7 +1776,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           : [...prev.cart, { lotId, qty }]
         return { ...prev, cart }
       })
-      return null
+      return buyerNote(null, 'Added to cart')
     },
     [applyBootstrap, data.lots, data.cart, data.settings],
   )
@@ -1763,12 +1786,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       try {
         await api.removeFromCart(lotId)
         await applyBootstrap()
+        pushToast('Removed from cart')
       } catch {
-        /* ignore */
+        pushToast('Could not remove that item.', 'err')
       }
       return
     }
     setData((prev) => ({ ...prev, cart: prev.cart.filter((c) => c.lotId !== lotId) }))
+    pushToast('Removed from cart')
   }, [applyBootstrap])
 
   const checkoutCart = useCallback(async () => {
@@ -1776,9 +1801,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       try {
         await api.checkoutCart()
         await applyBootstrap()
-        return null
+        return buyerNote(null, 'Cart sent for review')
       } catch (e) {
-        return e instanceof Error ? e.message : data.settings.copy.emptyCart
+        return buyerNote(e instanceof Error ? e.message : data.settings.copy.emptyCart, '')
       }
     }
     if (!user) return data.settings.copy.warnLogin
@@ -1833,7 +1858,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         notices,
       }
     })
-    return null
+    return buyerNote(null, 'Cart sent for review')
   }, [applyBootstrap, data.cart, data.lots, data.settings, user])
 
   const reviewCartOrder = useCallback(
@@ -1842,9 +1867,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         try {
           await api.reviewCartOrder(id, decision)
           await applyBootstrap()
-          return null
+          return buyerNote(null, decision === 'accepted' ? 'Cart accepted' : 'Cart declined')
         } catch (e) {
-          return e instanceof Error ? e.message : 'Review failed.'
+          return buyerNote(e instanceof Error ? e.message : 'Review failed.', '')
         }
       }
       if (user?.role !== 'admin' && user?.role !== 'superadmin') {
@@ -1885,7 +1910,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           ...(prev.notices || []),
         ],
       }))
-      return null
+      return buyerNote(null, decision === 'accepted' ? 'Cart accepted' : 'Cart declined')
     },
     [applyBootstrap, data.cartOrders, data.lots, data.settings, user],
   )
@@ -1896,7 +1921,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         try {
           await api.confirmCartOrder(id)
           await applyBootstrap()
-          return null
+          return buyerNote(null, 'Cart confirmed — invoice created')
         } catch (e) {
           return e instanceof Error ? e.message : 'Confirm failed.'
         }
@@ -1966,7 +1991,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           ...(prev.notices || []),
         ],
       }))
-      return null
+      return buyerNote(null, 'Cart confirmed — invoice created')
     },
     [applyBootstrap, data.cartOrders, data.lots, data.settings, user],
   )
@@ -1988,7 +2013,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           o.id === id ? { ...o, status: 'cancelled' as const } : o,
         ),
       }))
-      return null
+      return buyerNote(null, 'Cart cancelled')
     },
     [data.cartOrders, data.settings, user],
   )
@@ -1999,9 +2024,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         try {
           await api.placeOffer(lotId, qty, unitPrice)
           await applyBootstrap()
-          return null
+          return buyerNote(null, 'Offer sent')
         } catch (e) {
-          return e instanceof Error ? e.message : data.settings.copy.warnOffers
+          return buyerNote(e instanceof Error ? e.message : data.settings.copy.warnOffers, '')
         }
       }
       if (!user) return data.settings.copy.warnLogin
@@ -2063,7 +2088,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             ]
         return { ...prev, offers: [offer, ...rest], notices }
       })
-      return null
+      return buyerNote(null, 'Offer sent')
     },
     [applyBootstrap, data.lots, data.offers, data.settings, user],
   )
@@ -2074,9 +2099,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         try {
           await api.reviewOffer(id, decision)
           await applyBootstrap()
-          return null
+          return buyerNote(null, decision === 'accepted' ? 'Offer accepted' : 'Offer declined')
         } catch (e) {
-          return e instanceof Error ? e.message : 'Review failed.'
+          return buyerNote(e instanceof Error ? e.message : 'Review failed.', '')
         }
       }
       if (user?.role !== 'admin' && user?.role !== 'superadmin') return 'Only staff can review offers.'
@@ -2105,7 +2130,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           ...(prev.notices || []),
         ],
       }))
-      return null
+      return buyerNote(null, decision === 'accepted' ? 'Offer accepted' : 'Offer declined')
     },
     [applyBootstrap, data.offers, user],
   )
@@ -2116,9 +2141,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         try {
           await api.confirmOffer(id)
           await applyBootstrap()
-          return null
+          return buyerNote(null, 'Invoice created from your offer')
         } catch (e) {
-          return e instanceof Error ? e.message : 'Confirm failed.'
+          return buyerNote(e instanceof Error ? e.message : 'Confirm failed.', '')
         }
       }
       if (!user) return data.settings.copy.warnLogin
@@ -2165,7 +2190,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           ...(prev.notices || []),
         ],
       }))
-      return null
+      return buyerNote(null, 'Invoice created from your offer')
     },
     [applyBootstrap, data.lots, data.offers, data.settings, user],
   )
@@ -2183,18 +2208,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         ...prev,
         offers: (prev.offers || []).map((o) => (o.id === id ? { ...o, status: 'cancelled' as const } : o)),
       }))
-      return null
+      return buyerNote(null, 'Offer cancelled')
     },
     [data.offers, user],
   )
 
   const toggleWatch = useCallback(async (lotId: string) => {
+    const watching = data.watchlist.includes(lotId)
+    const label = watching ? 'Removed from favourites' : 'Saved to favourites'
+    const go = { href: '/account/favourites', label: 'View favourites' }
     if (apiModeRef.current) {
       try {
         await api.toggleWatch(lotId)
         await applyBootstrap()
+        pushToast(label, 'ok', go)
       } catch {
-        /* ignore */
+        pushToast('Could not update favourites.', 'err')
       }
       return
     }
@@ -2204,7 +2233,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         ? prev.watchlist.filter((id) => id !== lotId)
         : [...prev.watchlist, lotId],
     }))
-  }, [applyBootstrap])
+    pushToast(label, 'ok', go)
+  }, [applyBootstrap, data.watchlist])
 
   const addLot = useCallback((lot: Lot) => {
     setData((prev) => {
@@ -2668,9 +2698,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         try {
           await api.submitInvoicePayment(id, receiptName, receiptData, extra)
           await applyBootstrap()
-          return null
+          return buyerNote(null, 'Payment submitted for review')
         } catch (e) {
-          return e instanceof Error ? e.message : 'Payment submit failed.'
+          return buyerNote(e instanceof Error ? e.message : 'Payment submit failed.', '')
         }
       }
       const copy = data.settings.copy
@@ -2700,7 +2730,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             : row,
         ),
       }))
-      return null
+      return buyerNote(null, 'Payment submitted for review')
     },
     [applyBootstrap, data.invoices, data.settings.copy, user],
   )
@@ -2749,6 +2779,58 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             kind: 'payment',
             title: 'Payment confirmed',
             body: `${paid.id} is marked paid. Shipping updates will follow.`,
+            href: '/account/invoices',
+          })
+        }
+        return { ...prev, invoices }
+      })
+      return null
+    },
+    [applyBootstrap, data.invoices, data.settings.copy, user, pushServerNotice],
+  )
+
+  const markInvoicePaid = useCallback(
+    async (id: string) => {
+      if (apiModeRef.current) {
+        try {
+          await api.markInvoicePaid(id)
+          await applyBootstrap()
+          return null
+        } catch (e) {
+          return e instanceof Error ? e.message : 'Could not mark paid.'
+        }
+      }
+      if (user?.role !== 'admin' && user?.role !== 'superadmin') {
+        return 'Only staff can mark an invoice paid.'
+      }
+      const inv = data.invoices.find((i) => i.id === id)
+      if (!inv) return data.settings.copy.warnLotMissing
+      if (inv.status === 'draft') return 'Issue this invoice first, then mark it paid.'
+      if (inv.status === 'paid') return 'Already paid.'
+      if (inv.payMethod !== 'cash' && inv.payMethod !== 'usdt') {
+        return 'Mark paid is for cash and USDT. Bank still needs both stamps.'
+      }
+      if (inv.payMethod === 'usdt' && !inv.payRef?.trim() && !inv.receiptData) {
+        return 'USDT needs a TX hash or screenshot before you mark it paid.'
+      }
+      const review = { decision: 'accepted' as const, by: user.accountId, at: Date.now() }
+      setData((prev) => {
+        let paid: Invoice | undefined
+        const invoices = prev.invoices.map((row) => {
+          if (row.id !== id) return row
+          const next = settleInvoice({ ...row, adminReview: review, superReview: review })
+          if (row.status !== 'paid' && next.status === 'paid') paid = next
+          return next
+        })
+        if (paid?.accountId) {
+          void pushServerNotice({
+            id: `N-PAID-${paid.id}`,
+            accountId: paid.accountId,
+            kind: 'payment',
+            title: 'Payment confirmed',
+            body: paid.payRef
+              ? `${paid.id} is marked paid (${paid.payMethod} ${paid.payRef}).`
+              : `${paid.id} is marked paid (${paid.payMethod}).`,
             href: '/account/invoices',
           })
         }
@@ -3106,6 +3188,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       toggleWatch,
       submitPayment,
       reviewPayment,
+      markInvoicePaid,
       reviewInvoiceIssue,
       saveInvoice,
       removeInvoice,
@@ -3169,6 +3252,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       toggleWatch,
       submitPayment,
       reviewPayment,
+      markInvoicePaid,
       reviewInvoiceIssue,
       saveInvoice,
       removeInvoice,

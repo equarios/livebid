@@ -19,6 +19,7 @@ import { listingLabel, listingMinutes } from '../lib/duration'
 import { lotTypeLabel, usd } from '../lib/format'
 import { api } from '../lib/api'
 import { opsQueueCounts } from '../lib/opsQueues'
+import { toastMsg } from '../lib/toast'
 import { useNow, useStore } from '../store'
 import type { AuctionType, Channel, Grade, Lot } from '../types'
 
@@ -157,7 +158,12 @@ export function Admin() {
 
   const [editingId, setEditingId] = useState<string | null>(null)
   const [drafts, setDrafts] = useState<ListingDraft[]>(() => [blankDraft(settings)])
-  const [msg, setMsg] = useState<string | null>(null)
+  const [msg, setMsgState] = useState<string | null>(null)
+  function setMsg(next: string | null) {
+    setMsgState(next)
+    if (next?.startsWith('Editing ')) return
+    toastMsg(next)
+  }
 
   const sectionParam = params.get('section') || ''
   const deskParam = params.get('desk') || ''

@@ -15,6 +15,7 @@ import { BatteryMark } from '../components/BatteryMark'
 import { originLabel } from '../lib/auctionLists'
 import { similarStoreScore } from '../lib/stockFilter'
 import { addToStoreCart } from '../lib/storeCart'
+import { pushToast } from '../lib/toast'
 import { useStore } from '../store'
 
 /** Deep-link PDP — same rail language as Store / Cart / Orders. */
@@ -229,7 +230,10 @@ export function StoreProductPage() {
                       className="btn btn-primary"
                       onClick={() => {
                         addToStoreCart(product.id, qty)
-                        setMsg(`Added ${qty} to cart`)
+                        pushToast(`Added ${qty} × ${product.title} to cart`, 'ok', {
+                          href: '/store/cart',
+                          label: 'View cart',
+                        })
                       }}
                     >
                       Add to cart

@@ -22,6 +22,7 @@ import {
   storeCartCount,
   type StoreCartLine,
 } from '../lib/storeCart'
+import { pushToast } from '../lib/toast'
 import { useStore } from '../store'
 import type { FulfillmentMode, FulfillmentSettings } from '../types'
 
@@ -277,9 +278,15 @@ export function StoreCart() {
         lines: rows.map((r) => ({ productId: r.product.id, qty: r.line.qty })),
       })
       clearStoreCart()
+      pushToast(`Order ${res.order.id} placed`, 'ok', {
+        href: `/store/orders?placed=${encodeURIComponent(res.order.id)}&pay=${pay}`,
+        label: 'View order',
+      })
       navigate(`/store/orders?placed=${encodeURIComponent(res.order.id)}&pay=${pay}`)
     } catch (ex) {
-      setErr(ex instanceof Error ? ex.message : 'Checkout failed.')
+      const message = ex instanceof Error ? ex.message : 'Checkout failed.'
+      setErr(message)
+      pushToast(message, 'err')
     } finally {
       setBusy(false)
     }

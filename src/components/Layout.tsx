@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { AppToastHost } from './AppToast'
 import { BrandLogo } from './BrandLogo'
 import { HeaderDeskPulse } from './HeaderDeskPulse'
 import { HelpMenu } from './HelpMenu'
@@ -197,6 +198,7 @@ export function Layout() {
           <Outlet />
         </main>
         <SiteFooter />
+        <AppToastHost />
       </div>
     </LotPreviewProvider>
   )

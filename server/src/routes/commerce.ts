@@ -1316,6 +1316,54 @@ commerceRoutes.post('/invoices/:id/review-payment', requireUser, requireStaff, a
   return c.json({ invoice: mapInvoice(saved) })
 })
 
+/** Cash / USDT: one staff click stamps both reviews and marks the invoice paid. */
+commerceRoutes.post('/invoices/:id/mark-paid', requireUser, requireStaff, async (c) => {
+  const user = c.get('user')!
+  const id = (c.req.param('id') ?? '').trim().toUpperCase()
+  const row = await prisma.invoice.findUnique({ where: { id } })
+  if (!row) return c.json({ error: 'Invoice not found.' }, 404)
+  const mapped = mapInvoice(row) as InvoiceLike & Record<string, unknown> & {
+    payMethod?: string
+    payRef?: string
+  }
+  if (mapped.status === 'draft') {
+    return c.json({ error: 'Issue this invoice first, then mark it paid.' }, 400)
+  }
+  if (mapped.status === 'paid') return c.json({ error: 'Already paid.' }, 400)
+  const method = mapped.payMethod
+  if (method !== 'cash' && method !== 'usdt') {
+    return c.json({ error: 'Mark paid is for cash and USDT. Bank still needs both stamps.' }, 400)
+  }
+  if (method === 'usdt' && !String(mapped.payRef || '').trim() && !mapped.receiptData) {
+    return c.json({ error: 'USDT needs a TX hash or screenshot before you mark it paid.' }, 400)
+  }
+
+  const review: PayReview = { decision: 'accepted', by: user.accountId, at: Date.now() }
+  const next = settleInvoice({
+    ...mapped,
+    adminReview: review,
+    superReview: review,
+  })
+  const saved = await prisma.invoice.update({
+    where: { id },
+    data: invoiceUpdateData(next as Record<string, unknown>),
+  })
+  if (next.accountId) {
+    const ref = String(mapped.payRef || '').trim()
+    await notify({
+      id: `N-PAID-${id}`,
+      accountId: String(next.accountId),
+      kind: 'payment',
+      title: 'Payment confirmed',
+      body: ref
+        ? `${id} is marked paid (${method.toUpperCase()} ${ref}).`
+        : `${id} is marked paid (${method}).`,
+      href: '/account/invoices',
+    })
+  }
+  return c.json({ invoice: mapInvoice(saved) })
+})
+
 commerceRoutes.post('/invoices/:id/clear-payment', requireUser, requireStaff, async (c) => {
   const id = (c.req.param('id') ?? '').trim().toUpperCase()
   const row = await prisma.invoice.findUnique({ where: { id } })

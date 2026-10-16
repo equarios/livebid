@@ -71,6 +71,13 @@ export function SiteNav({
                 : settings.copy.marketTitle}
             </NavLink>
           ) : null}
+          {settings.showStore ? (
+            <NavLink to="/store">
+              {settings.storeLabel && settings.storeLabel !== 'Store'
+                ? settings.storeLabel
+                : settings.copy.navStore}
+            </NavLink>
+          ) : null}
         </>
       ) : (
         <>

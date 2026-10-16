@@ -27,6 +27,7 @@ const Admin = lazyNamed(() => import('./pages/Admin'), 'Admin')
 const Super = lazyNamed(() => import('./pages/Super'), 'Super')
 const Home = lazyNamed(() => import('./pages/Home'), 'Home')
 const Store = lazyNamed(() => import('./pages/Store'), 'Store')
+const StoreSold = lazyNamed(() => import('./pages/StoreSold'), 'StoreSold')
 const StoreCart = lazyNamed(() => import('./pages/StoreCart'), 'StoreCart')
 const StoreOrders = lazyNamed(() => import('./pages/StoreOrders'), 'StoreOrders')
 const StoreProductPage = lazyNamed(() => import('./pages/StoreProduct'), 'StoreProductPage')
@@ -53,6 +54,7 @@ const WholesaleCategoryPage = lazyNamed(() => import('./pages/WholesaleCategory'
 const DeviceSpec = lazyNamed(() => import('./pages/InfoPages'), 'DeviceSpec')
 const InfoPage = lazyNamed(() => import('./pages/InfoPages'), 'InfoPage')
 const Tutorial = lazyNamed(() => import('./pages/InfoPages'), 'Tutorial')
+const NotFound = lazyNamed(() => import('./pages/NotFound'), 'NotFound')
 
 function Guard({ children }: { children: ReactNode }) {
   const { user, authReady } = useStore()
@@ -194,12 +196,23 @@ export default function App() {
           <Route path="/buyers" element={<BuyersPage />} />
           <Route path="/sellers" element={<SellersPage />} />
           <Route path="/support" element={<SupportPage />} />
+          <Route path="/device-spec" element={<DeviceSpec />} />
+          <Route path="/info" element={<InfoPage />} />
+          <Route path="/tutorial" element={<Tutorial />} />
           <Route path="/community" element={<Navigate to="/account/community" replace />} />
           <Route
             path="/store"
             element={
               <ChannelGate flag="showStore">
                 <Store />
+              </ChannelGate>
+            }
+          />
+          <Route
+            path="/store/sold"
+            element={
+              <ChannelGate flag="showStore">
+                <StoreSold />
               </ChannelGate>
             }
           />
@@ -265,9 +278,6 @@ export default function App() {
                 </WholesaleDeskGate>
               }
             />
-            <Route path="/device-spec" element={<DeviceSpec />} />
-            <Route path="/info" element={<InfoPage />} />
-            <Route path="/tutorial" element={<Tutorial />} />
             <Route path="/account" element={<MyPage />}>
               <Route index element={<AccountOverview />} />
               <Route path="wholesale" element={<WholesaleApply />} />
@@ -307,7 +317,7 @@ export default function App() {
             <Route path="/super/invoices" element={<Navigate to="/super?section=money" replace />} />
             <Route path="/super/imei" element={<Navigate to="/admin?section=imei" replace />} />
           </Route>
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="*" element={<NotFound />} />
         </Routes>
       </Suspense>
     </>
