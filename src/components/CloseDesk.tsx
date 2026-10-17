@@ -2,7 +2,7 @@ import { Fragment, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { allocate, lastBidsForLot } from '../lib/allocate'
 import { effectiveEndsAt, isAuctionOpen, listLabel } from '../lib/auctionLists'
-import { trackingHref } from '../lib/fulfillment'
+import { COLLECTED_LABEL, READY_FOR_COLLECT_LABEL, SHIPPED_LABEL, trackingHref, trackingLabel } from '../lib/fulfillment'
 import { usd } from '../lib/format'
 import { buildInvoice, invoiceCoversLot, invoiceStatusLabel, suggestInvoiceId } from '../lib/invoices'
 import { SOLD_ARCHIVE_MS, SOLD_HIDE_AFTER_MS } from '../lib/stockFilter'
@@ -162,15 +162,12 @@ function bidderRows(lots: Lot[], bids: Bid[], now: number, span: CloseSpan): Bid
 
 function payShipLabel(inv: Invoice) {
   if (inv.fulfillmentMode === 'pickup') {
-    if (inv.shippedAt) return 'Collected'
-    if (inv.readyForCollect) return 'Ready for collect'
+    if (inv.shippedAt) return COLLECTED_LABEL
+    if (inv.readyForCollect) return READY_FOR_COLLECT_LABEL
   }
-  if (inv.trackingNo) {
-    const via = inv.courierCarrier ? `${inv.courierCarrier} · ${inv.trackingNo}` : inv.trackingNo
-    return via
-  }
-  if (inv.readyForCollect) return 'Ready for collect'
-  if (inv.shippedAt) return 'Shipped'
+  if (inv.trackingNo) return trackingLabel(inv.courierCarrier, inv.trackingNo)
+  if (inv.readyForCollect) return READY_FOR_COLLECT_LABEL
+  if (inv.shippedAt) return SHIPPED_LABEL
   if (inv.status === 'paid') return 'Paid'
   return invoiceStatusLabel(inv.status)
 }

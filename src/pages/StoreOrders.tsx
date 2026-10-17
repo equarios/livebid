@@ -4,7 +4,7 @@ import { PublicShell } from '../components/PublicShell'
 import { StoreRail } from '../components/StoreRail'
 import { StoreBlockSkeleton } from '../components/StoreSkeleton'
 import { api, type StoreOrderDto } from '../lib/api'
-import { FULFILLMENT_LABELS, trackingHref } from '../lib/fulfillment'
+import { COLLECTED_LABEL, FULFILLMENT_LABELS, READY_FOR_COLLECT_LABEL, SHIPPED_LABEL, trackingHref, trackingLabel } from '../lib/fulfillment'
 import { usd } from '../lib/format'
 import { useStore } from '../store'
 import type { FulfillmentMode } from '../types'
@@ -12,7 +12,7 @@ import type { FulfillmentMode } from '../types'
 const STATUS_LABEL: Record<string, string> = {
   pending_payment: 'Awaiting payment',
   paid: 'Paid',
-  shipped: 'Shipped',
+  shipped: SHIPPED_LABEL,
   cancelled: 'Cancelled',
 }
 
@@ -40,7 +40,7 @@ function TrackingBit({
   trackingNo: string
 }) {
   const href = trackingHref(carrier, trackingNo)
-  const label = carrier ? `${carrier} · ${trackingNo}` : trackingNo
+  const label = trackingLabel(carrier, trackingNo)
   if (!href) return <span className="mono"> · {label}</span>
   return (
     <a className="inv-track" href={href} target="_blank" rel="noreferrer">
@@ -177,7 +177,7 @@ export function StoreOrders() {
                           o.readyForCollect || o.status === 'shipped' ? (
                             <span className="ok">
                               {' '}
-                              · {o.status === 'shipped' ? 'Collected' : 'Ready for collect'}
+                              · {o.status === 'shipped' ? COLLECTED_LABEL : READY_FOR_COLLECT_LABEL}
                             </span>
                           ) : null
                         ) : o.trackingNo ? (

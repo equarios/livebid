@@ -505,6 +505,40 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ lots }),
     }),
+  saveInventorySku: (sku: {
+    id: string
+    manufacturer: string
+    model: string
+    modelNumber: string
+    capacity: string
+    color: string
+    grade: string
+    battery: number
+    origin?: string
+    description: string
+    operator?: string
+    defaultMoq?: number
+    lastPrice?: number
+    onHand?: number
+  }) =>
+    req<{ inventory: unknown }>('/api/catalog/inventory', {
+      method: 'POST',
+      body: JSON.stringify(sku),
+    }),
+  stockReturns: () =>
+    req<{ returns: { lotId: string; skuId: string; model: string; leftover: number }[] }>(
+      '/api/catalog/returns',
+    ),
+  decideStockReturn: (lotId: string, decision: 'return' | 'leave') =>
+    req<{ onHand: number; leftover: number }>('/api/catalog/returns', {
+      method: 'POST',
+      body: JSON.stringify({ lotId, decision }),
+    }),
+  moveInventoryToStore: (id: string, body: { qty: number; price: number }) =>
+    req<{ onHand: number; productId: string; stock: number }>(
+      `/api/catalog/inventory/${encodeURIComponent(id)}/to-store`,
+      { method: 'POST', body: JSON.stringify(body) },
+    ),
   lotPriceComps: (id: string) =>
     req<{ comps: PriceCompDto[]; median: number | null }>(
       `/api/catalog/lots/${encodeURIComponent(id)}/comps`,

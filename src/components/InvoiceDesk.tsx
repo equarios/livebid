@@ -15,6 +15,7 @@ import {
   suggestInvoiceId,
 } from '../lib/invoices'
 import { isoDate, moneyUsd, usd } from '../lib/format'
+import { READY_FOR_COLLECT_LABEL } from '../lib/fulfillment'
 import {
   WHOLESALE_PAY_LABEL,
   isCashReceipt,
@@ -1457,7 +1458,7 @@ export function InvoiceDesk({
                       checked={readyForCollect}
                       onChange={(e) => setReadyForCollect(e.target.checked)}
                     />
-                    Ready for collect / pickup
+                    {READY_FOR_COLLECT_LABEL} / pickup
                   </label>
                   {fulfillmentMode === 'pickup' ? null : (
                     <>

@@ -3,6 +3,7 @@ import { isSealedLot, typePillClass } from '../lib/auctionLists'
 import { ConfirmBidDialog } from './ConfirmBidDialog'
 import { fillCopy, lotTypeLabel, usd } from '../lib/format'
 import { BatteryMark } from './BatteryMark'
+import { lotItemSub, lotItemTitle } from '../lib/itemLine'
 import { lotMoq, moqLabel } from '../lib/moq'
 import { lotPhotos, photoFallback } from '../lib/photos'
 import { useState } from 'react'
@@ -53,14 +54,22 @@ export function LotCard({ lot }: { lot: Lot }) {
         </div>
         <h3>
           <button type="button" className="item-link" onClick={() => openLot(lot.id)}>
-            {lot.model}
-            {lot.modelNumber ? ` ${lot.modelNumber}` : ''} {lot.capacity}
+            {lotItemTitle(lot)}
           </button>
         </h3>
-        <p className="muted item-specs">
-          {lot.color} · <BatteryMark value={lot.battery} /> · Quantity {lot.qty.toLocaleString()}
-          {lot.channel === 'marketplace' ? ` · ${left.toLocaleString()} left` : ''} · {moqLabel(lot, settings.copy.noMoq)}
-        </p>
+        <p className="muted item-specs">{lotItemSub(lot)}</p>
+        <div className="item-chips">
+          <span className="item-chip">
+            <BatteryMark value={lot.battery} />
+          </span>
+          <span className={`item-chip${lot.simLocked ? ' lock' : ''}`}>
+            {lot.simLocked ? 'SIM locked' : 'SIM unlocked'}
+          </span>
+          <span className={`item-chip${lot.activationLocked ? ' lock' : ''}`}>
+            {lot.activationLocked ? 'Act locked' : 'Act open'}
+          </span>
+          <span className="item-chip">{moqLabel(lot, settings.copy.noMoq)}</span>
+        </div>
         <div className="lot-price-row">
           <div>
             <div className="label">

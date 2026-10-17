@@ -7886,6 +7886,18 @@ html[dir='rtl'] .lang-menu-panel button {
   top: 8px;
   z-index: 2;
 }
+.store-sale-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  background: #fff;
+  color: var(--lose);
+  padding: 4px 8px;
+  border-radius: 99px;
+  font-size: 12px;
+  font-weight: 700;
+}
 .store-lot-card .lot-photo-link {
   height: 150px;
 }

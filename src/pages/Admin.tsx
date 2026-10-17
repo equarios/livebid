@@ -5,6 +5,8 @@ import { CloseDesk, closesNeedingInvoice } from '../components/CloseDesk'
 import { ImeiDesk } from '../components/ImeiDesk'
 import { InventoryDesk } from '../components/InventoryDesk'
 import { InvoiceDesk } from '../components/InvoiceDesk'
+import { ReturnsDesk } from '../components/ReturnsDesk'
+import { SalesDesk } from '../components/SalesDesk'
 import { StoreDesk } from '../components/StoreDesk'
 import { FulfillmentQueue } from '../components/FulfillmentQueue'
 import { ProductEnquiryDesk } from '../components/ProductEnquiryDesk'
@@ -29,13 +31,15 @@ const ADMIN_SECTIONS = new Set([
   'catalog',
   'commerce',
   'money',
+  'sales',
   'imei',
   'store',
   'buyers',
   'clients',
 ])
-const CATALOG_DESKS = new Set(['inventory', 'lots'])
+const CATALOG_DESKS = new Set(['inventory', 'lots', 'returns'])
 const COMMERCE_DESKS = new Set(['carts', 'offers', 'asks', 'bids', 'closes'])
+const SALES_DESKS = new Set(['wholesale', 'store'])
 
 type ListingDraft = {
   key: string
@@ -182,7 +186,7 @@ export function Admin() {
       ? CATALOG_DESKS.has(deskParam)
         ? deskParam
         : 'inventory'
-      : section === 'commerce'
+        : section === 'commerce'
         ? COMMERCE_DESKS.has(deskParam)
           ? deskParam
           : queues.pendingCarts
@@ -190,7 +194,11 @@ export function Admin() {
             : queues.pendingOffers
               ? 'offers'
               : 'bids'
-        : deskParam
+        : section === 'sales'
+          ? SALES_DESKS.has(deskParam)
+            ? deskParam
+            : 'wholesale'
+          : deskParam
 
   function go(nextSection: string, nextDesk?: string) {
     const next = new URLSearchParams()
@@ -318,6 +326,7 @@ export function Admin() {
               : undefined,
           },
           { id: 'lots', label: 'Live lots', count: live.length || undefined },
+          { id: 'returns', label: 'Returns' },
         ],
       },
       {
@@ -337,6 +346,14 @@ export function Admin() {
         ],
       },
       { id: 'money', label: 'Money', count: queues.money || undefined },
+      {
+        id: 'sales',
+        label: 'Sales',
+        desks: [
+          { id: 'wholesale', label: 'Wholesale' },
+          { id: 'store', label: 'Store' },
+        ],
+      },
       { id: 'imei', label: 'IMEI' },
       {
         id: 'store',
@@ -479,7 +496,10 @@ export function Admin() {
       ) : null}
 
       {section === 'catalog' && desk === 'inventory' ? <InventoryDesk /> : null}
+      {section === 'catalog' && desk === 'returns' ? <ReturnsDesk /> : null}
       {section === 'imei' ? <ImeiDesk /> : null}
+      {section === 'sales' && desk === 'store' ? <SalesDesk tab="store" /> : null}
+      {section === 'sales' && desk !== 'store' ? <SalesDesk tab="wholesale" /> : null}
       {section === 'store' && desk === 'fulfill' ? <FulfillmentQueue /> : null}
       {section === 'store' && desk !== 'fulfill' ? <StoreDesk /> : null}
       {section === 'buyers' ? <WholesaleReviewDesk /> : null}

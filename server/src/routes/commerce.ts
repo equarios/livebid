@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { requireStaff, requireUser, requireWholesale, type AuthedEnv } from '../auth'
-import { feeForMarketplace, minOfferUnitPrice, offerFloorPct, readFulfillment, withFee } from '../feeConfig'
+import { minOfferUnitPrice, offerFloorPct, readFulfillment } from '../feeConfig'
 import { isValidPickupDate, resolveShippingQuote } from '../fulfillment'
 import { assertPickupSlotOpen } from '../pickupCapacity'
 import { ensureShippingAddendum } from '../shippingAddendum'
@@ -20,6 +20,7 @@ import {
 import { cacheSet } from '../cache'
 import { getIdempotentJson, setIdempotentJson } from '../idempotency'
 import { trackBid } from '../metrics'
+import { addMarketplaceLines } from '../marketInvoice'
 import { notify, notifyStaff } from '../notify'
 import { rateLimitOrRetryAfter } from '../rateLimit'
 import { broadcastLotTick } from '../realtime'
@@ -195,6 +196,7 @@ commerceRoutes.get('/bootstrap', requireUser, async (c) => {
       description: s.description,
       defaultMoq: s.defaultMoq ?? undefined,
       lastPrice: s.lastPrice ?? undefined,
+      onHand: s.onHand ?? 0,
     })),
     meta: {
       lotsTotal,
@@ -622,7 +624,6 @@ commerceRoutes.post('/cart-orders/:id/confirm', requireUser, async (c) => {
     unitPrice: number
   }>
   const stamp = Date.now()
-  const invoiceId = `MKT-${String(new Date(stamp).getFullYear()).slice(-2)}-${stamp.toString().slice(-6)}`
 
   const result = await prisma.$transaction(async (tx) => {
     for (const line of lines) {
@@ -632,51 +633,35 @@ commerceRoutes.post('/cart-orders/:id/confirm', requireUser, async (c) => {
       if (nextQty <= 0) await tx.lot.delete({ where: { id: lot.id } })
       else await tx.lot.update({ where: { id: lot.id }, data: { qty: nextQty } })
     }
-    const goods = lines.reduce((n, l) => n + l.qty * l.unitPrice, 0)
-    const qty = lines.reduce((n, l) => n + l.qty, 0)
-    const priced = withFee(goods, feeForMarketplace())
-    const inv = await tx.invoice.create({
-      data: {
-        id: invoiceId,
-        lotId: lines[0].lotId,
-        channel: 'marketplace',
-        amount: priced.total,
-        qty,
-        unitPrice: lines[0].unitPrice,
-        status: 'draft',
-        createdAt: BigInt(stamp),
-        accountId: user.accountId,
-        dataJson: JSON.stringify({
-          lines,
-          remarks: `Accepted cart ${order.id}`,
-          feePct: priced.feePct,
-        }),
-      },
-    })
+    const placed = await addMarketplaceLines(tx, user.accountId, lines, stamp, `Accepted cart ${order.id}`)
     await tx.cartOrder.update({
       where: { id: order.id },
       data: { status: 'confirmed' },
     })
-    return inv
+    return placed
   })
 
   await notify({
-    id: `N-DRAFT-${result.id}`,
+    id: `N-DRAFT-${result.invoice.id}-${order.id}`,
     accountId: user.accountId,
     kind: 'invoice',
     title: 'Purchase recorded',
-    body: `Invoice ${result.id} will appear after Admin and Super issue it.`,
+    body: result.created
+      ? `Invoice ${result.invoice.id} will appear after Admin and Super issue it.`
+      : `Added to today's invoice ${result.invoice.id}.`,
     href: '/account/invoices',
   })
-  await notifyStaff(
-    'invoice',
-    'Invoice waiting to be issued',
-    `${result.id} from cart ${order.id}`,
-    '/admin',
-    `N-ISSUE-${result.id}`,
-  )
+  if (result.created) {
+    await notifyStaff(
+      'invoice',
+      'Invoice waiting to be issued',
+      `${result.invoice.id} from cart ${order.id}`,
+      '/admin',
+      `N-ISSUE-${result.invoice.id}`,
+    )
+  }
 
-  return c.json({ invoice: mapInvoice(result) })
+  return c.json({ invoice: mapInvoice(result.invoice) })
 })
 
 commerceRoutes.post('/offers', requireUser, requireWholesale, async (c) => {
@@ -821,56 +806,47 @@ commerceRoutes.post('/offers/:id/confirm', requireUser, async (c) => {
   }
 
   const stamp = Date.now()
-  const invoiceId = `MKT-${String(new Date(stamp).getFullYear()).slice(-2)}-${stamp.toString().slice(-6)}`
 
   try {
-    const inv = await prisma.$transaction(async (tx) => {
+    const placed = await prisma.$transaction(async (tx) => {
       const lot = await tx.lot.findUnique({ where: { id: offer.lotId } })
       if (!lot || offer.qty > lot.qty) throw new Error('Stock gone')
       const nextQty = lot.qty - offer.qty
       if (nextQty <= 0) await tx.lot.delete({ where: { id: lot.id } })
       else await tx.lot.update({ where: { id: lot.id }, data: { qty: nextQty } })
 
-      const priced = withFee(offer.qty * offer.unitPrice, feeForMarketplace())
-      const created = await tx.invoice.create({
-        data: {
-          id: invoiceId,
-          lotId: offer.lotId,
-          channel: 'marketplace',
-          amount: priced.total,
-          qty: offer.qty,
-          unitPrice: offer.unitPrice,
-          status: 'draft',
-          createdAt: BigInt(stamp),
-          accountId: user.accountId,
-          dataJson: JSON.stringify({
-            lines: [{ lotId: offer.lotId, qty: offer.qty, unitPrice: offer.unitPrice }],
-            remarks: `Accepted offer ${offer.id}`,
-            feePct: priced.feePct,
-          }),
-        },
-      })
+      const saved = await addMarketplaceLines(
+        tx,
+        user.accountId,
+        [{ lotId: offer.lotId, qty: offer.qty, unitPrice: offer.unitPrice }],
+        stamp,
+        `Accepted offer ${offer.id}`,
+      )
       await tx.marketOffer.update({ where: { id: offer.id }, data: { status: 'confirmed' } })
-      return created
+      return saved
     })
 
     await notify({
-      id: `N-DRAFT-${inv.id}`,
+      id: `N-DRAFT-${placed.invoice.id}-${offer.id}`,
       accountId: user.accountId,
       kind: 'invoice',
       title: 'Purchase recorded',
-      body: `Invoice ${inv.id} will appear after Admin and Super issue it.`,
+      body: placed.created
+        ? `Invoice ${placed.invoice.id} will appear after Admin and Super issue it.`
+        : `Added to today's invoice ${placed.invoice.id}.`,
       href: '/account/invoices',
     })
-    await notifyStaff(
-      'invoice',
-      'Invoice waiting to be issued',
-      `${inv.id} from offer ${offer.id}`,
-      '/admin',
-      `N-ISSUE-${inv.id}`,
-    )
+    if (placed.created) {
+      await notifyStaff(
+        'invoice',
+        'Invoice waiting to be issued',
+        `${placed.invoice.id} from offer ${offer.id}`,
+        '/admin',
+        `N-ISSUE-${placed.invoice.id}`,
+      )
+    }
 
-    return c.json({ invoice: mapInvoice(inv) })
+    return c.json({ invoice: mapInvoice(placed.invoice) })
   } catch {
     return c.json({ error: 'Could not confirm offer (stock?).' }, 400)
   }

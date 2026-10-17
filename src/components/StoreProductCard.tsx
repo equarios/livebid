@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { originLabel } from '../lib/auctionLists'
+import { lotItemSub } from '../lib/itemLine'
 import { usd } from '../lib/format'
 import type { StoreProductDto } from '../lib/api'
 import { storeProductBrand } from '../lib/storeBrand'
@@ -31,6 +31,7 @@ function cardHeadline(product: StoreProductDto, brand: string) {
   if (capacity) {
     title = title.replace(new RegExp(`\\b${escapeRe(capacity)}\\b`, 'i'), ' ')
   }
+  title = title.replace(/\b\d+\s?(?:GB|TB)\b/gi, ' ')
   title = title
     .replace(/\s*[—–-]\s*Grade\s+[A-Z0-9]+\s*$/i, ' ')
     .replace(/\bGrade\s+[A-Z0-9]+\b/gi, ' ')
@@ -50,9 +51,7 @@ export function StoreProductCard({ product, onOpen, onAdded, index = 0 }: Props)
   const onSale = Boolean(product.compareAt && product.compareAt > product.price)
   const brand = storeProductBrand(product)
   const headline = cardHeadline(product, brand)
-  const sub = [product.capacity, originLabel(product.origin), product.color]
-    .filter(Boolean)
-    .join(' · ')
+  const sub = lotItemSub(product)
   const battery = Math.max(0, Math.floor(Number(product.battery) || 0))
   const [adding, setAdding] = useState(false)
 
@@ -66,11 +65,14 @@ export function StoreProductCard({ product, onOpen, onAdded, index = 0 }: Props)
         <StoreGallery product={product} variant="card" onOpen={() => onOpen(product)} />
         {soldOut ? (
           <span className="sold-badge">Sold out</span>
-        ) : product.grade ? (
-          <span className={`grade grade-${product.grade}`}>Grade {product.grade}</span>
-        ) : onSale ? (
-          <span className="grade">Sale</span>
-        ) : null}
+        ) : (
+          <>
+            {product.grade ? (
+              <span className={`grade grade-${product.grade}`}>Grade {product.grade}</span>
+            ) : null}
+            {onSale ? <span className="store-sale-badge">Sale</span> : null}
+          </>
+        )}
       </div>
       <div className="lot-body">
         {brand ? (

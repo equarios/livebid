@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { ORIGINS, normalizeOrigin } from '../lib/auctionLists'
 import { api, type StoreOrderDto, type StoreProductDto } from '../lib/api'
-import { SHIP_CARRIERS } from '../lib/fulfillment'
+import { READY_FOR_COLLECT_LABEL, SHIP_CARRIERS } from '../lib/fulfillment'
 import { usd } from '../lib/format'
 import { storeProductImage } from '../lib/storePhotos'
 import { toastMsg } from '../lib/toast'
@@ -539,7 +539,7 @@ export function StoreDesk() {
                     </div>
                     <div className="muted tiny">
                       {(o.fulfillmentMode || 'delivery').replace(/_/g, ' ')}
-                      {o.readyForCollect ? ' · ready' : ''}
+                      {o.readyForCollect ? ` · ${READY_FOR_COLLECT_LABEL}` : ''}
                       {o.courierCarrier ? ` · ${o.courierCarrier}` : ''}
                     </div>
                   </td>
@@ -570,7 +570,7 @@ export function StoreDesk() {
                         disabled={busy}
                         onClick={() => void markReadyCollect(o)}
                       >
-                        Ready for collect
+                        {READY_FOR_COLLECT_LABEL}
                       </button>
                     ) : null}
                     {o.status === 'paid' && o.fulfillmentMode === 'delivery' ? (

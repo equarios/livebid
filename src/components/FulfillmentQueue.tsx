@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api, type StoreOrderDto } from '../lib/api'
-import { FULFILLMENT_LABELS, formatShippingMoney, localIsoDate } from '../lib/fulfillment'
+import { FULFILLMENT_LABELS, READY_FOR_COLLECT_LABEL, formatShippingMoney, localIsoDate } from '../lib/fulfillment'
 import { usd } from '../lib/format'
 import { toastMsg } from '../lib/toast'
 import { useStore } from '../store'
@@ -172,13 +172,13 @@ export function FulfillmentQueue() {
           <em>{invRows.length + storeRows.length}</em>
         </h2>
         <p className="mh-desk-note">
-          Ready for collect, awaiting buyer courier, and delivery fees still TBD.
+          {READY_FOR_COLLECT_LABEL}, awaiting buyer courier, and delivery fees still TBD.
         </p>
         <div className="mh-desk-actions">
           {(
             [
               ['today', "Today's collects"],
-              ['ready', 'Ready for collect'],
+              ['ready', READY_FOR_COLLECT_LABEL],
               ['courier', 'Awaiting courier'],
               ['tbd', 'Fee TBD'],
               ['all', 'All open'],
@@ -222,7 +222,7 @@ export function FulfillmentQueue() {
                 <div className="store-order-detail">
                   <p className="tiny muted">
                     {who?.company || inv.accountId || '—'}
-                    {inv.readyForCollect ? ' · Ready' : ''}
+                    {inv.readyForCollect ? ` · ${READY_FOR_COLLECT_LABEL}` : ''}
                     {inv.pickupDate
                       ? ` · ${inv.pickupDate}${inv.pickupSlot ? ` ${inv.pickupSlot}` : ''}`
                       : ''}
@@ -237,7 +237,7 @@ export function FulfillmentQueue() {
                         disabled={busy}
                         onClick={() => void markInvReady(inv)}
                       >
-                        Ready for collect
+                        {READY_FOR_COLLECT_LABEL}
                       </button>
                     ) : null}
                     {inv.shippingFeeQuoted === false ? (
@@ -295,7 +295,7 @@ export function FulfillmentQueue() {
               <div className="store-order-detail">
                 <p className="tiny muted">
                   {o.name} · {o.email}
-                  {o.readyForCollect ? ' · Ready' : ''}
+                  {o.readyForCollect ? ` · ${READY_FOR_COLLECT_LABEL}` : ''}
                   {o.pickupDate
                     ? ` · ${o.pickupDate}${o.pickupSlot ? ` ${o.pickupSlot}` : ''}`
                     : ''}
@@ -310,7 +310,7 @@ export function FulfillmentQueue() {
                       disabled={busy}
                       onClick={() => void markStoreReady(o)}
                     >
-                      Ready for collect
+                      {READY_FOR_COLLECT_LABEL}
                     </button>
                   ) : null}
                   {o.shippingFeeQuoted === false ? (

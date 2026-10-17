@@ -14,6 +14,7 @@ import {
   migrateLotAuctionType,
 } from '../lib/auctionLists'
 import { usd } from '../lib/format'
+import { lotItemSub, lotModelTitle } from '../lib/itemLine'
 import { lotThumb, photoFallback } from '../lib/photos'
 import { DEFAULT_SETTINGS } from '../data'
 import { useNow, useStore } from '../store'
@@ -50,7 +51,7 @@ function DealCard({
   typeBadge?: string
 }) {
   const now = useNow()
-  const title = [lot.model, lot.modelNumber, lot.capacity].filter(Boolean).join(' ')
+  const title = lotModelTitle(lot)
   const closeAt = lot.channel === 'auction' ? effectiveEndsAt(lot) : lot.endsAt
   return (
     <button type="button" className="deal-card" onClick={onOpen}>
@@ -69,9 +70,10 @@ function DealCard({
         <span className="deal-card-maker" title={lot.manufacturer}>
           {lot.manufacturer}
         </span>
-        <strong>
-          {lot.qty} {lot.qty === 1 ? 'unit' : 'units'} · {title} · Grade {lot.grade}
-        </strong>
+        <strong>{title}</strong>
+        <span className="deal-card-meta">
+          {lot.qty.toLocaleString()} {lot.qty === 1 ? 'unit' : 'units'} · {lotItemSub(lot)} · Grade {lot.grade}
+        </span>
         {lot.channel === 'auction' ? (
           <span className="deal-card-meta">{closesLabel(closeAt, now)}</span>
         ) : (

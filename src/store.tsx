@@ -27,7 +27,7 @@ import {
   migrateLotAuctionType,
   normalizeAuctionTypes,
 } from './lib/auctionLists'
-import { inventoryFromLots, upsertInventory } from './lib/inventory'
+import { inventoryFromLots, reserveInventory, upsertInventory } from './lib/inventory'
 import {
   dropListKey,
   liveLotFromDrop,
@@ -35,7 +35,7 @@ import {
   type DropListClockPlan,
 } from './lib/listingDrops'
 import {
-  buildInvoice,
+  placeMarketplaceInvoice,
   invoiceTotals,
   normalizeInvoiceLines,
   settleInvoice,
@@ -1703,13 +1703,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const pcs = qty ?? lot.qty
       const qtyErr = checkOrderQty(lot, pcs, data.settings.copy)
       if (qtyErr) return qtyErr
-      const invoice = buildInvoice(
+      if (!user?.accountId) return data.settings.copy.warnLogin
+      const invoice = placeMarketplaceInvoice(
+        data.invoices,
         {
-          id: `INV-${Date.now().toString().slice(-6)}`,
-          lotId,
-          channel: 'marketplace',
+          accountId: user.accountId,
           createdAt: Date.now(),
-          accountId: user?.accountId,
+          remarks: `Buy now ${lotId}`,
           lines: [{ lotId, qty: pcs, unitPrice: lot.buyNowPrice }],
         },
         data.settings,
@@ -1723,7 +1723,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             return { ...l, qty: l.qty - pcs }
           })
           .filter((l) => l.channel !== 'marketplace' || l.qty > 0),
-        invoices: [invoice, ...prev.invoices],
+        invoices: prev.invoices.some((row) => row.id === invoice.id)
+          ? prev.invoices.map((row) => (row.id === invoice.id ? invoice : row))
+          : [invoice, ...prev.invoices],
         notices: [
           ...staffIssueNotices(prev.accounts, [invoice], invoice.createdAt),
           ...(user?.accountId
@@ -1744,7 +1746,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }))
       return buyerNote(null, 'Purchase recorded')
     },
-    [data.lots, data.settings, user],
+    [data.invoices, data.lots, data.settings, user],
   )
 
   const addToCart = useCallback(
@@ -1921,7 +1923,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         try {
           await api.confirmCartOrder(id)
           await applyBootstrap()
-          return buyerNote(null, 'Cart confirmed — invoice created')
+          return buyerNote(null, "Added to today's marketplace invoice")
         } catch (e) {
           return e instanceof Error ? e.message : 'Confirm failed.'
         }
@@ -1945,18 +1947,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           unitPrice: lot.buyNowPrice,
         })
       }
-      const d = new Date(stamp)
-      const yy = String(d.getFullYear()).slice(-2)
-      const doy = String(
-        Math.floor((stamp - Date.UTC(d.getFullYear(), 0, 0)) / 86400000),
-      ).padStart(3, '0')
-      const invoice = buildInvoice(
+      const invoice = placeMarketplaceInvoice(
+        data.invoices,
         {
-          id: `MKT-${yy}-${doy}-${stamp.toString().slice(-3)}`,
-          lotId: lines[0].lotId,
-          channel: 'marketplace',
-          createdAt: stamp,
           accountId: user.accountId,
+          createdAt: stamp,
           remarks: `Accepted cart ${order.id}`,
           lines,
         },
@@ -1969,7 +1964,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         cartOrders: (prev.cartOrders || []).map((o) =>
           o.id === id ? { ...o, status: 'confirmed' as const } : o,
         ),
-        invoices: [invoice, ...prev.invoices],
+        invoices: prev.invoices.some((row) => row.id === invoice.id)
+          ? prev.invoices.map((row) => (row.id === invoice.id ? invoice : row))
+          : [invoice, ...prev.invoices],
         lots: prev.lots
           .map((l) => {
             const take = byId.get(l.id)
@@ -1991,9 +1988,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           ...(prev.notices || []),
         ],
       }))
-      return buyerNote(null, 'Cart confirmed — invoice created')
+      return buyerNote(null, "Added to today's marketplace invoice")
     },
-    [applyBootstrap, data.cartOrders, data.lots, data.settings, user],
+    [applyBootstrap, data.cartOrders, data.invoices, data.lots, data.settings, user],
   )
 
   const cancelCartOrder = useCallback(
@@ -2141,7 +2138,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         try {
           await api.confirmOffer(id)
           await applyBootstrap()
-          return buyerNote(null, 'Invoice created from your offer')
+          return buyerNote(null, "Added to today's marketplace invoice")
         } catch (e) {
           return buyerNote(e instanceof Error ? e.message : 'Confirm failed.', '')
         }
@@ -2156,13 +2153,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
       const qtyErr = checkOrderQty(lot, offer.qty, data.settings.copy)
       if (qtyErr) return qtyErr
-      const invoice = buildInvoice(
+      const invoice = placeMarketplaceInvoice(
+        data.invoices,
         {
-          id: `INV-${Date.now().toString().slice(-6)}-${offer.lotId.slice(-3)}`,
-          lotId: offer.lotId,
-          channel: 'marketplace',
-          createdAt: Date.now(),
           accountId: user.accountId,
+          createdAt: Date.now(),
           remarks: `Accepted offer ${offer.id}`,
           lines: [{ lotId: offer.lotId, qty: offer.qty, unitPrice: offer.unitPrice }],
         },
@@ -2172,7 +2167,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setData((prev) => ({
         ...prev,
         offers: (prev.offers || []).map((o) => (o.id === id ? { ...o, status: 'confirmed' as const } : o)),
-        invoices: [invoice, ...prev.invoices],
+        invoices: prev.invoices.some((row) => row.id === invoice.id)
+          ? prev.invoices.map((row) => (row.id === invoice.id ? invoice : row))
+          : [invoice, ...prev.invoices],
         lots: prev.lots
           .map((l) => (l.id === offer.lotId ? { ...l, qty: l.qty - offer.qty } : l))
           .filter((l) => l.channel !== 'marketplace' || l.qty > 0),
@@ -2190,9 +2187,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           ...(prev.notices || []),
         ],
       }))
-      return buyerNote(null, 'Invoice created from your offer')
+      return buyerNote(null, "Added to today's marketplace invoice")
     },
-    [applyBootstrap, data.lots, data.offers, data.settings, user],
+    [applyBootstrap, data.invoices, data.lots, data.offers, data.settings, user],
   )
 
   const cancelOffer = useCallback(
@@ -2404,11 +2401,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }
       }
 
+      const reserved = reserveInventory(data.inventory || [], lots)
+      if (reserved.error) return reserved.error
       setData((prev) => ({
         ...prev,
         settings: next.settings,
         lots: next.lots,
-        inventory: upsertInventory(prev.inventory || [], lots),
+        inventory: upsertInventory(reserved.inventory, lots),
         listingDrops: (prev.listingDrops || []).map((d) =>
           d.id === id
             ? {
@@ -2423,7 +2422,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }))
       return null
     },
-    [user, data.lots, data.listingDrops, data.settings, applyBootstrap],
+    [user, data.lots, data.listingDrops, data.settings, data.inventory, applyBootstrap],
   )
 
   const patchListingDropItem = useCallback(
@@ -2502,6 +2501,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const exists = list.some((s) => s.id === id)
         return { ...prev, inventory: exists ? list.map((s) => (s.id === id ? next : s)) : [next, ...list] }
       })
+      void api
+        .saveInventorySku({
+          id: next.id,
+          manufacturer: next.manufacturer,
+          model: next.model,
+          modelNumber: next.modelNumber,
+          capacity: next.capacity,
+          color: next.color,
+          grade: next.grade,
+          battery: next.battery,
+          origin: next.origin,
+          description: next.description,
+          operator: next.operator,
+          defaultMoq: next.defaultMoq,
+          lastPrice: next.lastPrice,
+          onHand: next.onHand,
+        })
+        .catch(() => undefined)
       return null
     },
     [user],

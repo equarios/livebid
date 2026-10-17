@@ -2,6 +2,7 @@ import { BatteryMark } from './BatteryMark'
 import { TimeLeft } from './TimeLeft'
 import { hideAuctionHigh, typePillClass } from '../lib/auctionLists'
 import { lotTypeLabel, specLocks, usd } from '../lib/format'
+import { lotItemSub, lotItemTitle } from '../lib/itemLine'
 import { moqLabel } from '../lib/moq'
 import { useNow, useStore } from '../store'
 import type { Lot } from '../types'
@@ -37,9 +38,8 @@ export function LotCompare({
                 Remove
               </button>
             </div>
-            <h3>
-              {lot.manufacturer} {lot.model} {lot.capacity}
-            </h3>
+            <h3>{lotItemTitle(lot)}</h3>
+            <p className="muted tiny">{lotItemSub(lot)}</p>
             <p className="muted tiny">{lot.id}</p>
             <dl className="specs">
               <div>

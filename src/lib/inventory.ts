@@ -71,6 +71,33 @@ export function inventoryFromLots(lots: Lot[]): InventorySku[] {
   return [...map.values()]
 }
 
+/** Take listed qty off matching warehouse SKUs. Fails closed if a SKU is missing or short. */
+export function reserveInventory(list: InventorySku[], lots: Lot[]): { inventory: InventorySku[]; error: string | null } {
+  const next = list.map((sku) => ({ ...sku }))
+  const need = new Map<string, { sku: InventorySku; qty: number; name: string }>()
+  for (const lot of lots) {
+    if (lot.qty < 1) continue
+    const fp = skuFingerprint(lot)
+    const sku = next.find((row) => skuFingerprint(row) === fp)
+    const name = `${lot.manufacturer} ${lot.model}`.trim()
+    if (!sku) return { inventory: list, error: `No warehouse item matches ${name}.` }
+    const row = need.get(sku.id) || { sku, qty: 0, name }
+    row.qty += lot.qty
+    need.set(sku.id, row)
+  }
+  for (const row of need.values()) {
+    const onHand = Math.max(0, Math.floor(Number(row.sku.onHand) || 0))
+    if (row.qty > onHand) {
+      return { inventory: list, error: `Only ${onHand} on hand for ${row.name}. This list needs ${row.qty}.` }
+    }
+  }
+  for (const row of need.values()) {
+    const onHand = Math.max(0, Math.floor(Number(row.sku.onHand) || 0))
+    row.sku.onHand = onHand - row.qty
+  }
+  return { inventory: next, error: null }
+}
+
 export function upsertInventory(list: InventorySku[], lots: Lot[]): InventorySku[] {
   const next = [...list]
   const byFp = new Map(next.map((s) => [skuFingerprint(s), s]))

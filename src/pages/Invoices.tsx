@@ -8,6 +8,9 @@ import {
   FULFILLMENT_LABELS,
   earliestPickupDate,
   trackingHref,
+  trackingLabel,
+  COLLECTED_LABEL,
+  READY_FOR_COLLECT_LABEL,
 } from '../lib/fulfillment'
 import {
   buyerNumber,
@@ -20,6 +23,7 @@ import {
   type InvoiceStep,
 } from '../lib/invoices'
 import { gbsDate, moneyPlain, moneyUsd } from '../lib/format'
+import { lotItemSub, lotItemTitle } from '../lib/itemLine'
 import { pushToast } from '../lib/toast'
 import { useNow, useStore } from '../store'
 import type { FulfillmentMode, Invoice } from '../types'
@@ -32,7 +36,7 @@ function TrackingLink({
   trackingNo: string
 }) {
   const href = trackingHref(carrier, trackingNo)
-  const label = carrier ? `${carrier} · ${trackingNo}` : trackingNo
+  const label = trackingLabel(carrier, trackingNo)
   if (!href) return <span className="mono">{label}</span>
   return (
     <a className="inv-track" href={href} target="_blank" rel="noreferrer">
@@ -285,7 +289,7 @@ export function Invoices() {
                 const { label, steps, lines } = rowMeta(inv)
                 const awaiting = label === 'Awaiting Payment'
                 const totals = invoiceTotals(inv, settings)
-                const auction = inv.auctionLabel || (lot ? `${lot.manufacturer} ${lot.model}` : inv.lotId)
+                const auction = inv.auctionLabel || (lot ? lotItemTitle(lot) : inv.lotId)
                 return (
                   <tr key={inv.id} className={inv.opened ? '' : 'is-unopened'}>
                     <td className="inv-status-cell">
@@ -306,9 +310,7 @@ export function Invoices() {
                         {lines.length > 1
                           ? `${lines.length} line items`
                           : lot
-                            ? [lot.capacity, lot.color, lot.grade ? `Grade ${lot.grade}` : '']
-                                .filter(Boolean)
-                                .join(' · ')
+                            ? lotItemSub(lot)
                             : moneyPlain(inv.unitPrice) + ' / pc'}
                         {poOnly && inv.poNumber ? ` · PO ${inv.poNumber}` : ''}
                       </div>
@@ -318,7 +320,7 @@ export function Invoices() {
                     <td>
                       {inv.fulfillmentMode === 'pickup' ? (
                         <span className="muted">
-                          {inv.shippedAt ? 'Collected' : inv.readyForCollect ? 'Ready for collect' : '—'}
+                          {inv.shippedAt ? COLLECTED_LABEL : inv.readyForCollect ? READY_FOR_COLLECT_LABEL : '—'}
                         </span>
                       ) : inv.trackingNo ? (
                         <TrackingLink carrier={inv.courierCarrier} trackingNo={inv.trackingNo} />
@@ -372,7 +374,7 @@ export function Invoices() {
               <strong>
                 {inv.shippingAddendum
                   ? `Shipping · ${inv.parentInvoiceId || inv.id}`
-                  : inv.auctionLabel || (lot ? `${lot.manufacturer} ${lot.model}` : inv.lotId)}
+                  : inv.auctionLabel || (lot ? lotItemTitle(lot) : inv.lotId)}
               </strong>
               <div className="muted tiny mono">
                 {inv.id}
@@ -394,7 +396,7 @@ export function Invoices() {
               ) : (
                 <div className="tiny" style={{ marginTop: 8 }}>
                   {FULFILLMENT_LABELS[inv.fulfillmentMode || fulfillCfg.defaultWholesaleMode]}
-                  {inv.readyForCollect ? ' · Ready for collect' : ''}
+                  {inv.readyForCollect ? ` · ${READY_FOR_COLLECT_LABEL}` : ''}
                   {inv.courierCarrier ? ` · ${inv.courierCarrier}` : ''}
                   {inv.fulfillmentMode === 'delivery' && inv.shippingFeeQuoted === false
                     ? ' · Shipping TBD (pay goods now)'

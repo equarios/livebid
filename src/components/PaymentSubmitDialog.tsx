@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { ModalShell } from './ModalShell'
 import { usd } from '../lib/format'
+import { lotItemSub, lotItemTitle } from '../lib/itemLine'
 import { invoiceTotals } from '../lib/invoices'
 import {
   CASH_RECEIPT_MARKER,
@@ -119,9 +120,14 @@ export function PaymentSubmitDialog({ invoice, onClose, onDone }: Props) {
           <div>
             <dt>Model</dt>
             <dd>
-              {lot
-                ? `${lot.manufacturer} ${lot.model}${lot.modelNumber ? ` ${lot.modelNumber}` : ''} ${lot.capacity}`
-                : invoice.lotId}
+              {lot ? (
+                <>
+                  {lotItemTitle(lot)}
+                  <div className="muted tiny">{lotItemSub(lot)}</div>
+                </>
+              ) : (
+                invoice.lotId
+              )}
             </dd>
           </div>
           <div>

@@ -13,6 +13,7 @@ import {
 } from '../components/CheckMenu'
 import { isFilterUiTarget } from '../components/FilterPanel'
 import { originLabel } from '../lib/auctionLists'
+import { lotItemTitle } from '../lib/itemLine'
 import { ItemLink } from '../components/ItemLink'
 import { ConfirmBidDialog } from '../components/ConfirmBidDialog'
 import { fillCopy, usd, usdCents } from '../lib/format'
@@ -199,7 +200,7 @@ function MarketLot({ lot, asCard }: { lot: Lot; asCard?: boolean }) {
       <AskAboutItem
         channel="marketplace"
         itemId={lot.id}
-        itemTitle={`${lot.manufacturer} ${lot.model}`}
+        itemTitle={lotItemTitle(lot)}
         itemHref={`/marketplace?q=${encodeURIComponent(lot.id)}`}
         className="btn btn-ghost btn-sm"
         label="Notify me"

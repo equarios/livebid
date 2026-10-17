@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { originLabel } from '../lib/auctionLists'
+import { lotItemSub, lotItemTitle } from '../lib/itemLine'
 import {
   groupDropItems,
   previewDropClocks,
@@ -173,11 +173,8 @@ export function ListingReview() {
                     </td>
                     <td>{g.label}</td>
                     <td>
-                      {item.manufacturer} {item.model}
-                      {item.modelNumber ? ` ${item.modelNumber}` : ''} {item.capacity}
-                      <p className="muted tiny item-specs">
-                        {item.color} · Grade {item.grade} · {originLabel(item.origin)}
-                      </p>
+                      {lotItemTitle(item)}
+                      <p className="muted tiny item-specs">{lotItemSub(item)} · Grade {item.grade}</p>
                     </td>
                     <td className="num">{item.qty}</td>
                     <td className="num">{usd(item.startPrice)}</td>
@@ -492,13 +489,9 @@ export function ListingReview() {
                         </div>
                       ) : (
                         <div key={item.id} className="listing-drop-lot">
-                          <strong>
-                            {item.manufacturer} {item.model}
-                            {item.modelNumber ? ` ${item.modelNumber}` : ''} {item.capacity}
-                          </strong>
+                          <strong>{lotItemTitle(item)}</strong>
                           <p className="muted tiny item-specs">
-                            {item.id} · {g.label} · {item.color} · Grade {item.grade} ·{' '}
-                            {originLabel(item.origin)} · {item.qty} pcs · {usd(item.currentPrice)}
+                            {item.id} · {g.label} · {lotItemSub(item)} · Grade {item.grade} · {item.qty} pcs · {usd(item.currentPrice)}
                           </p>
                         </div>
                       ),

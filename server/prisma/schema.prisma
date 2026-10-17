@@ -344,6 +344,29 @@ model InventorySku {
   onHand           Int     @default(0)
 }
 
+model StockMove {
+  id        String   @id @default(cuid())
+  skuId     String
+  productId String
+  qty       Int
+  createdAt DateTime @default(now())
+
+  @@index([skuId])
+}
+
+/// Pieces taken out of the warehouse when a lot is launched. One row per lot.
+model StockHold {
+  lotId      String    @id
+  skuId      String
+  qty        Int
+  /// return = leftover added back once. leave = admin kept it out.
+  decision   String?
+  decidedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([skuId])
+}
+
 model Bid {
   id        String   @id @default(cuid())
   lotId     String

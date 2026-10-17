@@ -1,4 +1,5 @@
 import type { Channel, Invoice, InvoiceLine, InvoiceStatus, Lot, SiteSettings } from '../types'
+import { SHIPPED_LABEL } from './fulfillment'
 
 export function invoiceChannel(inv: Invoice, lots: Lot[]): Channel {
   if (inv.channel) return inv.channel
@@ -112,6 +113,72 @@ export function invoiceTotals(inv: Invoice, _settings?: SiteSettings | null) {
   return { goods, fee, feePct, qty, total: roundMoney(goods + fee) }
 }
 
+const HK_OFFSET = 8 * 60 * 60 * 1000
+
+export function marketDayStart(stamp: number) {
+  const shifted = new Date(stamp + HK_OFFSET)
+  return Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate()) - HK_OFFSET
+}
+
+function marketDayId(accountId: string, stamp: number) {
+  const shifted = new Date(stamp + HK_OFFSET)
+  const yy = String(shifted.getUTCFullYear()).slice(-2)
+  const mm = String(shifted.getUTCMonth() + 1).padStart(2, '0')
+  const dd = String(shifted.getUTCDate()).padStart(2, '0')
+  const who = accountId.replace(/[^A-Za-z0-9]/g, '').slice(0, 16) || 'BUYER'
+  return `MKT-${yy}${mm}${dd}-${who}`
+}
+
+/** One draft marketplace bill per company per Hong Kong day. Later purchases append lines. */
+export function placeMarketplaceInvoice(
+  invoices: Invoice[],
+  partial: {
+    accountId: string
+    lines: InvoiceLine[]
+    createdAt: number
+    remarks?: string
+  },
+  settings?: SiteSettings | null,
+  lots?: Lot[],
+): Invoice {
+  const start = marketDayStart(partial.createdAt)
+  const open = invoices.find(
+    (inv) =>
+      inv.accountId === partial.accountId &&
+      invoiceChannel(inv, lots || []) === 'marketplace' &&
+      inv.status === 'draft' &&
+      inv.createdAt >= start &&
+      inv.createdAt < start + 86_400_000,
+  )
+  if (open) {
+    const lines = [...invoiceLines(open), ...partial.lines]
+    return buildInvoice(
+      {
+        ...open,
+        lines,
+        remarks: [open.remarks, partial.remarks].filter(Boolean).join(' · '),
+      },
+      settings,
+      lots,
+    )
+  }
+  const id = marketDayId(partial.accountId, partial.createdAt)
+  const clash = invoices.some((inv) => inv.id === id)
+  return buildInvoice(
+    {
+      id: clash ? `${id}-${String(partial.createdAt).slice(-4)}` : id,
+      lotId: partial.lines[0].lotId,
+      channel: 'marketplace',
+      createdAt: partial.createdAt,
+      accountId: partial.accountId,
+      remarks: partial.remarks,
+      lines: partial.lines,
+    },
+    settings,
+    lots,
+  )
+}
+
 export function buildInvoice(
   partial: Omit<Invoice, 'amount' | 'qty' | 'unitPrice' | 'status'> & {
     lines: InvoiceLine[]
@@ -171,7 +238,7 @@ export function invoiceStatusLabel(status: InvoiceStatus) {
 }
 
 export function clientInvoiceLabel(inv: Invoice) {
-  if (inv.status === 'paid' || inv.shippedAt) return 'Shipped'
+  if (inv.status === 'paid' || inv.shippedAt) return SHIPPED_LABEL
   return 'Awaiting Payment'
 }
 
@@ -197,7 +264,7 @@ export function invoiceSteps(inv: Invoice): InvoiceStep[] {
       label: declined ? 'Declined' : paid ? 'Approved' : 'Dual approval',
       done: decided,
     },
-    { key: 'ship', label: 'Shipped', done: shipped },
+    { key: 'ship', label: SHIPPED_LABEL, done: shipped },
   ]
   const currentIndex = keys.findIndex((s) => !s.done)
   return keys.map((s, i) => ({

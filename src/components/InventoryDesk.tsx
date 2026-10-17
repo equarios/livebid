@@ -7,6 +7,7 @@ import { listingMinutes } from '../lib/duration'
 import { skuSpecLine, skuTitle } from '../lib/inventory'
 import { dropClockHint, dropListKey, groupDropItems } from '../lib/listingDrops'
 import { usd } from '../lib/format'
+import { api } from '../lib/api'
 import { TimeLeft } from './TimeLeft'
 import { toastMsg } from '../lib/toast'
 import { useNow, useStore } from '../store'
@@ -80,6 +81,9 @@ export function InventoryDesk() {
   const [qtyBySku, setQtyBySku] = useState<Record<string, string>>({})
   const [priceBySku, setPriceBySku] = useState<Record<string, string>>({})
   const [queue, setQueue] = useState<QueueRow[]>([])
+  const [storeQty, setStoreQty] = useState<Record<string, string>>({})
+  const [storePrice, setStorePrice] = useState<Record<string, string>>({})
+  const [movingId, setMovingId] = useState<string | null>(null)
 
   const shown = inventory.filter((sku) => {
     const q = query.trim().toLowerCase()
@@ -202,6 +206,51 @@ export function InventoryDesk() {
         .join(', ')}). Nothing is live until Super Launch Preview.`,
     )
     setQueue([])
+  }
+
+  async function moveToStore(sku: InventorySku) {
+    const qty = Number(storeQty[sku.id] || '')
+    const price = Number(storePrice[sku.id] || sku.lastPrice || '')
+    const onHand = onHandOf(sku)
+    if (!Number.isInteger(qty) || qty < 1 || qty > onHand) {
+      setMsg(`Move 1 to ${onHand} pcs from ${skuTitle(sku)}.`)
+      return
+    }
+    if (!Number.isFinite(price) || price < 1) {
+      setMsg('Set the store price before moving stock.')
+      return
+    }
+    const err = saveSku({ ...sku, onHand })
+    if (err) {
+      setMsg(err)
+      return
+    }
+    setMovingId(sku.id)
+    try {
+      await api.saveInventorySku({
+        id: sku.id,
+        manufacturer: sku.manufacturer,
+        model: sku.model,
+        modelNumber: sku.modelNumber,
+        capacity: sku.capacity,
+        color: sku.color,
+        grade: sku.grade,
+        battery: sku.battery,
+        origin: sku.origin,
+        description: sku.description,
+        operator: sku.operator,
+        defaultMoq: sku.defaultMoq,
+        lastPrice: sku.lastPrice,
+        onHand,
+      })
+      const moved = await api.moveInventoryToStore(sku.id, { qty, price })
+      saveSku({ ...sku, onHand: moved.onHand })
+      setMsg(`Moved ${qty} pcs of ${skuTitle(sku)} to the store.`)
+      setStoreQty((prev) => ({ ...prev, [sku.id]: '' }))
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : 'Could not move stock to the store.')
+    }
+    setMovingId(null)
   }
 
   function onSave(e: FormEvent) {
@@ -452,6 +501,30 @@ export function InventoryDesk() {
                       </td>
                       <td className="num">{sku.lastPrice ? usd(sku.lastPrice) : '—'}</td>
                       <td className="inv-actions">
+                        <input
+                          className="inv-cell-input"
+                          inputMode="numeric"
+                          aria-label={`Store qty ${skuTitle(sku)}`}
+                          placeholder="Qty"
+                          value={storeQty[sku.id] || ''}
+                          onChange={(e) => setStoreQty((prev) => ({ ...prev, [sku.id]: e.target.value }))}
+                        />
+                        <input
+                          className="inv-cell-input"
+                          inputMode="decimal"
+                          aria-label={`Store price ${skuTitle(sku)}`}
+                          placeholder="Price"
+                          value={storePrice[sku.id] || ''}
+                          onChange={(e) => setStorePrice((prev) => ({ ...prev, [sku.id]: e.target.value }))}
+                        />
+                        <button
+                          type="button"
+                          className="btn btn-primary btn-sm"
+                          disabled={movingId === sku.id || onHandOf(sku) < 1}
+                          onClick={() => void moveToStore(sku)}
+                        >
+                          {movingId === sku.id ? 'Moving…' : 'Move to store'}
+                        </button>
                         <button
                           type="button"
                           className="btn btn-ghost btn-sm"

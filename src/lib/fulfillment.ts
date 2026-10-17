@@ -18,6 +18,18 @@ export const DEFAULT_FULFILLMENT: FulfillmentSettings = {
 
 export const SHIP_CARRIERS = ['FedEx', 'UPS', 'DHL', 'Other'] as const
 
+export const COLLECTED_LABEL = 'Collected'
+export const READY_FOR_COLLECT_LABEL = 'Ready for collect'
+export const SHIPPED_LABEL = 'Shipped'
+
+/** Carrier and number as one line. A blank number returns an empty string. */
+export function trackingLabel(carrier: string | null | undefined, trackingNo: string) {
+  const no = trackingNo.trim()
+  if (!no) return ''
+  const via = (carrier || '').trim()
+  return via ? `${via} · ${no}` : no
+}
+
 /** Public tracking page for a known carrier. Other or a blank carrier has no link. */
 export function trackingHref(carrier: string | null | undefined, trackingNo: string) {
   const no = trackingNo.trim()

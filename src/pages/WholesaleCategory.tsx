@@ -5,6 +5,7 @@ import { SeoHead } from '../components/SeoHead'
 import { canUseWholesaleDesk } from '../lib/channelAccess'
 import { listPath } from '../lib/auctionLists'
 import { usd } from '../lib/format'
+import { lotItemSub, lotItemTitle } from '../lib/itemLine'
 import { lotThumb, photoFallback } from '../lib/photos'
 import {
   CONDITIONS,
@@ -195,7 +196,7 @@ function CategoryDetail({ facet }: { facet: SeoFacet }) {
       itemListElement: matched.slice(0, 12).map((lot, i) => ({
         '@type': 'ListItem',
         position: i + 1,
-        name: `${lot.manufacturer} ${lot.model} ${lot.capacity}`.trim(),
+        name: lotItemTitle(lot),
       })),
     },
   }
@@ -311,14 +312,8 @@ function CategoryDetail({ facet }: { facet: SeoFacet }) {
                       }}
                     />
                     <span className="seo-lot-copy">
-                      <strong>
-                        {lot.manufacturer} {lot.model} {lot.capacity}
-                      </strong>
-                      <span className="muted tiny">
-                        Grade {lot.grade}
-                        {lot.simLocked || lot.activationLocked ? ' · Locked' : ' · Unlocked'} ·{' '}
-                        {lot.channel}
-                      </span>
+                      <strong>{lotItemTitle(lot)}</strong>
+                      <span className="muted tiny">{lotItemSub(lot)} · Grade {lot.grade}</span>
                     </span>
                     <span className="seo-lot-price">
                       {user ? `${usd(lot.currentPrice)} / pc` : 'Sign in for price'}

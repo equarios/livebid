@@ -4,7 +4,8 @@ import { LotPhotos } from './LotPhotos'
 import { ModalShell } from './ModalShell'
 import { PastPriceComps } from './PastPriceComps'
 import { isSealedLot, originLabel, typePillClass } from '../lib/auctionLists'
-import { lotTypeLabel, specLocks, usd } from '../lib/format'
+import { lotTypeLabel, usd } from '../lib/format'
+import { lotItemSub, lotItemTitle } from '../lib/itemLine'
 import { BatteryMark } from './BatteryMark'
 import { moqLabel } from '../lib/moq'
 import { useNow, useStore } from '../store'
@@ -68,10 +69,8 @@ function LotDetailDialog({ lotId, onClose }: { lotId: string; onClose: () => voi
             <span className={`pill pill-${typePillClass(lot, settings)}`}>
               {lotTypeLabel(lot, settings)}
             </span>
-            <h2 id="lot-preview-title">
-              {lot.manufacturer} {lot.model}
-              {lot.modelNumber ? ` ${lot.modelNumber}` : ''} {lot.capacity}
-            </h2>
+            <h2 id="lot-preview-title">{lotItemTitle(lot)}</h2>
+            <p className="muted item-specs">{lotItemSub(lot)}</p>
             <p className="muted">
               <CopyId value={lot.id} /> ·{' '}
               {lot.channel === 'auction' && isSealedLot(lot, settings) && lot.endsAt > now
@@ -133,16 +132,13 @@ function LotDetailDialog({ lotId, onClose }: { lotId: string; onClose: () => voi
             <dd>{moqLabel(lot, settings.copy.noMoq)}</dd>
           </div>
         </dl>
-        <p className="muted tiny item-specs">
-          Grade {lot.grade} · <BatteryMark value={lot.battery} /> · {specLocks(lot)}
-        </p>
         <h3 className="detail-notes-title">Condition notes</h3>
         <p>{lot.description}</p>
         <div className="lot-modal-ask" style={{ marginTop: 12 }}>
           <AskAboutItem
             channel={lot.channel === 'marketplace' ? 'marketplace' : 'auction'}
             itemId={lot.id}
-            itemTitle={`${lot.manufacturer} ${lot.model}${lot.modelNumber ? ` ${lot.modelNumber}` : ''} ${lot.capacity}`.trim()}
+            itemTitle={lotItemTitle(lot)}
             itemHref={lot.channel === 'marketplace' ? '/marketplace' : '/'}
           />
         </div>
@@ -171,7 +167,7 @@ function SimilarLots({ lot }: { lot: Lot }) {
       <div className="similar-row">
         {similar.map((row) => (
           <button key={row.id} type="button" className="similar-chip" onClick={() => openLot(row.id)}>
-            {row.manufacturer} {row.model} {row.capacity} · Grade {row.grade}
+            {lotItemTitle(row)} · {lotItemSub(row)}
           </button>
         ))}
       </div>
