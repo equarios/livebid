@@ -1,12 +1,21 @@
 ---
-description: Keep agent turns short to save tokens and cost
+description: Minimize tokens and cost — short turns, minimal tools
 alwaysApply: true
 ---
 
-# Save tokens (LiveBid)
+# Save tokens / money (LiveBid)
 
-- Answer in few short sentences unless the user asks for detail.
-- One task per turn. Do not expand scope or re-run verify/e2e/staging unless asked.
-- Prefer grep/read of specific files over broad exploration or subagents.
-- Skip long summaries of prior work; no restating LAUNCH/PUBLISH unless the user says publish/launch/deploy.
-- Do not start parallel research when a direct fix or yes/no is enough.
+## Reply
+- Few short sentences. No recap, no “what else”, no launch nag unless asked.
+- One task per turn. Stop when done. Do not offer next ideas unless asked.
+
+## Tools (biggest cost)
+- Prefer Ask / cheaper model for questions; Agent only when code must change.
+- Grep/read 1–3 files max. No repo scans, subagents, or parallel research by default.
+- No verify / e2e / staging / prisma generate / full restart unless asked.
+- Do not poll terminals or re-check health after a known-good start.
+- Ignore stale shell “task finished” notices if the app was intentionally restarted.
+
+## Chats
+- New chat when the topic changes (fetch ≠ bug ≠ feature).
+- Long Agent chats burn tokens — keep feature work in short focused chats.
