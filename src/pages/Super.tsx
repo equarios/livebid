@@ -9,6 +9,7 @@ import { StoreDesk } from '../components/StoreDesk'
 import { FulfillmentQueue } from '../components/FulfillmentQueue'
 import { ProductEnquiryDesk } from '../components/ProductEnquiryDesk'
 import { ClientsDesk } from '../components/ClientsDesk'
+import { ResultDesk } from '../components/ResultDesk'
 import { WholesaleReviewDesk } from '../components/WholesaleReviewDesk'
 import { NumberField } from '../components/NumberField'
 import { TimeLeft } from '../components/TimeLeft'
@@ -315,7 +316,7 @@ function AddAuctionTypeDialog({
   )
 }
 
-type SuperSection = 'today' | 'catalog' | 'money' | 'store' | 'people' | 'clients' | 'settings'
+type SuperSection = 'today' | 'result' | 'catalog' | 'money' | 'store' | 'people' | 'clients' | 'settings'
 type SuperSettingsDesk =
   | 'guide'
   | 'site'
@@ -328,6 +329,7 @@ type SuperSettingsDesk =
 
 const SUPER_SECTIONS = new Set<SuperSection>([
   'today',
+  'result',
   'catalog',
   'money',
   'store',
@@ -981,6 +983,7 @@ export function Super() {
   const sections: OpsSection[] = useMemo(
     () => [
       { id: 'today', label: 'Today', count: queues.total || undefined },
+      { id: 'result', label: 'Result' },
       {
         id: 'catalog',
         label: 'Catalog',
@@ -1045,6 +1048,8 @@ export function Super() {
       onDesk={(id) => go('settings', id)}
       actions={settingsActions}
     >
+      {section === 'result' ? <ResultDesk /> : null}
+
       {section === 'today' ? (
         <OpsToday
           role="super"

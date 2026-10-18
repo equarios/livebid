@@ -54,6 +54,7 @@ const CORE_KEYS = new Set([
   'status',
   'createdAt',
   'accountId',
+  'paidAt',
 ])
 
 export function splitInvoiceRow(inv: Record<string, unknown>) {
@@ -73,6 +74,10 @@ export function splitInvoiceRow(inv: Record<string, unknown>) {
     status: String(inv.status || 'draft'),
     createdAt: BigInt(Number(inv.createdAt) || Date.now()),
     accountId: inv.accountId ? String(inv.accountId).trim().toUpperCase() : null,
+    paidAt:
+      String(inv.status || 'draft') === 'paid'
+        ? BigInt(Number(inv.paidAt) > 0 ? Number(inv.paidAt) : Date.now())
+        : null,
     dataJson: JSON.stringify(extra),
   }
 }
@@ -88,6 +93,7 @@ export function invoiceUpdateData(inv: Record<string, unknown>) {
     unitPrice: row.unitPrice,
     status: row.status,
     accountId: row.accountId,
+    paidAt: row.paidAt,
     dataJson: row.dataJson,
   }
 }

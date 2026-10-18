@@ -1,5 +1,30 @@
 /** Thin client for the local Hono API (cookie session). */
 
+export type CompanyResultDto = {
+  from: number
+  to: number
+  collectedGoods: number
+  collectedFees: number
+  owedGoods: number
+  owedFees: number
+  costOfGoods: number
+  writtenOff: number
+  grossProfit: number
+  missingSales: number
+  missingPcs: number
+  missingWriteoffPcs: number
+  stockValue: number
+  stockUncostedPcs: number
+  missing: {
+    key: string
+    skuId: string | null
+    label: string
+    kind: 'sale' | 'unlinked' | 'writeoff'
+    pcs: number
+    amount: number
+  }[]
+}
+
 export type ApiUser = {
   accountId: string
   company: string
@@ -533,6 +558,16 @@ export const api = {
     req<{ onHand: number; leftover: number }>('/api/catalog/returns', {
       method: 'POST',
       body: JSON.stringify({ lotId, decision }),
+    }),
+  companyResult: (query: string) => req<CompanyResultDto>(`/api/super/result?${query}`),
+  companyCosts: () =>
+    req<{
+      skus: { id: string; model: string; spec: string; onHand: number; unitCost: number | null }[]
+    }>('/api/super/costs'),
+  saveCompanyCost: (id: string, unitCost: number | null) =>
+    req<{ id: string; unitCost: number | null }>(`/api/super/costs/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ unitCost }),
     }),
   moveInventoryToStore: (id: string, body: { qty: number; price: number }) =>
     req<{ onHand: number; productId: string; stock: number }>(

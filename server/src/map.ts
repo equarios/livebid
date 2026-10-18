@@ -110,6 +110,7 @@ export function mapInvoice(inv: Invoice) {
     createdAt: Number(inv.createdAt),
     accountId: inv.accountId ?? undefined,
     ...extra,
+    paidAt: inv.paidAt != null ? Number(inv.paidAt) : undefined,
   }
 }
 

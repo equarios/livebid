@@ -342,6 +342,8 @@ model InventorySku {
   lastPrice        Float?
   /** Warehouse stock (pcs on hand). */
   onHand           Int     @default(0)
+  /** What the company paid per piece. Super only — never mapped to staff or buyers. */
+  unitCost         Float?
 }
 
 model StockMove {
@@ -362,6 +364,8 @@ model StockHold {
   /// return = leftover added back once. leave = admin kept it out.
   decision   String?
   decidedAt  DateTime?
+  /** Pieces left out of the warehouse when decision = leave. */
+  writeoffQty Int?
   createdAt  DateTime  @default(now())
 
   @@index([skuId])
@@ -433,6 +437,8 @@ model Invoice {
   unitPrice Float
   status    String
   createdAt BigInt
+  /// Stamped the first time status becomes paid. Older paid rows fall back to createdAt.
+  paidAt    BigInt?
   accountId String?
   dataJson  String
   account   Account? @relation(fields: [accountId], references: [accountId], onDelete: SetNull)

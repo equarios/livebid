@@ -413,7 +413,11 @@ catalogRoutes.post('/returns', requireUser, requireStaff, async (c) => {
   const result = await prisma.$transaction(async (tx) => {
     const claimed = await tx.stockHold.updateMany({
       where: { lotId: hold.lotId, decision: null },
-      data: { decision, decidedAt: new Date() },
+      data: {
+        decision,
+        decidedAt: new Date(),
+        writeoffQty: decision === 'leave' ? leftover : null,
+      },
     })
     if (!claimed.count) throw new Error('That leftover was already decided.')
     switch (decision) {
