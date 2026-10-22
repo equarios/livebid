@@ -17,7 +17,8 @@
     "db:backup": "powershell -NoProfile -File ../scripts/pg-backup.ps1",
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
-    "db:reset": "prisma db push --force-reset && tsx prisma/seed.ts"
+    "db:reset": "prisma db push --force-reset && tsx prisma/seed.ts",
+    "tac:import": "node scripts/import-osmocom-tac.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1149.0",

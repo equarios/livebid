@@ -16,6 +16,10 @@ import { StoreRail } from '../components/StoreRail'
 import { StoreCatalogSkeleton } from '../components/StoreSkeleton'
 import { DEFAULT_SETTINGS } from '../data'
 import { api, type StoreProductDto } from '../lib/api'
+import { pruneStoreCart } from '../lib/storeCart'
+import { collapseStoreFamilies } from '../lib/storeVariants'
+import { MAX_LANDER_HERO_SLIDES } from '../types'
+
 import { originLabel } from '../lib/auctionLists'
 import {
   STOCK_FILTER_LABEL,
@@ -30,6 +34,16 @@ import { useStore } from '../store'
 import type { Grade } from '../types'
 
 type StoreFilterKey = 'brand' | 'grade' | 'memory' | 'origin' | 'category' | 'stock'
+type StoreSort = 'featured' | 'newest' | 'price-asc' | 'price-desc'
+
+const SORT_OPTIONS: { id: StoreSort; label: string }[] = [
+  { id: 'featured', label: 'Featured' },
+  { id: 'newest', label: 'Newest' },
+  { id: 'price-asc', label: 'Price: low to high' },
+  { id: 'price-desc', label: 'Price: high to low' },
+]
+
+type Chip = { key: string; label: string; onRemove: () => void }
 
 export function Store() {
   const { settings } = useStore()
@@ -47,6 +61,7 @@ export function Store() {
   const [origins, setOrigins] = useState<string[]>([])
   const [categories, setCategories] = useState<string[]>([])
   const [stock, setStock] = useState<StockFilter[]>(['available'])
+  const [sort, setSort] = useState<StoreSort>('featured')
   const [open, setOpen] = useState<StoreFilterKey | null>(null)
   const filtersRef = useRef<HTMLDivElement>(null)
 
@@ -55,7 +70,7 @@ export function Store() {
     settings.pages?.storeHeroes?.length && settings.pages.storeHeroes.length >= 2
       ? settings.pages.storeHeroes
       : defaults
-  const heroes = raw.map((s, i) => ({
+  const heroes = raw.slice(0, MAX_LANDER_HERO_SLIDES).map((s, i) => ({
     title: s.title,
     body: s.body,
     cta: s.cta,
@@ -124,8 +139,86 @@ export function Store() {
         .toLowerCase()
       return hay.includes(q)
     })
-    return sortStockLast(rows, (p) => p.stock > 0)
-  }, [products, q, brands, grades, memories, origins, categories, stock])
+    const collapsed = collapseStoreFamilies(rows)
+    const stockSorted = sortStockLast(collapsed, (p) => p.stock > 0)
+    const inStock = stockSorted.filter((p) => p.stock > 0)
+    const out = stockSorted.filter((p) => p.stock < 1)
+    const cmp = (a: StoreProductDto, b: StoreProductDto) => {
+      if (sort === 'price-asc') return a.price - b.price
+      if (sort === 'price-desc') return b.price - a.price
+      if (sort === 'newest') {
+        return parseTimeMs(b.updatedAt) - parseTimeMs(a.updatedAt)
+      }
+      return 0
+    }
+    if (sort === 'featured') return stockSorted
+    return [...inStock.sort(cmp), ...out.sort(cmp)]
+  }, [products, q, brands, grades, memories, origins, categories, stock, sort])
+
+  const chips = useMemo(() => {
+    const list: Chip[] = []
+    if (q) {
+      const rawQ = params.get('q') || q
+      list.push({
+        key: 'q',
+        label: `Search: ${rawQ}`,
+        onRemove: () => navigate('/store'),
+      })
+    }
+    for (const b of brands) {
+      list.push({
+        key: `brand:${b}`,
+        label: b,
+        onRemove: () => startTransition(() => setBrands((prev) => prev.filter((x) => x !== b))),
+      })
+    }
+    for (const c of categories) {
+      list.push({
+        key: `cat:${c}`,
+        label: c,
+        onRemove: () =>
+          startTransition(() => setCategories((prev) => prev.filter((x) => x !== c))),
+      })
+    }
+    for (const g of grades) {
+      list.push({
+        key: `grade:${g}`,
+        label: `Grade ${g}`,
+        onRemove: () => startTransition(() => setGrades((prev) => prev.filter((x) => x !== g))),
+      })
+    }
+    for (const m of memories) {
+      list.push({
+        key: `mem:${m}`,
+        label: m,
+        onRemove: () => startTransition(() => setMemories((prev) => prev.filter((x) => x !== m))),
+      })
+    }
+    for (const o of origins) {
+      list.push({
+        key: `origin:${o}`,
+        label: o,
+        onRemove: () => startTransition(() => setOrigins((prev) => prev.filter((x) => x !== o))),
+      })
+    }
+    const stockDefault = stock.length === 1 && stock[0] === 'available'
+    if (!stockDefault) {
+      for (const s of stock) {
+        list.push({
+          key: `stock:${s}`,
+          label: STOCK_FILTER_LABEL[s],
+          onRemove: () =>
+            startTransition(() =>
+              setStock((prev) => {
+                const next = prev.filter((x) => x !== s)
+                return next.length ? next : ['available']
+              }),
+            ),
+        })
+      }
+    }
+    return list
+  }, [q, params, brands, categories, grades, memories, origins, stock, navigate])
 
   useEffect(() => {
     let alive = true
@@ -133,7 +226,9 @@ export function Store() {
     void api
       .storeProducts()
       .then((res) => {
-        if (alive) setProducts(res.products)
+        if (!alive) return
+        setProducts(res.products)
+        pruneStoreCart(res.products.map((p) => p.id))
       })
       .catch((e) => {
         if (alive) setErr(e instanceof Error ? e.message : 'Could not load store.')
@@ -208,10 +303,14 @@ export function Store() {
           note={
             q
               ? `Results for “${params.get('q')}”.`
-              : 'Fixed retail prices — add to cart and check out here.'
+              : 'Browse fixed prices, add to cart, and check out here.'
           }
           label={storeName}
         />
+        <p className="muted tiny store-we-buy-note">
+          We buy used phones too —{' '}
+          <Link to="/store/trade-in">get a trade-in estimate</Link> toward your cart.
+        </p>
 
         {showFilters ? (
           <div className="filters filters-no-search store-origin-filters" ref={filtersRef}>
@@ -287,9 +386,55 @@ export function Store() {
                   }
                 />
               ) : null}
+              <label
+                className={`store-sort-pill${sort !== 'featured' ? ' is-active' : ''}`}
+              >
+                <span className="filter-trigger store-sort-face" aria-hidden>
+                  <span className="filter-trigger-title">Sort</span>
+                  <span className="filter-trigger-value">
+                    {SORT_OPTIONS.find((o) => o.id === sort)?.label || 'Featured'}
+                  </span>
+                </span>
+                <select
+                  className="store-sort-native"
+                  value={sort}
+                  onChange={(e) => setSort(e.target.value as StoreSort)}
+                  aria-label="Sort products"
+                >
+                  {SORT_OPTIONS.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
             </div>
           </div>
         ) : null}
+
+        {chips.length ? (
+          <div className="store-filter-chips" aria-label="Active filters">
+            {chips.map((c) => (
+              <button
+                key={c.key}
+                type="button"
+                className="store-filter-chip"
+                onClick={c.onRemove}
+                aria-label={`Remove ${c.label}`}
+              >
+                <span>{c.label}</span>
+                <span aria-hidden>×</span>
+              </button>
+            ))}
+            <button type="button" className="store-filter-clear" onClick={clearFilters}>
+              Clear all
+            </button>
+          </div>
+        ) : null}
+
+        <p className="store-sold-link">
+          <Link to="/store/sold">Recently sold →</Link>
+        </p>
 
         {toast ? (
           <p className="tiny retail-toast shop-toast" role="status">
@@ -307,6 +452,7 @@ export function Store() {
                 key={p.id}
                 product={p}
                 index={i}
+                catalog={products}
                 onOpen={setPreview}
               />
             ))}
@@ -325,7 +471,13 @@ export function Store() {
         ) : null}
       </div>
 
-      {preview ? <StoreProductPreview product={preview} onClose={() => setPreview(null)} /> : null}
+      {preview ? (
+        <StoreProductPreview
+          product={preview}
+          onClose={() => setPreview(null)}
+          onOpenProduct={setPreview}
+        />
+      ) : null}
       <StoreWholesaleHandoff />
     </PublicShell>
   )

@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { LandHeroSlider } from '../components/LandHeroSlider'
 import { PublicShell } from '../components/PublicShell'
 import { SeoHead } from '../components/SeoHead'
@@ -18,7 +18,7 @@ import { lotItemSub, lotModelTitle } from '../lib/itemLine'
 import { lotThumb, photoFallback } from '../lib/photos'
 import { DEFAULT_SETTINGS } from '../data'
 import { useNow, useStore } from '../store'
-import type { Lot, SiteSettings } from '../types'
+import { MAX_LANDER_HERO_SLIDES, type Lot, type SiteSettings } from '../types'
 
 function closesLabel(endsAt: number, now: number) {
   const ms = endsAt - now
@@ -266,7 +266,7 @@ export function Home() {
             brand={brand}
             label={`${brand} wholesale`}
             veilClassName="is-wholesale"
-            slides={pages.wholesaleHeroes.map((s) => ({
+            slides={pages.wholesaleHeroes.slice(0, MAX_LANDER_HERO_SLIDES).map((s) => ({
               title: s.title,
               body: s.body,
               cta: s.cta,
@@ -284,6 +284,10 @@ export function Home() {
             )}
             secondary={null}
           />
+          <p className="muted tiny wholesale-we-buy-note">
+            We also buy bulk inventory —{' '}
+            <Link to="/sellers#sell-to-us">sell to us</Link>.
+          </p>
         </>
       ) : null}
 

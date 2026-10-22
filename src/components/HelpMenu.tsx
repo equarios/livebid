@@ -1,74 +1,33 @@
-import { useEffect, useRef, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
-import { useDismissOnOutside } from '../lib/useDismissOnOutside'
 import { useStore } from '../store'
 
+const HELP_PATHS = ['/device-spec', '/info', '/tutorial', '/support']
+
+/** Single door into Help — topic tabs live on the Help pages. */
 export function HelpMenu({
   onNavigate,
-  onOpen,
-  onClose,
-  closeWhen,
 }: {
   onNavigate?: () => void
   onOpen?: () => void
   onClose?: () => void
-  /** When true, force the help panel closed (e.g. notifications opened). */
   closeWhen?: boolean
 }) {
   const { settings } = useStore()
   const location = useLocation()
-  const [open, setOpen] = useState(false)
-  const rootRef = useRef<HTMLDivElement>(null)
-  const helpOn = ['/device-spec', '/info', '/tutorial'].includes(location.pathname)
+  const helpOn = HELP_PATHS.some(
+    (p) => location.pathname === p || location.pathname.startsWith(`${p}/`),
+  )
   const helpLabel = settings.copy.navHelp
 
-  useEffect(() => {
-    if (closeWhen) setOpen(false)
-  }, [closeWhen])
-
-  useDismissOnOutside(open, rootRef, () => {
-    setOpen(false)
-    onClose?.()
-  })
-
   return (
-    <div className={`help-menu gd-util ${open ? 'open' : ''}`} ref={rootRef}>
-      <button
-        type="button"
-        className={`gd-util-btn ${helpOn || open ? 'active' : ''}`}
-        aria-label={helpLabel}
-        aria-expanded={open}
-        title={helpLabel}
-        onClick={(e) => {
-          e.stopPropagation()
-          if (open) {
-            setOpen(false)
-            onClose?.()
-          } else {
-            setOpen(true)
-            onOpen?.()
-          }
-        }}
-      >
-        {helpLabel}
-        <span className="gd-chevron" aria-hidden>
-          ▾
-        </span>
-      </button>
-      {open ? (
-        <div
-          className="help-menu-panel gd-util-panel"
-          onClick={() => {
-            setOpen(false)
-            onClose?.()
-            onNavigate?.()
-          }}
-        >
-          <NavLink to="/device-spec">Device spec</NavLink>
-          <NavLink to="/info">Info</NavLink>
-          <NavLink to="/tutorial">Tutorial</NavLink>
-        </div>
-      ) : null}
-    </div>
+    <NavLink
+      to="/support"
+      className={`gd-util-btn help-link${helpOn ? ' active' : ''}`}
+      aria-label={helpLabel}
+      title={helpLabel}
+      onClick={() => onNavigate?.()}
+    >
+      {helpLabel}
+    </NavLink>
   )
 }

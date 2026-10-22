@@ -46,10 +46,12 @@ export function LandHeroSlider({
         ]
   const [index, setIndex] = useState(0)
   const [paused, setPaused] = useState(false)
+  const [scrollPaused, setScrollPaused] = useState(false)
   const active = list[Math.min(index, list.length - 1)]!
+  const hold = paused || scrollPaused
 
   useEffect(() => {
-    if (list.length < 2 || paused) return
+    if (list.length < 2 || hold) return
     const reduce =
       typeof window !== 'undefined' &&
       window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -59,7 +61,21 @@ export function LandHeroSlider({
       setIndex((i) => (i + 1) % list.length)
     }, ms)
     return () => window.clearInterval(id)
-  }, [list.length, intervalSec, paused])
+  }, [list.length, intervalSec, hold])
+
+  useEffect(() => {
+    let timer = 0
+    const onScroll = () => {
+      setScrollPaused(true)
+      window.clearTimeout(timer)
+      timer = window.setTimeout(() => setScrollPaused(false), 900)
+    }
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => {
+      window.clearTimeout(timer)
+      window.removeEventListener('scroll', onScroll)
+    }
+  }, [])
 
   return (
     <section

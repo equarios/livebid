@@ -52,3 +52,27 @@ export async function processAndSaveStoreImage(buf: Buffer, mime: string): Promi
     contentType: 'image/webp',
   })
 }
+
+const VIDEO_ALLOWED = new Set(['video/mp4', 'video/webm', 'video/quicktime'])
+export const MAX_TRADE_IN_VIDEO_BYTES = 40 * 1024 * 1024
+
+/** Store trade-in condition clip as-is (mp4/webm/mov). */
+export async function saveTradeInVideo(buf: Buffer, mime: string): Promise<string> {
+  const type = (mime || '').toLowerCase()
+  if (!VIDEO_ALLOWED.has(type) && type !== 'application/octet-stream') {
+    throw new Error('Only MP4, WebM, or MOV video is allowed.')
+  }
+  if (buf.byteLength > MAX_TRADE_IN_VIDEO_BYTES) {
+    throw new Error('Video must be under 40 MB.')
+  }
+  const ext =
+    type === 'video/webm' ? 'webm' : type === 'video/quicktime' ? 'mov' : 'mp4'
+  const id = `${Date.now().toString(36)}-${randomBytes(4).toString('hex')}`
+  const filename = `ti-${id}.${ext}`
+  return putPublicObject({
+    folder: 'store',
+    filename,
+    body: buf,
+    contentType: type === 'application/octet-stream' ? 'video/mp4' : type,
+  })
+}

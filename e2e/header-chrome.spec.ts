@@ -21,22 +21,13 @@ test.describe('Header chrome — Help / Notifications / Super', () => {
     await dismissWarn(page)
   })
 
-  test('Help opens on-screen and navigates', async ({ page }) => {
+  test('Help link opens Support with topic tabs', async ({ page }) => {
     await page.goto('/auctions')
     await dismissWarn(page)
 
-    await page.getByRole('button', { name: /^help$/i }).click()
-    const panel = page.locator('.help-menu-panel')
-    await expect(panel).toBeVisible()
-    const box = await panelOnScreen(page, '.help-menu-panel')
-    expect(box.inView, `Help panel off-screen: left=${box.left} right=${box.right}`).toBe(true)
-
-    // Dismiss via Escape — more reliable than clicking main (warn toast can intercept).
-    await page.keyboard.press('Escape')
-    await expect(panel).toBeHidden()
-
-    await dismissWarn(page)
-    await page.getByRole('button', { name: /^help$/i }).click()
+    await page.getByRole('link', { name: /^help$/i }).click()
+    await expect(page).toHaveURL(/\/support/)
+    await expect(page.getByRole('navigation', { name: /^help$/i })).toBeVisible()
     await page.getByRole('link', { name: /^device spec$/i }).click()
     await expect(page).toHaveURL(/\/device-spec/)
   })

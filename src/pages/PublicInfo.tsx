@@ -1,6 +1,8 @@
 import { Link } from 'react-router-dom'
+import { HelpLayout } from '../components/HelpLayout'
 import { PubArticle } from '../components/PubArticle'
 import { PublicShell } from '../components/PublicShell'
+import { SellToUsEnquiry } from '../components/SellToUsEnquiry'
 import { SupportEnquiry } from '../components/SupportEnquiry'
 import { DEFAULT_SETTINGS } from '../data'
 import { renderPageBody } from '../lib/pageBody'
@@ -12,8 +14,6 @@ const PHOTO = {
     'https://images.unsplash.com/photo-1556656793-08538906a9f8?auto=format&fit=crop&w=2000&q=72',
   sellers:
     'https://images.unsplash.com/photo-1553413077-190dd305871c?auto=format&fit=crop&w=2000&q=72',
-  support:
-    'https://images.unsplash.com/photo-1486312338219-ce68d2c6f44d?auto=format&fit=crop&w=2000&q=72',
 } as const
 
 function useMarketingPage(key: 'buyers' | 'sellers' | 'support'): MarketingPageCopy {
@@ -78,6 +78,20 @@ export function SellersPage() {
         }
       >
         {renderPageBody(page.body)}
+        <section className="sellers-supply" aria-labelledby="sell-to-us">
+          <h2 id="sell-to-us">Sell inventory to us</h2>
+          <p>
+            Wholesale suppliers: we buy graded phones, tablets, and related devices in volume.
+            Share what you have — our desk replies with an offer after review. This is not the
+            consumer trade-in program (no self-serve estimator).
+          </p>
+          <ul className="sellers-supply-list">
+            <li>Bulk lots and mixed grades welcome</li>
+            <li>Inspection before final settlement</li>
+            <li>Offer by email after review</li>
+          </ul>
+          <SellToUsEnquiry />
+        </section>
       </PubArticle>
     </PublicShell>
   )
@@ -86,47 +100,40 @@ export function SellersPage() {
 export function SupportPage() {
   const { settings, user } = useStore()
   const page = useMarketingPage('support')
-  const brand = settings.brandName || 'eQuarios'
   return (
-    <PublicShell mode="wholesale">
-      <PubArticle
-        brand={brand}
-        title={page.title}
-        lead={page.lead}
-        photo={PHOTO.support}
-        sectionTitle="Quick answers"
-        actions={
-          <>
-            <a className="pub-btn pub-btn-fill" href="#enquiry">
-              Quick enquiry
-            </a>
-            {page.primaryCta ? (
-              <Link className="land-hero-secondary" to="/login">
-                {page.primaryCta} →
-              </Link>
-            ) : null}
-          </>
-        }
-      >
+    <HelpLayout
+      page="support"
+      title={page.title || settings.copy.navSupport}
+      lead={page.lead || 'Ask a question or reach us on email, WhatsApp, or WeChat.'}
+    >
+      <div className="card account-card help-support-card">
+        <h2 className="help-support-h2">Quick answers</h2>
         {renderPageBody(page.body)}
         <p className="support-dispute-note">
           Lot or invoice dispute
           {user ? (
             <>
               {' '}
-              — open{' '}
-              <Link to="/account/complaint">Complaint</Link> on My Page.
+              — open <Link to="/account/complaint">Complaint</Link> on My Page.
             </>
           ) : (
             <>
               {' '}
-              — <Link to="/login" state={{ from: '/account/complaint' }}>sign in</Link> and use
-              Complaint on My Page.
+              —{' '}
+              <Link to="/login" state={{ from: '/account/complaint' }}>
+                sign in
+              </Link>{' '}
+              and use Complaint on My Page.
             </>
           )}
         </p>
-      </PubArticle>
+        <p className="help-support-actions">
+          <a className="btn btn-primary btn-sm" href="#enquiry">
+            Quick enquiry
+          </a>
+        </p>
+      </div>
       <SupportEnquiry />
-    </PublicShell>
+    </HelpLayout>
   )
 }

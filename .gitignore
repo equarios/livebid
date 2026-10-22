@@ -19,6 +19,7 @@ server/prisma/dev.db
 server/prisma/dev.db-journal
 server/.env
 server/uploads/
+server/data/osmocom-tacdb.csv
 backups/
 .env.ha
 

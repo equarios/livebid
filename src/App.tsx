@@ -31,6 +31,7 @@ const StoreSold = lazyNamed(() => import('./pages/StoreSold'), 'StoreSold')
 const StoreCart = lazyNamed(() => import('./pages/StoreCart'), 'StoreCart')
 const StoreOrders = lazyNamed(() => import('./pages/StoreOrders'), 'StoreOrders')
 const StoreProductPage = lazyNamed(() => import('./pages/StoreProduct'), 'StoreProductPage')
+const StoreTradeInPage = lazyNamed(() => import('./pages/StoreTradeIn'), 'StoreTradeInPage')
 const Login = lazyNamed(() => import('./pages/Login'), 'Login')
 const Register = lazyNamed(() => import('./pages/Register'), 'Register')
 const Auctions = lazyNamed(() => import('./pages/Auctions'), 'Auctions')
@@ -229,6 +230,14 @@ export default function App() {
             element={
               <ChannelGate flag="showStore">
                 <StoreCart />
+              </ChannelGate>
+            }
+          />
+          <Route
+            path="/store/trade-in"
+            element={
+              <ChannelGate flag="showStore">
+                <StoreTradeInPage />
               </ChannelGate>
             }
           />

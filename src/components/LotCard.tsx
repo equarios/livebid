@@ -3,6 +3,7 @@ import { isSealedLot, typePillClass } from '../lib/auctionLists'
 import { ConfirmBidDialog } from './ConfirmBidDialog'
 import { fillCopy, lotTypeLabel, usd } from '../lib/format'
 import { BatteryMark } from './BatteryMark'
+import { StoreConditionBadges } from './StoreConditionBadges'
 import { lotItemSub, lotItemTitle } from '../lib/itemLine'
 import { lotMoq, moqLabel } from '../lib/moq'
 import { lotPhotos, photoFallback } from '../lib/photos'
@@ -34,7 +35,12 @@ export function LotCard({ lot }: { lot: Lot }) {
 
   return (
     <article className="card lot-card">
-      <button type="button" className="lot-photo-link" onClick={() => openLot(lot.id)}>
+      <button
+        type="button"
+        className="lot-photo-link has-quick-view"
+        onClick={() => openLot(lot.id)}
+        aria-label={`Quick view ${lot.manufacturer} ${lot.model}`}
+      >
         <img
           src={lotPhotos(lot, 640)[0]}
           alt={`${lot.manufacturer} ${lot.model}`}
@@ -44,6 +50,9 @@ export function LotCard({ lot }: { lot: Lot }) {
           }}
         />
         <span className={`grade grade-${lot.grade}`}>Grade {lot.grade}</span>
+        <span className="quick-view-hint" aria-hidden>
+          Quick view
+        </span>
       </button>
       <div className="lot-body">
         <div className="lot-meta">
@@ -57,19 +66,17 @@ export function LotCard({ lot }: { lot: Lot }) {
             {lotItemTitle(lot)}
           </button>
         </h3>
+        <button type="button" className="item-details-cue" onClick={() => openLot(lot.id)}>
+          Details
+        </button>
         <p className="muted item-specs">{lotItemSub(lot)}</p>
         <div className="item-chips">
           <span className="item-chip">
             <BatteryMark value={lot.battery} />
           </span>
-          <span className={`item-chip${lot.simLocked ? ' lock' : ''}`}>
-            {lot.simLocked ? 'SIM locked' : 'SIM unlocked'}
-          </span>
-          <span className={`item-chip${lot.activationLocked ? ' lock' : ''}`}>
-            {lot.activationLocked ? 'Act locked' : 'Act open'}
-          </span>
           <span className="item-chip">{moqLabel(lot, settings.copy.noMoq)}</span>
         </div>
+        <StoreConditionBadges product={lot} />
         <div className="lot-price-row">
           <div>
             <div className="label">
@@ -111,33 +118,31 @@ export function LotCard({ lot }: { lot: Lot }) {
           />
         ) : null}
         {lot.channel === 'auction' ? <InlineBid lot={lot} stacked /> : null}
-        <div className="lot-actions">
-          {lot.channel === 'marketplace' ? (
-            <>
-            <button
-              type="button"
-              className="btn btn-primary"
-              disabled={!settings.features.cart}
-              onClick={() => setCartOpen(true)}
-            >
-              {settings.copy.btnBuy}
-            </button>
-            <button
-              type="button"
-              className="btn btn-ghost"
-              disabled={!settings.features.offers}
-              onClick={() => setOfferOpen(true)}
-            >
-              {settings.copy.btnOffer}
-            </button>
-            </>
-          ) : (
-            <button type="button" className="btn btn-ghost" onClick={() => openLot(lot.id)}>
-              {settings.copy.btnPhotos}
-            </button>
-          )}
-          {settings.features.favourites ? <FavHeart lotId={lot.id} /> : null}
-        </div>
+        {lot.channel === 'marketplace' || settings.features.favourites ? (
+          <div className="lot-actions">
+            {lot.channel === 'marketplace' ? (
+              <>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={!settings.features.cart}
+                  onClick={() => setCartOpen(true)}
+                >
+                  {settings.copy.btnBuy}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  disabled={!settings.features.offers}
+                  onClick={() => setOfferOpen(true)}
+                >
+                  {settings.copy.btnOffer}
+                </button>
+              </>
+            ) : null}
+            {settings.features.favourites ? <FavHeart lotId={lot.id} /> : null}
+          </div>
+        ) : null}
         {cartMsg ? <div className={cartMsg.ok ? 'ok tiny' : 'error tiny'}>{cartMsg.text}</div> : null}
         {cartOpen ? (
           <ConfirmBidDialog

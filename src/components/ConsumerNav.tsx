@@ -22,8 +22,8 @@ export function ConsumerNav({ onNavigate }: { onNavigate?: () => void }) {
     location.pathname === '/store' ||
     location.pathname.startsWith('/store/p')
   const cartOpen = location.pathname.startsWith('/store/cart')
+  const tradeInOpen = location.pathname.startsWith('/store/trade-in')
   const ordersOpen = location.pathname.startsWith('/store/orders')
-  const supportOpen = location.pathname.startsWith('/support')
 
   return (
     <nav
@@ -37,6 +37,9 @@ export function ConsumerNav({ onNavigate }: { onNavigate?: () => void }) {
           ? settings.storeLabel
           : settings.copy.navStore}
       </NavLink>
+      <NavLink to="/store/trade-in" className={tradeInOpen ? 'active' : undefined}>
+        Trade-in
+      </NavLink>
       <NavLink to="/store/cart" className={cartOpen ? 'active' : undefined}>
         {settings.copy.navCart}
         {cartN > 0 ? <span className="gd-count">{cartN}</span> : null}
@@ -47,9 +50,6 @@ export function ConsumerNav({ onNavigate }: { onNavigate?: () => void }) {
       {wholesaleOk ? (
         <NavLink to="/wholesale">{settings.copy.navWholesale}</NavLink>
       ) : null}
-      <NavLink to="/support" className={supportOpen ? 'active' : undefined}>
-        {settings.copy.navSupport}
-      </NavLink>
     </nav>
   )
 }

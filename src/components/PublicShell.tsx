@@ -1,6 +1,8 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
+import { AppToastHost } from './AppToast'
 import { BrandLogo } from './BrandLogo'
+import { LotPreviewProvider } from './LotPreview'
 import { ConsumerNav } from './ConsumerNav'
 import { HelpMenu } from './HelpMenu'
 import { LanguageMenu } from './LanguageMenu'
@@ -30,7 +32,6 @@ function GuestWholesaleNav({ onNavigate }: { onNavigate?: () => void }) {
       <NavLink to="/sellers">{settings.copy.navSellers}</NavLink>
       <NavLink to="/wholesale/c">Categories</NavLink>
       {settings.features.register ? <NavLink to="/register">{settings.copy.navApply}</NavLink> : null}
-      <NavLink to="/support">{settings.copy.navSupport}</NavLink>
     </nav>
   )
 }
@@ -47,7 +48,7 @@ export function PublicShell({
   const location = useLocation()
   const [q, setQ] = useState(() => new URLSearchParams(location.search).get('q') || '')
   const [navOpen, setNavOpen] = useState(false)
-  const [panel, setPanel] = useState<'help' | 'me' | 'lang' | 'notes' | null>(null)
+  const [panel, setPanel] = useState<'me' | 'lang' | 'notes' | null>(null)
   const consumer = mode === 'consumer'
   const deskOk = canUseWholesaleDesk(user, isStaff)
   const showCatSubnav =
@@ -136,6 +137,7 @@ export function PublicShell({
   }
 
   return (
+    <LotPreviewProvider>
     <div className={`pub ${consumer ? 'is-consumer' : 'is-wholesale'}`}>
       <header className="pub-header">
         <div className="pub-header-row">
@@ -175,29 +177,24 @@ export function PublicShell({
               ) : (
                 <GuestWholesaleNav onNavigate={() => setNavOpen(false)} />
               )}
-              <HelpMenu
-                onNavigate={() => setNavOpen(false)}
-                onOpen={() => setPanel('help')}
-                onClose={() => setPanel((p) => (p === 'help' ? null : p))}
-                closeWhen={panel === 'me' || panel === 'lang' || panel === 'notes'}
-              />
+              <HelpMenu onNavigate={() => setNavOpen(false)} />
               <MeMenu
                 mode={consumer ? 'consumer' : 'wholesale'}
                 onNavigate={() => setNavOpen(false)}
                 onOpen={() => setPanel('me')}
                 onClose={() => setPanel((p) => (p === 'me' ? null : p))}
-                closeWhen={panel === 'help' || panel === 'lang' || panel === 'notes'}
+                closeWhen={panel === 'lang' || panel === 'notes'}
               />
               <div className="topbar-icon-pair">
                 <NoticeBell
-                  closeWhen={panel === 'help' || panel === 'me' || panel === 'lang'}
+                  closeWhen={panel === 'me' || panel === 'lang'}
                   onOpen={() => setPanel('notes')}
                   onClose={() => setPanel((p) => (p === 'notes' ? null : p))}
                 />
                 <LanguageMenu
                   onOpen={() => setPanel('lang')}
                   onClose={() => setPanel((p) => (p === 'lang' ? null : p))}
-                  closeWhen={panel === 'help' || panel === 'me' || panel === 'notes'}
+                  closeWhen={panel === 'me' || panel === 'notes'}
                 />
               </div>
             </div>
@@ -207,6 +204,8 @@ export function PublicShell({
       </header>
       <div className="pub-body">{children}</div>
       <SiteFooter />
+      <AppToastHost />
     </div>
+    </LotPreviewProvider>
   )
 }

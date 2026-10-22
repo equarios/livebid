@@ -338,13 +338,16 @@ export type MarketingPageCopy = {
   secondaryCta: string
 }
 
+/** Full lander sliders (store shop + wholesale hub only). Support stays a single static hero. */
+export const MAX_LANDER_HERO_SLIDES = 5
+
 /** Editable page surfaces that were previously hardcoded in the UI. */
 export type SitePages = {
   footerCopyright: string
   authBrand: string
   authTitle: string
   authLead: string
-  /** Hero auto-advance seconds (store + wholesale). Min 5. */
+  /** Hero auto-advance seconds (store + wholesale landers). Min 5. */
   heroIntervalSec: number
   storeHeroes: StoreHeroSlide[]
   wholesaleHeroes: WholesaleHeroSlide[]

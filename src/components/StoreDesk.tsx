@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { ORIGINS, normalizeOrigin } from '../lib/auctionLists'
-import { api, type StoreOrderDto, type StoreProductDto } from '../lib/api'
+import {
+  api,
+  type StoreOrderDto,
+  type StoreProductDto,
+  type StoreTradeInDeviceDto,
+  type StoreTradeInDto,
+} from '../lib/api'
 import { READY_FOR_COLLECT_LABEL, SHIP_CARRIERS } from '../lib/fulfillment'
 import { usd } from '../lib/format'
 import { storeProductImage } from '../lib/storePhotos'
@@ -10,9 +16,18 @@ import { NumberField } from './NumberField'
 const MAX_IMAGES = 8
 
 export function StoreDesk() {
-  const [tab, setTab] = useState<'products' | 'orders'>('products')
+  const [tab, setTab] = useState<'products' | 'orders' | 'tradeins' | 'matrix'>('products')
   const [products, setProducts] = useState<StoreProductDto[]>([])
   const [orders, setOrders] = useState<StoreOrderDto[]>([])
+  const [tradeIns, setTradeIns] = useState<StoreTradeInDto[]>([])
+  const [matrix, setMatrix] = useState<StoreTradeInDeviceDto[]>([])
+  const [matrixDraft, setMatrixDraft] = useState({
+    brand: 'Apple',
+    model: '',
+    capacity: '128GB',
+    baseUsd: '200',
+  })
+  const [tradeDraft, setTradeDraft] = useState<Record<string, { credit: string; note: string }>>({})
   const [msg, setMsgState] = useState<string | null>(null)
   const [err, setErrState] = useState<string | null>(null)
   const [shipDraft, setShipDraft] = useState<Record<string, { carrier: string; tracking: string }>>({})
@@ -47,9 +62,16 @@ export function StoreDesk() {
   const refresh = useCallback(async () => {
     setErr(null)
     try {
-      const [p, o] = await Promise.all([api.storeProducts(), api.storeOrders()])
+      const [p, o, t, m] = await Promise.all([
+        api.storeProducts(),
+        api.storeOrders(),
+        api.storeTradeIns().catch(() => ({ tradeIns: [] as StoreTradeInDto[] })),
+        api.storeTradeInDevicesAll().catch(() => ({ devices: [] as StoreTradeInDeviceDto[] })),
+      ])
       setProducts(p.products)
       setOrders(o.orders)
+      setTradeIns(t.tradeIns)
+      setMatrix(m.devices)
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed to load store desk.')
     }
@@ -268,16 +290,107 @@ export function StoreDesk() {
     }
   }
 
+  async function addMatrixDevice(e: FormEvent) {
+    e.preventDefault()
+    setBusy(true)
+    setErr(null)
+    try {
+      const baseUsd = Number(matrixDraft.baseUsd)
+      if (!(baseUsd > 0)) throw new Error('Enter a base USD value.')
+      await api.createStoreTradeInDevice({
+        brand: matrixDraft.brand.trim(),
+        model: matrixDraft.model.trim(),
+        capacity: matrixDraft.capacity.trim(),
+        baseUsd,
+        active: true,
+        sortOrder: (matrix[matrix.length - 1]?.sortOrder || 0) + 10,
+      })
+      setMatrixDraft((d) => ({ ...d, model: '' }))
+      setMsg('Matrix device added.')
+      await refresh()
+    } catch (ex) {
+      setErr(ex instanceof Error ? ex.message : 'Could not add device.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function saveMatrixBase(id: string, baseUsd: number, active: boolean) {
+    setBusy(true)
+    setErr(null)
+    try {
+      await api.updateStoreTradeInDevice(id, { baseUsd, active })
+      setMsg('Matrix updated.')
+      await refresh()
+    } catch (ex) {
+      setErr(ex instanceof Error ? ex.message : 'Matrix update failed.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function removeMatrixDevice(id: string) {
+    if (!window.confirm('Remove this trade-in model from the matrix?')) return
+    setBusy(true)
+    try {
+      await api.deleteStoreTradeInDevice(id)
+      setMsg('Device removed.')
+      await refresh()
+    } catch (ex) {
+      setErr(ex instanceof Error ? ex.message : 'Delete failed.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function updateTradeIn(
+    row: StoreTradeInDto,
+    status: 'pending_receive' | 'received' | 'accepted' | 'adjusted' | 'rejected',
+  ) {
+    setBusy(true)
+    setErr(null)
+    try {
+      const draft = tradeDraft[row.id]
+      const finalCredit =
+        status === 'adjusted'
+          ? Number(draft?.credit ?? row.finalCredit ?? row.provisionalCredit)
+          : status === 'accepted'
+            ? Number(draft?.credit || row.provisionalCredit)
+            : status === 'rejected'
+              ? 0
+              : undefined
+      await api.updateStoreTradeIn(row.id, {
+        status,
+        finalCredit: Number.isFinite(finalCredit) ? finalCredit : undefined,
+        staffNote: draft?.note?.trim() || null,
+      })
+      setMsg(`Trade-in ${row.id} → ${status}.`)
+      await refresh()
+    } catch (ex) {
+      setErr(ex instanceof Error ? ex.message : 'Trade-in update failed.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <section className="mh-desk store-desk">
       <header className="mh-desk-head">
         <h2>
           Retail store
-          <em>{tab === 'products' ? products.length : orders.length}</em>
+          <em>
+            {tab === 'products'
+              ? products.length
+              : tab === 'orders'
+                ? orders.length
+                : tab === 'matrix'
+                  ? matrix.length
+                  : tradeIns.length}
+          </em>
         </h2>
         <p className="mh-desk-note">
-          Consumer catalog and orders — separate from wholesale. Up to {MAX_IMAGES} photos; server
-          compresses to WebP.
+          Consumer catalog, orders, trade-in QC &amp; estimate matrix — separate from wholesale. Up
+          to {MAX_IMAGES} photos; server compresses to WebP.
         </p>
         <div className="mh-desk-actions">
           <button
@@ -293,6 +406,20 @@ export function StoreDesk() {
             onClick={() => setTab('orders')}
           >
             Orders ({orders.length})
+          </button>
+          <button
+            type="button"
+            className={`btn btn-ghost btn-sm ${tab === 'tradeins' ? 'on' : ''}`}
+            onClick={() => setTab('tradeins')}
+          >
+            Trade-ins ({tradeIns.length})
+          </button>
+          <button
+            type="button"
+            className={`btn btn-ghost btn-sm ${tab === 'matrix' ? 'on' : ''}`}
+            onClick={() => setTab('matrix')}
+          >
+            Matrix ({matrix.length})
           </button>
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => void refresh()}>
             Refresh
@@ -512,7 +639,8 @@ export function StoreDesk() {
             ) : null}
           </div>
         </>
-      ) : !orders.length ? (
+      ) : tab === 'orders' ? (
+        !orders.length ? (
         <div className="mh-empty">
           <p>No retail orders yet.</p>
         </div>
@@ -644,7 +772,285 @@ export function StoreDesk() {
             </tbody>
           </table>
         </div>
+      )
+      ) : tab === 'tradeins' ? (
+        <div className="table-wrap">
+          <p className="muted tiny" style={{ marginBottom: 10 }}>
+            Receive devices, then accept / adjust / reject credit. Pending-payment orders update
+            totals when credit settles.
+          </p>
+          {!tradeIns.length ? (
+            <p className="muted">No trade-ins yet — they appear when a cart checkout includes credit.</p>
+          ) : (
+            <table className="data">
+              <thead>
+                <tr>
+                  <th>Trade-in</th>
+                  <th>Device</th>
+                  <th>Estimate</th>
+                  <th>Status</th>
+                  <th>Settle</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tradeIns.map((t) => (
+                  <tr key={t.id}>
+                    <td>
+                      <strong>{t.id}</strong>
+                      <div className="muted tiny">
+                        Order {t.orderId} · {t.email}
+                      </div>
+                    </td>
+                    <td>
+                      {t.label}
+                      <div className="muted tiny">
+                        {t.imei ? `IMEI ${t.imei} · ` : ''}
+                        Grade {t.grade} · batt {t.battery}%
+                        {t.simLocked ? ' · SIM locked' : ''}
+                        {t.activationLocked ? ' · Act locked' : ''}
+                      </div>
+                      {t.images?.length ? (
+                        <div className="store-desk-trade-thumbs">
+                          {t.images.map((url) => (
+                            <a
+                              key={url}
+                              href={url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="store-desk-trade-thumb"
+                            >
+                              <img src={url} alt="" />
+                            </a>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="muted tiny">No photos</div>
+                      )}
+                      {t.videoUrl ? (
+                        <a
+                          className="tiny store-desk-trade-video"
+                          href={t.videoUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Video
+                        </a>
+                      ) : null}
+                    </td>
+                    <td>
+                      {usd(t.estimateLow)}–{usd(t.estimateHigh)}
+                      <div className="muted tiny">Prov. {usd(t.provisionalCredit)}</div>
+                      {t.finalCredit != null ? (
+                        <div className="tiny">Final {usd(t.finalCredit)}</div>
+                      ) : null}
+                    </td>
+                    <td>
+                      <code>{t.status}</code>
+                      {t.orderStatus ? (
+                        <div className="muted tiny">Order {t.orderStatus}</div>
+                      ) : null}
+                    </td>
+                    <td className="store-desk-trade-actions">
+                      <input
+                        className="store-desk-trade-credit"
+                        placeholder={`Credit (prov ${t.provisionalCredit})`}
+                        value={tradeDraft[t.id]?.credit ?? ''}
+                        onChange={(e) =>
+                          setTradeDraft((prev) => ({
+                            ...prev,
+                            [t.id]: {
+                              credit: e.target.value,
+                              note: prev[t.id]?.note || '',
+                            },
+                          }))
+                        }
+                      />
+                      <input
+                        className="store-desk-trade-note"
+                        placeholder="Staff note"
+                        value={tradeDraft[t.id]?.note ?? t.staffNote ?? ''}
+                        onChange={(e) =>
+                          setTradeDraft((prev) => ({
+                            ...prev,
+                            [t.id]: {
+                              credit: prev[t.id]?.credit || '',
+                              note: e.target.value,
+                            },
+                          }))
+                        }
+                      />
+                      <div className="store-desk-trade-btns">
+                        {t.status === 'pending_receive' ? (
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            disabled={busy}
+                            onClick={() => void updateTradeIn(t, 'received')}
+                          >
+                            Received
+                          </button>
+                        ) : null}
+                        {t.status === 'received' || t.status === 'pending_receive' ? (
+                          <>
+                            <button
+                              type="button"
+                              className="btn btn-primary btn-sm"
+                              disabled={busy}
+                              onClick={() => void updateTradeIn(t, 'accepted')}
+                            >
+                              Accept
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm"
+                              disabled={busy}
+                              onClick={() => void updateTradeIn(t, 'adjusted')}
+                            >
+                              Adjust
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm"
+                              disabled={busy}
+                              onClick={() => void updateTradeIn(t, 'rejected')}
+                            >
+                              Reject
+                            </button>
+                          </>
+                        ) : null}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      ) : (
+        <div className="table-wrap">
+          <p className="muted tiny" style={{ marginBottom: 10 }}>
+            Grade A unlocked base USD for consumer estimates. Inactive rows stay hidden on
+            /store/trade-in.
+          </p>
+          <form className="store-desk-matrix-form" onSubmit={(e) => void addMatrixDevice(e)}>
+            <input
+              placeholder="Brand"
+              required
+              value={matrixDraft.brand}
+              onChange={(e) => setMatrixDraft((d) => ({ ...d, brand: e.target.value }))}
+            />
+            <input
+              placeholder="Model"
+              required
+              value={matrixDraft.model}
+              onChange={(e) => setMatrixDraft((d) => ({ ...d, model: e.target.value }))}
+            />
+            <input
+              placeholder="Capacity"
+              required
+              value={matrixDraft.capacity}
+              onChange={(e) => setMatrixDraft((d) => ({ ...d, capacity: e.target.value }))}
+            />
+            <input
+              placeholder="Base USD"
+              required
+              value={matrixDraft.baseUsd}
+              onChange={(e) => setMatrixDraft((d) => ({ ...d, baseUsd: e.target.value }))}
+            />
+            <button type="submit" className="btn btn-primary btn-sm" disabled={busy}>
+              Add
+            </button>
+          </form>
+          {!matrix.length ? (
+            <p className="muted">No matrix rows — seed or add a device.</p>
+          ) : (
+            <table className="data">
+              <thead>
+                <tr>
+                  <th>Device</th>
+                  <th>Base USD</th>
+                  <th>Active</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {matrix.map((d) => (
+                  <MatrixRow
+                    key={d.id}
+                    device={d}
+                    busy={busy}
+                    onSave={(baseUsd, active) => void saveMatrixBase(d.id, baseUsd, active)}
+                    onRemove={() => void removeMatrixDevice(d.id)}
+                  />
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
       )}
     </section>
+  )
+}
+
+function MatrixRow({
+  device,
+  busy,
+  onSave,
+  onRemove,
+}: {
+  device: StoreTradeInDeviceDto
+  busy: boolean
+  onSave: (baseUsd: number, active: boolean) => void
+  onRemove: () => void
+}) {
+  const [base, setBase] = useState(String(device.baseUsd))
+  const [active, setActive] = useState(device.active)
+  useEffect(() => {
+    setBase(String(device.baseUsd))
+    setActive(device.active)
+  }, [device.baseUsd, device.active])
+  return (
+    <tr>
+      <td>
+        <strong>
+          {device.brand} {device.model}
+        </strong>
+        <div className="muted tiny">
+          {device.capacity} · {device.id}
+        </div>
+      </td>
+      <td>
+        <input
+          className="store-desk-matrix-base"
+          value={base}
+          disabled={busy}
+          onChange={(e) => setBase(e.target.value)}
+        />
+      </td>
+      <td>
+        <label className="store-tradein-check">
+          <input
+            type="checkbox"
+            checked={active}
+            disabled={busy}
+            onChange={(e) => setActive(e.target.checked)}
+          />
+          <span>On</span>
+        </label>
+      </td>
+      <td className="store-desk-trade-btns">
+        <button
+          type="button"
+          className="btn btn-primary btn-sm"
+          disabled={busy}
+          onClick={() => onSave(Number(base), active)}
+        >
+          Save
+        </button>
+        <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={onRemove}>
+          Delete
+        </button>
+      </td>
+    </tr>
   )
 }

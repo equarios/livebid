@@ -6,7 +6,9 @@ import { PastPriceComps } from './PastPriceComps'
 import { isSealedLot, originLabel, typePillClass } from '../lib/auctionLists'
 import { lotTypeLabel, usd } from '../lib/format'
 import { lotItemSub, lotItemTitle } from '../lib/itemLine'
+import { lotPhotos, photoFallback } from '../lib/photos'
 import { BatteryMark } from './BatteryMark'
+import { StoreConditionBadges } from './StoreConditionBadges'
 import { moqLabel } from '../lib/moq'
 import { useNow, useStore } from '../store'
 import { TimeLeft } from './TimeLeft'
@@ -116,14 +118,6 @@ function LotDetailDialog({ lotId, onClose }: { lotId: string; onClose: () => voi
             </dd>
           </div>
           <div>
-            <dt>SIM</dt>
-            <dd>{lot.simLocked ? 'Locked' : 'Unlocked'}</dd>
-          </div>
-          <div>
-            <dt>Activation</dt>
-            <dd>{lot.activationLocked ? 'Locked' : 'Open'}</dd>
-          </div>
-          <div>
             <dt>Quantity</dt>
             <dd>{lot.qty.toLocaleString()}</dd>
           </div>
@@ -132,6 +126,8 @@ function LotDetailDialog({ lotId, onClose }: { lotId: string; onClose: () => voi
             <dd>{moqLabel(lot, settings.copy.noMoq)}</dd>
           </div>
         </dl>
+        <h3 className="detail-notes-title">Condition & locks</h3>
+        <StoreConditionBadges product={lot} variant="detail" />
         <h3 className="detail-notes-title">Condition notes</h3>
         <p>{lot.description}</p>
         <div className="lot-modal-ask" style={{ marginTop: 12 }}>
@@ -150,7 +146,7 @@ function LotDetailDialog({ lotId, onClose }: { lotId: string; onClose: () => voi
 
 function SimilarLots({ lot }: { lot: Lot }) {
   const now = useNow()
-  const { lots } = useStore()
+  const { lots, settings } = useStore()
   const { openLot } = useLotPreview()
   const similar = lots
     .filter(
@@ -162,14 +158,36 @@ function SimilarLots({ lot }: { lot: Lot }) {
     .slice(0, 4)
   if (!similar.length) return null
   return (
-    <div className="similar-lots">
+    <div className="similar-lots store-similar-preview">
       <h3 className="detail-notes-title">Similar listings</h3>
-      <div className="similar-row">
-        {similar.map((row) => (
-          <button key={row.id} type="button" className="similar-chip" onClick={() => openLot(row.id)}>
-            {lotItemTitle(row)} · {lotItemSub(row)}
-          </button>
-        ))}
+      <div className="store-similar-tiles" role="list">
+        {similar.map((row) => {
+          const sealed = row.channel === 'auction' && isSealedLot(row, settings) && row.endsAt > now
+          const price = sealed ? row.startPrice : (row.buyNowPrice ?? row.currentPrice)
+          const sub = lotItemSub(row)
+          return (
+            <button
+              key={row.id}
+              type="button"
+              className="store-similar-tile"
+              role="listitem"
+              onClick={() => openLot(row.id)}
+            >
+              <img
+                src={lotPhotos(row)[0]}
+                alt=""
+                loading="lazy"
+                onError={(e) => {
+                  e.currentTarget.onerror = null
+                  e.currentTarget.src = photoFallback(row)
+                }}
+              />
+              <span className="store-similar-tile-name">{lotItemTitle(row)}</span>
+              {sub ? <span className="store-similar-tile-sub muted">{sub}</span> : null}
+              <span className="store-similar-tile-price">{usd(price)}</span>
+            </button>
+          )
+        })}
       </div>
     </div>
   )

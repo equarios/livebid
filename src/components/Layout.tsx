@@ -159,11 +159,7 @@ export function Layout() {
             </div>
             <div className="topbar-user">
               <HeaderDeskPulse />
-              <HelpMenu
-                closeWhen={notesOpen || menuOpen || navOpen}
-                onOpen={closeOtherChrome}
-                onClose={() => setMenuOpen(false)}
-              />
+              <HelpMenu onNavigate={() => setNavOpen(false)} />
               <MeMenu
                 mode="app"
                 closeWhen={notesOpen || navOpen}

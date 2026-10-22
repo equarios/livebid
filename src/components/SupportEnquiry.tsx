@@ -22,7 +22,7 @@ function displayName(user: {
   return person || user.company || ''
 }
 
-/** Topic-first support enquiry — mailto until Brevo; same form on Support page + Contact Us panel. */
+/** Topic-first support enquiry — mailto until Brevo; same form on Support page + floating Support. */
 export function SupportEnquiry({
   variant = 'page',
 }: {

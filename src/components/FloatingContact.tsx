@@ -4,7 +4,7 @@ import { DEFAULT_SETTINGS } from '../data'
 import { useStore } from '../store'
 import { SupportEnquiry } from './SupportEnquiry'
 
-/** Fixed bottom-right Contact Us — enquiry form first, channel shortcuts second. */
+/** Fixed bottom-right Contact Us shortcut — same enquiry as /support. */
 export function FloatingContact() {
   const { settings } = useStore()
   const location = useLocation()
@@ -13,6 +13,8 @@ export function FloatingContact() {
   const rootRef = useRef<HTMLDivElement>(null)
   const onAuctions =
     location.pathname === '/auctions' || location.pathname.startsWith('/auctions/')
+  const onSupport = location.pathname.startsWith('/support')
+  const label = settings.copy.navContact || 'Contact us'
 
   const c = {
     ...DEFAULT_SETTINGS.contact,
@@ -31,8 +33,8 @@ export function FloatingContact() {
   const hasChannels = Boolean(email || whatsappHref || wechat)
 
   useEffect(() => {
-    if (onAuctions) setOpen(false)
-  }, [onAuctions])
+    if (onAuctions || onSupport) setOpen(false)
+  }, [onAuctions, onSupport])
 
   useEffect(() => {
     if (!wechatCopied) return
@@ -56,15 +58,15 @@ export function FloatingContact() {
     }
   }, [open])
 
-  if (onAuctions) return null
+  if (onAuctions || onSupport) return null
 
   return (
     <div ref={rootRef} className={`float-contact ${open ? 'is-open' : ''}`}>
       {open ? (
-        <div className="float-contact-panel" role="dialog" aria-label={settings.copy.navContact}>
+        <div className="float-contact-panel" role="dialog" aria-label={label}>
           <div className="float-contact-head">
             <strong>
-              {settings.copy.navContact} · {brand}
+              {label} · {brand}
             </strong>
             <button
               type="button"
@@ -123,7 +125,7 @@ export function FloatingContact() {
             to="/support#enquiry"
             onClick={() => setOpen(false)}
           >
-            {settings.copy.navSupport}
+            Open support page →
           </Link>
         </div>
       ) : null}
@@ -131,10 +133,10 @@ export function FloatingContact() {
         type="button"
         className="float-contact-btn"
         aria-expanded={open}
-        aria-label={open ? settings.copy.btnCancel : settings.copy.navContact}
+        aria-label={open ? settings.copy.btnCancel : label}
         onClick={() => setOpen((v) => !v)}
       >
-        {open ? settings.copy.btnCancel : settings.copy.navContact}
+        {open ? settings.copy.btnCancel : label}
       </button>
     </div>
   )

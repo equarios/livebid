@@ -4,6 +4,7 @@ import { runBuyerDigests } from './buyerDigest'
 import { cacheDel, cacheSetNx } from './cache'
 import { prisma } from './db'
 import { feeForAuctionType, withFee } from './feeConfig'
+import { ensureFxRatesFresh } from './fxRates'
 import { trackCare } from './metrics'
 import { notify, notifyStaff } from './notify'
 
@@ -288,6 +289,7 @@ export async function runCareJobs() {
     await notifySealedStarted()
     await notifyClosingSoon()
     await runBuyerDigests()
+    await ensureFxRatesFresh()
     trackCare(true)
   } catch (err) {
     trackCare(false)

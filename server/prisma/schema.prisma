@@ -209,19 +209,99 @@ model StoreOrder {
   subtotal      Float
   shippingFee   Float    @default(0)
   total         Float
+  /// Shopper display currency at checkout (prices above stay USD).
+  displayCurrency String @default("USD")
+  /// Units of displayCurrency per 1 USD at checkout time.
+  displayRate   Float    @default(1)
+  /// total * displayRate, stamped so later rate changes do not rewrite history.
+  displayTotal  Float?
   note          String?
   createdAt     DateTime @default(now())
   paidAt        DateTime?
   shippedAt     DateTime?
   /// Outbound tracking number when we ship (delivery). Pickup stays collect-only.
   trackingNo    String?
+  /// Provisional trade-in credit deducted at checkout (USD). Final settles on StoreTradeIn.
+  tradeInCredit Float @default(0)
   account       Account? @relation(fields: [accountId], references: [accountId], onDelete: SetNull)
   lines         StoreOrderLine[]
+  tradeIn       StoreTradeIn?
 
   @@index([accountId])
   @@index([email])
   @@index([status])
   @@index([fulfillmentMode])
+}
+
+/// Consumer trade-in attached to a store order — QC before final credit.
+model StoreTradeIn {
+  id                 String   @id
+  orderId            String   @unique
+  email              String
+  name               String
+  label              String
+  deviceId           String
+  grade              String
+  battery            Int      @default(0)
+  simLocked          Boolean  @default(false)
+  activationLocked   Boolean  @default(false)
+  estimateLow        Float
+  estimateHigh       Float
+  provisionalCredit  Float
+  finalCredit        Float?
+  /// Ordered photo URLs: front, back, left, right, then optional extras.
+  images             Json     @default("[]")
+  /// Optional short condition video URL.
+  videoUrl           String?
+  /// Consumer-entered IMEI (digits), used for QC / identity.
+  imei               String?
+  /// pending_receive | received | accepted | adjusted | rejected
+  status             String   @default("pending_receive")
+  staffNote          String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  order              StoreOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([email])
+  @@index([imei])
+}
+
+/// Free TAC → brand/model for consumer trade-in identity (first 8 IMEI digits).
+model StoreImeiTac {
+  tac       String   @id
+  brand     String
+  model     String
+  /// Marketing / raw label from TAC source.
+  name      String   @default("")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([brand, model])
+}
+
+/// Staff-editable trade-in estimate matrix (Grade A unlocked base USD).
+model StoreTradeInDevice {
+  id        String   @id
+  brand     String
+  model     String
+  capacity  String
+  baseUsd   Float
+  active    Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([active, sortOrder])
+  @@index([brand])
+}
+
+/// FX table: how many units of `code` equal 1 USD. USD row is always perUsd=1.
+model FxRate {
+  code      String   @id
+  perUsd    Float
+  source    String   @default("open.er-api.com")
+  fetchedAt DateTime @default(now())
 }
 
 model StoreOrderLine {

@@ -4,7 +4,7 @@ import type { StoreProductDto } from '../lib/api'
 
 type Props = {
   product: Pick<StoreProductDto, 'title' | 'imageUrl' | 'images'>
-  /** card = cover + dots; detail = main + thumbs */
+  /** card = cover only; detail = main + thumbs */
   variant?: 'card' | 'detail'
   onOpen?: () => void
   className?: string
@@ -22,16 +22,17 @@ export function StoreGallery({ product, variant = 'detail', onOpen, className }:
   }, [product.title, product.imageUrl, product.images?.join('|')])
 
   if (variant === 'card') {
+    const cover = images[0] || storeProductFallback(product)
     return (
       <div className={`store-gallery is-card ${className || ''}`}>
         <button
           type="button"
-          className="lot-photo-link"
+          className="lot-photo-link has-quick-view"
           onClick={onOpen}
-          aria-label={`View ${product.title}`}
+          aria-label={`Quick view ${product.title}`}
         >
           <img
-            src={current}
+            src={cover}
             alt=""
             decoding="async"
             onError={(e) => {
@@ -39,24 +40,10 @@ export function StoreGallery({ product, variant = 'detail', onOpen, className }:
               e.currentTarget.src = storeProductFallback(product)
             }}
           />
+          <span className="quick-view-hint" aria-hidden>
+            Quick view
+          </span>
         </button>
-        {images.length > 1 ? (
-          <div className="store-gallery-dots" role="tablist" aria-label="Photos">
-            {images.map((_, i) => (
-              <button
-                key={i}
-                type="button"
-                role="tab"
-                aria-selected={i === safe}
-                className={i === safe ? 'on' : undefined}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setIndex(i)
-                }}
-              />
-            ))}
-          </div>
-        ) : null}
       </div>
     )
   }

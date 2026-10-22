@@ -57,7 +57,7 @@ const SOCIALS: Array<{ key: SocialKey; label: string }> = [
   { key: 'google', label: 'Google' },
 ]
 
-/** Prefer social URL; fall back to contact WhatsApp number (same as Contact Us). */
+/** Prefer social URL; fall back to contact WhatsApp number (same as Support channels). */
 function whatsappHref(socialUrl: string, phoneOrUrl: string) {
   const raw = (socialUrl || phoneOrUrl || '').trim()
   if (!raw) return ''
@@ -140,31 +140,42 @@ export function SiteFooter() {
           </div>
         </div>
       </div>
-      {/* Public map only — shop, wholesale, help, account. No staff desks. */}
+      {/* Public map — one row, · between links (same as meta bar above). */}
       <nav className="site-footer-nav" aria-label={settings.copy.footerNav}>
-        {settings.showStore !== false ? (
-          <Link to="/store">
-            {settings.storeLabel && settings.storeLabel !== 'Store'
-              ? settings.storeLabel
-              : settings.copy.navStore}
-          </Link>
-        ) : null}
-        <Link to="/wholesale">{settings.copy.navWholesale}</Link>
-        <Link to="/wholesale/c">Categories</Link>
-        <Link to="/buyers">{settings.copy.navBuyers}</Link>
-        <Link to="/sellers">{settings.copy.navSellers}</Link>
-        <span className="site-footer-nav-sep" aria-hidden />
-        <Link to="/support">{settings.copy.navSupport}</Link>
-        <Link to="/tutorial">{settings.copy.navTutorial}</Link>
-        <span className="site-footer-nav-sep" aria-hidden />
-        {user ? (
-          <Link to="/account">{settings.copy.navAccount}</Link>
-        ) : (
-          <>
-            <Link to="/login">{settings.copy.signInButton}</Link>
-            {canRegister ? <Link to="/register">{settings.copy.navApply}</Link> : null}
-          </>
-        )}
+        {(
+          [
+            settings.showStore !== false
+              ? {
+                  to: '/store',
+                  label:
+                    settings.storeLabel && settings.storeLabel !== 'Store'
+                      ? settings.storeLabel
+                      : settings.copy.navStore,
+                }
+              : null,
+            settings.showStore !== false
+              ? { to: '/store/trade-in', label: 'Trade-in' }
+              : null,
+            { to: '/wholesale', label: settings.copy.navWholesale },
+            { to: '/wholesale/c', label: 'Categories' },
+            { to: '/buyers', label: settings.copy.navBuyers },
+            { to: '/sellers', label: settings.copy.navSellers },
+            { to: '/sellers#sell-to-us', label: 'Sell inventory' },
+            { to: '/support', label: settings.copy.navSupport },
+            { to: '/tutorial', label: settings.copy.navTutorial },
+            user
+              ? { to: '/account', label: settings.copy.navAccount }
+              : { to: '/login', label: settings.copy.signInButton },
+            !user && canRegister ? { to: '/register', label: settings.copy.navApply } : null,
+          ] as Array<{ to: string; label: string } | null>
+        )
+          .filter((x): x is { to: string; label: string } => Boolean(x))
+          .map((item, i) => (
+            <span key={`${item.to}-${item.label}`} className="site-footer-nav-item">
+              {i > 0 ? <Dot /> : null}
+              <Link to={item.to}>{item.label}</Link>
+            </span>
+          ))}
       </nav>
       <p className="site-footer-copy">{copyright}</p>
     </footer>

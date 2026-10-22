@@ -42,8 +42,36 @@ export function setStoreCartQty(productId: string, qty: number) {
   return lines
 }
 
+/** Swap one product for another, keeping qty (capped to maxStock). */
+export function replaceStoreCartProduct(
+  fromProductId: string,
+  toProductId: string,
+  maxStock = 99,
+) {
+  if (fromProductId === toProductId) return readStoreCart()
+  const lines = readStoreCart()
+  const from = lines.find((l) => l.productId === fromProductId)
+  if (!from) return lines
+  const qty = Math.min(from.qty, Math.max(1, maxStock))
+  const without = lines.filter((l) => l.productId !== fromProductId)
+  const hit = without.find((l) => l.productId === toProductId)
+  if (hit) hit.qty = Math.min(99, hit.qty + qty)
+  else without.push({ productId: toProductId, qty })
+  writeStoreCart(without)
+  return without
+}
+
 export function clearStoreCart() {
   writeStoreCart([])
+}
+
+/** Drop lines whose product ids are gone (e.g. after reseed). */
+export function pruneStoreCart(validProductIds: Iterable<string>) {
+  const ok = new Set(validProductIds)
+  const lines = readStoreCart()
+  const next = lines.filter((l) => ok.has(l.productId))
+  if (next.length !== lines.length) writeStoreCart(next)
+  return next
 }
 
 export function storeCartCount(lines = readStoreCart()) {

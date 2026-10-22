@@ -1,13 +1,29 @@
-import { useEffect, useState } from 'react'
+import { FormEvent, useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { PublicShell } from '../components/PublicShell'
 import { StoreRail } from '../components/StoreRail'
 import { StoreBlockSkeleton } from '../components/StoreSkeleton'
 import { api, type StoreOrderDto } from '../lib/api'
-import { COLLECTED_LABEL, FULFILLMENT_LABELS, READY_FOR_COLLECT_LABEL, SHIPPED_LABEL, trackingHref, trackingLabel } from '../lib/fulfillment'
-import { usd } from '../lib/format'
+import {
+  COLLECTED_LABEL,
+  FULFILLMENT_LABELS,
+  READY_FOR_COLLECT_LABEL,
+  SHIPPED_LABEL,
+  trackingHref,
+  trackingLabel,
+} from '../lib/fulfillment'
+import { moneyUsd, usd } from '../lib/format'
+import { storeProductFallback } from '../lib/storePhotos'
 import { useStore } from '../store'
 import type { FulfillmentMode } from '../types'
+
+function orderMoney(o: StoreOrderDto) {
+  const code = (o.displayCurrency || 'USD').toUpperCase()
+  if (code !== 'USD' && o.displayTotal != null) {
+    return `${moneyUsd(o.displayTotal, code)} · ${usd(o.total)}`
+  }
+  return usd(o.total)
+}
 
 const STATUS_LABEL: Record<string, string> = {
   pending_payment: 'Awaiting payment',
@@ -32,21 +48,266 @@ function payLabel(method: string) {
   return PAY_LABEL[method] || method
 }
 
-function TrackingBit({
-  carrier,
-  trackingNo,
+function lineThumb(l: StoreOrderDto['lines'][0]) {
+  return l.imageUrl || storeProductFallback({ title: l.title })
+}
+
+type Step = { key: string; label: string; done: boolean; current: boolean }
+
+function orderSteps(o: StoreOrderDto): Step[] {
+  if (o.status === 'cancelled') {
+    return [
+      { key: 'placed', label: 'Placed', done: true, current: false },
+      { key: 'cancelled', label: 'Cancelled', done: true, current: true },
+    ]
+  }
+  const collect =
+    o.fulfillmentMode === 'pickup' || o.fulfillmentMode === 'buyer_courier'
+  const paid = o.status === 'paid' || o.status === 'shipped'
+  const ready = Boolean(o.readyForCollect) || o.status === 'shipped'
+  const done = o.status === 'shipped'
+  const awaitingPay = o.status === 'pending_payment'
+
+  const step3Label = collect
+    ? ready && !done
+      ? READY_FOR_COLLECT_LABEL
+      : done
+        ? COLLECTED_LABEL
+        : 'Ready to collect'
+    : done
+      ? SHIPPED_LABEL
+      : 'Shipped'
+
+  return [
+    { key: 'placed', label: 'Placed', done: true, current: awaitingPay },
+    {
+      key: 'paid',
+      label: 'Paid',
+      done: paid,
+      current: o.status === 'paid' && !ready,
+    },
+    {
+      key: 'fulfill',
+      label: step3Label,
+      done: done || (collect && ready),
+      current: paid && ready && !done ? true : paid && !ready && !awaitingPay,
+    },
+    {
+      key: 'done',
+      label: 'Done',
+      done,
+      current: done,
+    },
+  ]
+}
+
+function primaryAction(o: StoreOrderDto): { label: string; href?: string; hint?: string } | null {
+  if (o.status === 'cancelled') return null
+  if (o.status === 'pending_payment') {
+    if (o.paymentMethod === 'bank') {
+      return { label: 'Awaiting bank transfer', hint: `Include order ${o.id} in the remittance.` }
+    }
+    if (o.paymentMethod === 'usdt') {
+      return { label: 'Awaiting USDT', hint: `Include order ${o.id} in the memo. Ask staff for wallet + network.` }
+    }
+    if (o.paymentMethod === 'cash') {
+      return { label: 'Pay cash on collect', hint: `Bring exact amount for order ${o.id}.` }
+    }
+    return { label: 'Payment recorded', hint: 'Demo card/PayPal — staff may still confirm fulfillment.' }
+  }
+  const collect =
+    o.fulfillmentMode === 'pickup' || o.fulfillmentMode === 'buyer_courier'
+  if (collect && o.readyForCollect && o.status !== 'shipped') {
+    return { label: READY_FOR_COLLECT_LABEL, hint: 'Bring your order id when you arrive.' }
+  }
+  if (o.trackingNo) {
+    const href = trackingHref(o.courierCarrier, o.trackingNo)
+    return {
+      label: `Track · ${trackingLabel(o.courierCarrier, o.trackingNo)}`,
+      href: href || undefined,
+      hint: href ? undefined : trackingLabel(o.courierCarrier, o.trackingNo),
+    }
+  }
+  if (o.status === 'shipped' && collect) {
+    return { label: COLLECTED_LABEL }
+  }
+  if (o.status === 'paid') {
+    return { label: 'Preparing your order', hint: 'We’ll update this page when it’s ready.' }
+  }
+  return null
+}
+
+function OrderCard({
+  order: o,
+  open,
+  onToggle,
 }: {
-  carrier?: string | null
-  trackingNo: string
+  order: StoreOrderDto
+  open: boolean
+  onToggle: () => void
 }) {
-  const href = trackingHref(carrier, trackingNo)
-  const label = trackingLabel(carrier, trackingNo)
-  if (!href) return <span className="mono"> · {label}</span>
+  const steps = orderSteps(o)
+  const action = primaryAction(o)
+  const thumbs = o.lines.slice(0, 4)
+
   return (
-    <a className="inv-track" href={href} target="_blank" rel="noreferrer">
-      {' '}
-      · {label}
-    </a>
+    <article className={`store-order-card${open ? ' is-open' : ''}`}>
+      <button
+        type="button"
+        className="store-order-summary"
+        aria-expanded={open}
+        onClick={onToggle}
+      >
+        <div className="store-order-thumbs" aria-hidden>
+          {thumbs.map((l) => (
+            <img
+              key={l.id}
+              src={lineThumb(l)}
+              alt=""
+              onError={(e) => {
+                e.currentTarget.onerror = null
+                e.currentTarget.src = storeProductFallback({ title: l.title })
+              }}
+            />
+          ))}
+        </div>
+        <div className="store-order-summary-main">
+          <span className="mono store-order-id">{o.id}</span>
+          <span className="muted tiny store-order-meta">
+            {payLabel(o.paymentMethod)} ·{' '}
+            {FULFILLMENT_LABELS[(o.fulfillmentMode as FulfillmentMode) || 'delivery']}
+          </span>
+        </div>
+        <span className="store-order-badge">{statusLabel(o.status)}</span>
+        <strong className="store-order-total">{orderMoney(o)}</strong>
+      </button>
+
+      <ol className="store-order-steps" aria-label="Order progress">
+        {steps.map((s) => (
+          <li
+            key={s.key}
+            className={
+              s.done ? 'is-done' : s.current ? 'is-current' : undefined
+            }
+          >
+            <span>{s.label}</span>
+          </li>
+        ))}
+      </ol>
+
+      {action ? (
+        <div className="store-order-action">
+          {action.href ? (
+            <a
+              className="btn btn-primary btn-sm"
+              href={action.href}
+              target="_blank"
+              rel="noreferrer"
+            >
+              {action.label}
+            </a>
+          ) : (
+            <span className="store-order-action-label">{action.label}</span>
+          )}
+          {action.hint ? <p className="muted tiny">{action.hint}</p> : null}
+        </div>
+      ) : null}
+
+      {open ? (
+        <div className="store-order-detail">
+          <p className="tiny muted">
+            {o.name} · {o.email}
+            {o.phone ? ` · ${o.phone}` : ''}
+          </p>
+          <p className="store-order-address">{o.address}</p>
+          {o.note ? <p className="tiny muted">Note: {o.note}</p> : null}
+          {o.paymentMethod === 'bank' && o.status === 'pending_payment' ? (
+            <p className="tiny store-order-bank-hint">
+              Bank transfer — staff will confirm when funds clear. Include order{' '}
+              <span className="mono">{o.id}</span> in the remittance.
+            </p>
+          ) : null}
+          {o.paymentMethod === 'usdt' && o.status === 'pending_payment' ? (
+            <p className="tiny store-order-bank-hint">
+              USDT — staff will confirm when the transfer clears. Include order{' '}
+              <span className="mono">{o.id}</span> in the memo / note, and ask staff for the
+              wallet address and network (e.g. TRC-20 / ERC-20).
+            </p>
+          ) : null}
+          {o.paymentMethod === 'cash' && o.status === 'pending_payment' ? (
+            <p className="tiny store-order-bank-hint">
+              Cash — bring exact amount when you collect. Staff marks paid on receipt. Order{' '}
+              <span className="mono">{o.id}</span>.
+            </p>
+          ) : null}
+          <ul className="store-order-lines">
+            {o.lines.map((l) => (
+              <li key={l.id}>
+                <div className="store-order-line-main">
+                  <img
+                    className="store-order-line-thumb"
+                    src={lineThumb(l)}
+                    alt=""
+                    onError={(e) => {
+                      e.currentTarget.onerror = null
+                      e.currentTarget.src = storeProductFallback({ title: l.title })
+                    }}
+                  />
+                  <span>
+                    {l.slug ? (
+                      <Link to={`/store/p/${l.slug}`}>{l.qty}× {l.title}</Link>
+                    ) : (
+                      <>
+                        {l.qty}× {l.title}
+                      </>
+                    )}
+                  </span>
+                </div>
+                <span>{usd(l.unitPrice * l.qty)}</span>
+              </li>
+            ))}
+          </ul>
+          <div className="store-order-totals tiny">
+            <span>Subtotal {usd(o.subtotal)}</span>
+            <span>Shipping {usd(o.shippingFee)}</span>
+            {(o.tradeInCredit || 0) > 0 ? (
+              <span>
+                Trade-in −{usd(o.tradeInCredit || 0)}
+                {o.tradeIn ? ` · ${o.tradeIn.status.replace(/_/g, ' ')}` : ' · pending QC'}
+                {o.tradeIn?.label ? ` · ${o.tradeIn.label}` : ''}
+                {o.tradeIn?.imei ? ` · IMEI ${o.tradeIn.imei}` : ''}
+              </span>
+            ) : null}
+            {o.tradeIn?.images?.length ? (
+              <div className="store-order-trade-thumbs" aria-label="Trade-in photos">
+                {o.tradeIn.images.map((url) => (
+                  <a
+                    key={url}
+                    href={url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="store-order-trade-thumb"
+                  >
+                    <img src={url} alt="" />
+                  </a>
+                ))}
+              </div>
+            ) : null}
+            {o.tradeIn?.videoUrl ? (
+              <div className="store-order-trade-video">
+                <video src={o.tradeIn.videoUrl} controls playsInline preload="metadata" />
+              </div>
+            ) : null}
+            <strong>Total {usd(o.total)}</strong>
+          </div>
+          <div className="store-order-again">
+            <Link to="/store" className="btn btn-ghost btn-sm">
+              Buy again
+            </Link>
+          </div>
+        </div>
+      ) : null}
+    </article>
   )
 }
 
@@ -56,9 +317,14 @@ export function StoreOrders() {
   const placed = params.get('placed')
   const pay = params.get('pay')
   const [orders, setOrders] = useState<StoreOrderDto[]>([])
+  const [guestOrder, setGuestOrder] = useState<StoreOrderDto | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [openId, setOpenId] = useState<string | null>(() => placed)
+  const [lookupId, setLookupId] = useState(() => placed || '')
+  const [lookupEmail, setLookupEmail] = useState('')
+  const [lookupBusy, setLookupBusy] = useState(false)
+  const [lookupErr, setLookupErr] = useState<string | null>(null)
 
   useEffect(() => {
     if (!user) {
@@ -82,6 +348,22 @@ export function StoreOrders() {
     }
   }, [user])
 
+  async function onLookup(e: FormEvent) {
+    e.preventDefault()
+    setLookupErr(null)
+    setLookupBusy(true)
+    try {
+      const res = await api.lookupStoreOrder({ id: lookupId.trim(), email: lookupEmail.trim() })
+      setGuestOrder(res.order)
+      setOpenId(res.order.id)
+    } catch (ex) {
+      setGuestOrder(null)
+      setLookupErr(ex instanceof Error ? ex.message : 'Order not found.')
+    } finally {
+      setLookupBusy(false)
+    }
+  }
+
   if (!settings.showStore) {
     return (
       <PublicShell mode="consumer">
@@ -91,7 +373,8 @@ export function StoreOrders() {
   }
 
   const storeName = settings.storeLabel || 'Store'
-  const count = !user ? null : loading ? '…' : orders.length
+  const count = !user ? (guestOrder ? 1 : null) : loading ? '…' : orders.length
+  const list = user ? orders : guestOrder ? [guestOrder] : []
 
   return (
     <PublicShell mode="consumer">
@@ -100,7 +383,7 @@ export function StoreOrders() {
           page="orders"
           title="Orders"
           count={count}
-          note="Consumer store orders only — not wholesale invoices."
+          note="Track your store orders, payments, and delivery."
           label={storeName}
         />
 
@@ -126,114 +409,71 @@ export function StoreOrders() {
         ) : null}
 
         {!user ? (
-          <div className="mh-empty shop-empty">
-            <p>
-              Sign in to see orders linked to your account. Guest checkouts still receive the order
-              id above.
+          <form className="store-order-lookup" onSubmit={(e) => void onLookup(e)}>
+            <h3>Find your order</h3>
+            <p className="muted tiny">
+              Enter the order id and the email used at checkout. Or{' '}
+              <Link to="/login" state={{ from: '/store/orders' }}>
+                sign in
+              </Link>{' '}
+              to see all orders on your account.
             </p>
-            <Link to="/login" state={{ from: '/store/orders' }} className="btn btn-primary btn-sm">
-              Sign in
-            </Link>
-          </div>
-        ) : loading ? (
+            <div className="store-order-lookup-fields">
+              <label className="field">
+                <span>Order id</span>
+                <input
+                  required
+                  value={lookupId}
+                  onChange={(e) => setLookupId(e.target.value)}
+                  placeholder="e.g. SO-…"
+                  autoComplete="off"
+                />
+              </label>
+              <label className="field">
+                <span>Email</span>
+                <input
+                  type="email"
+                  required
+                  value={lookupEmail}
+                  onChange={(e) => setLookupEmail(e.target.value)}
+                  autoComplete="email"
+                />
+              </label>
+              <button type="submit" className="btn btn-primary btn-sm" disabled={lookupBusy}>
+                {lookupBusy ? 'Looking up…' : 'Find order'}
+              </button>
+            </div>
+            {lookupErr ? (
+              <p className="tiny imei-err" role="alert">
+                {lookupErr}
+              </p>
+            ) : null}
+          </form>
+        ) : null}
+
+        {user && loading ? (
           <StoreBlockSkeleton rows={4} />
-        ) : err ? (
+        ) : user && err ? (
           <p className="tiny imei-err">{err}</p>
-        ) : !orders.length ? (
+        ) : user && !orders.length ? (
           <div className="mh-empty shop-empty">
             <p>No retail orders yet.</p>
             <Link to="/store" className="btn btn-primary btn-sm">
-              Shop collection
+              Continue shopping
             </Link>
           </div>
-        ) : (
+        ) : list.length ? (
           <div className="store-orders-list">
-            {orders.map((o) => {
-              const open = openId === o.id
-              return (
-                <article key={o.id} className={`store-order-card${open ? ' is-open' : ''}`}>
-                  <button
-                    type="button"
-                    className="store-order-summary"
-                    aria-expanded={open}
-                    onClick={() => setOpenId(open ? null : o.id)}
-                  >
-                    <span className="mono store-order-id">{o.id}</span>
-                    <span className="store-order-badge">{statusLabel(o.status)}</span>
-                    <span className="muted tiny">{payLabel(o.paymentMethod)}</span>
-                    <strong className="store-order-total">{usd(o.total)}</strong>
-                  </button>
-                  {open ? (
-                    <div className="store-order-detail">
-                      <p className="tiny muted">
-                        {o.name} · {o.email}
-                        {o.phone ? ` · ${o.phone}` : ''}
-                      </p>
-                      <p className="tiny">
-                        <strong>
-                          {FULFILLMENT_LABELS[(o.fulfillmentMode as FulfillmentMode) || 'delivery']}
-                        </strong>
-                        {o.fulfillmentMode === 'pickup' || o.fulfillmentMode === 'buyer_courier' ? (
-                          o.readyForCollect || o.status === 'shipped' ? (
-                            <span className="ok">
-                              {' '}
-                              · {o.status === 'shipped' ? COLLECTED_LABEL : READY_FOR_COLLECT_LABEL}
-                            </span>
-                          ) : null
-                        ) : o.trackingNo ? (
-                          <TrackingBit carrier={o.courierCarrier} trackingNo={o.trackingNo} />
-                        ) : null}
-                        {o.courierCarrier ? (
-                          <span className="muted">
-                            {' '}
-                            · {o.courierCarrier}
-                            {o.courierAccount ? ` · ${o.courierAccount}` : ''}
-                          </span>
-                        ) : null}
-                      </p>
-                      <p className="store-order-address">{o.address}</p>
-                      {o.note ? <p className="tiny muted">Note: {o.note}</p> : null}
-                      {o.paymentMethod === 'bank' && o.status === 'pending_payment' ? (
-                        <p className="tiny store-order-bank-hint">
-                          Bank transfer — staff will confirm when funds clear. Include order{' '}
-                          <span className="mono">{o.id}</span> in the remittance.
-                        </p>
-                      ) : null}
-                      {o.paymentMethod === 'usdt' && o.status === 'pending_payment' ? (
-                        <p className="tiny store-order-bank-hint">
-                          USDT — staff will confirm when the transfer clears. Include order{' '}
-                          <span className="mono">{o.id}</span> in the memo / note, and ask staff for
-                          the wallet address and network (e.g. TRC-20 / ERC-20).
-                        </p>
-                      ) : null}
-                      {o.paymentMethod === 'cash' && o.status === 'pending_payment' ? (
-                        <p className="tiny store-order-bank-hint">
-                          Cash — bring exact amount when you collect. Staff marks paid on receipt.
-                          Order <span className="mono">{o.id}</span>.
-                        </p>
-                      ) : null}
-                      <ul className="store-order-lines">
-                        {o.lines.map((l) => (
-                          <li key={l.id}>
-                            <span>
-                              {l.qty}× {l.title}
-                            </span>
-                            <span>{usd(l.unitPrice * l.qty)}</span>
-                          </li>
-                        ))}
-                      </ul>
-                      <div className="store-order-totals tiny">
-                        <span>Subtotal {usd(o.subtotal)}</span>
-                        <span>Shipping {usd(o.shippingFee)}</span>
-                        <strong>Total {usd(o.total)}</strong>
-                      </div>
-                    </div>
-                  ) : null}
-                </article>
-              )
-            })}
+            {list.map((o) => (
+              <OrderCard
+                key={o.id}
+                order={o}
+                open={openId === o.id}
+                onToggle={() => setOpenId(openId === o.id ? null : o.id)}
+              />
+            ))}
           </div>
-        )}
+        ) : null}
       </div>
     </PublicShell>
   )

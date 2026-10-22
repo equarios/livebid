@@ -1,3 +1,6 @@
+import type { StoreProductDto } from './api'
+import { storeVariantFamilyKey } from './storeVariants'
+
 export type StockFilter = 'available' | 'sold'
 
 export const STOCK_FILTER_OPTIONS: StockFilter[] = ['available', 'sold']
@@ -53,6 +56,22 @@ export function parseTimeMs(raw: string | number | null | undefined) {
   if (typeof raw === 'number') return raw
   const n = Date.parse(raw)
   return Number.isFinite(n) ? n : 0
+}
+
+/** Rank in-stock peers; skips same color/GB family (variant picker covers those). */
+export function pickSimilarStoreProducts(
+  seed: StoreProductDto,
+  catalog: StoreProductDto[],
+  limit = 4,
+) {
+  const family = storeVariantFamilyKey(seed)
+  return catalog
+    .filter((p) => storeVariantFamilyKey(p) !== family)
+    .map((p) => ({ p, score: similarStoreScore(seed, p) }))
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map((x) => x.p)
 }
 
 /** Score similar retail products (higher = closer). */

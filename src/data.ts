@@ -137,6 +137,7 @@ export const DEFAULT_SETTINGS: SiteSettings = {
     navHelp: 'Help',
     navNotifications: 'Notifications',
     navTutorial: 'How it works',
+    /** Floating Contact Us button label (Support page stays under Help). */
     navContact: 'Contact us',
     navLanguage: 'Language',
     searchGeneric: 'Search model, SKU, maker…',

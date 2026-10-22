@@ -48,25 +48,26 @@ import { onLotTick, startRealtime, stopRealtime } from './lib/realtime'
 import { buyerCareNotices, settleClosedAuctions } from './lib/settle'
 import { mergeDeskBanners } from './lib/deskBanner'
 import { checkBidPrice, checkOfferPrice, checkOrderQty, lotMoq } from './lib/moq'
-import type {
-  Account,
-  Bid,
-  CartItem,
-  CartOrder,
-  EmailPrefs,
-  InventorySku,
-  Invoice,
-  ListingDrop,
-  ListingDropItem,
-  Lot,
-  MarketOffer,
-  Notice,
-  PayDecision,
-  PayReviewSide,
-  SiteSettings,
-  ThemeSettings,
-  User,
-  WholesalePayMethod,
+import {
+  MAX_LANDER_HERO_SLIDES,
+  type Account,
+  type Bid,
+  type CartItem,
+  type CartOrder,
+  type EmailPrefs,
+  type InventorySku,
+  type Invoice,
+  type ListingDrop,
+  type ListingDropItem,
+  type Lot,
+  type MarketOffer,
+  type Notice,
+  type PayDecision,
+  type PayReviewSide,
+  type SiteSettings,
+  type ThemeSettings,
+  type User,
+  type WholesalePayMethod,
 } from './types'
 
 const BUYER_NEXT: Record<string, { href: string; label: string }> = {
@@ -507,8 +508,8 @@ function mergeSettings(partial?: Partial<SiteSettings> | null): SiteSettings {
         authTitle: (p.authTitle || base.authTitle).trim() || base.authTitle,
         authLead: (p.authLead || base.authLead).trim() || base.authLead,
         heroIntervalSec: interval,
-        storeHeroes,
-        wholesaleHeroes,
+        storeHeroes: storeHeroes.slice(0, MAX_LANDER_HERO_SLIDES),
+        wholesaleHeroes: wholesaleHeroes.slice(0, MAX_LANDER_HERO_SLIDES),
         wholesaleHowTitle:
           (p.wholesaleHowTitle || base.wholesaleHowTitle).trim() || base.wholesaleHowTitle,
         wholesaleHowSteps: mergeCards(base.wholesaleHowSteps, p.wholesaleHowSteps, {

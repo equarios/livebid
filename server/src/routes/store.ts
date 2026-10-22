@@ -21,10 +21,20 @@ import { assertPickupSlotOpen, slotOccupancyForDate } from '../pickupCapacity'
 import { ensureShippingAddendum } from '../shippingAddendum'
 import { notify } from '../notify'
 import {
+  ensureFxRatesFresh,
+  getPerUsd,
+  loadFxSnapshot,
+  refreshFxRates,
+  usdToDisplay,
+} from '../fxRates'
+import { isValidImei, lookupImeiAgainstMatrix, normImei } from '../imeiTac'
+import {
   MAX_STORE_IMAGES,
+  MAX_TRADE_IN_VIDEO_BYTES,
   MAX_UPLOAD_BYTES,
   normalizeImageList,
   processAndSaveStoreImage,
+  saveTradeInVideo,
 } from '../storeImages'
 
 export const storeRoutes = new Hono<AuthedEnv>()
@@ -145,20 +155,46 @@ function mapOrder(o: {
   subtotal: number
   shippingFee: number
   total: number
+  displayCurrency?: string | null
+  displayRate?: number | null
+  displayTotal?: number | null
   note: string | null
   createdAt: Date
   paidAt: Date | null
   shippedAt: Date | null
   trackingNo?: string | null
+  tradeInCredit?: number | null
+  tradeIn?: {
+    id: string
+    label: string
+    deviceId: string
+    grade: string
+    battery: number
+    simLocked: boolean
+    activationLocked: boolean
+    estimateLow: number
+    estimateHigh: number
+    provisionalCredit: number
+    finalCredit: number | null
+    images?: unknown
+    videoUrl?: string | null
+    imei?: string | null
+    status: string
+    staffNote: string | null
+    createdAt: Date
+    updatedAt: Date
+  } | null
   lines: Array<{
     id: string
     productId: string | null
     title: string
     unitPrice: number
     qty: number
+    product?: { imageUrl?: string | null; slug?: string | null } | null
   }>
 }) {
   const mode = isFulfillmentMode(o.fulfillmentMode) ? o.fulfillmentMode : 'delivery'
+  const ti = o.tradeIn
   return {
     id: o.id,
     accountId: o.accountId,
@@ -178,21 +214,139 @@ function mapOrder(o: {
     paymentRef: o.paymentRef,
     subtotal: o.subtotal,
     shippingFee: o.shippingFee,
+    tradeInCredit: o.tradeInCredit ?? 0,
     total: o.total,
+    displayCurrency: (o.displayCurrency || 'USD').toUpperCase(),
+    displayRate: o.displayRate != null && o.displayRate > 0 ? o.displayRate : 1,
+    displayTotal: o.displayTotal != null ? o.displayTotal : undefined,
     note: o.note,
     createdAt: o.createdAt.toISOString(),
     paidAt: o.paidAt?.toISOString() ?? null,
     shippedAt: o.shippedAt?.toISOString() ?? null,
     trackingNo: o.trackingNo ?? null,
+    tradeIn: ti
+      ? {
+          id: ti.id,
+          label: ti.label,
+          deviceId: ti.deviceId,
+          grade: ti.grade,
+          battery: ti.battery,
+          simLocked: ti.simLocked,
+          activationLocked: ti.activationLocked,
+          estimateLow: ti.estimateLow,
+          estimateHigh: ti.estimateHigh,
+          provisionalCredit: ti.provisionalCredit,
+          finalCredit: ti.finalCredit,
+          images: normalizeImageList(ti.images, null),
+          videoUrl: ti.videoUrl?.trim() || null,
+          imei: ti.imei?.trim() || null,
+          status: ti.status,
+          staffNote: ti.staffNote,
+          createdAt: ti.createdAt.toISOString(),
+          updatedAt: ti.updatedAt.toISOString(),
+        }
+      : null,
     lines: o.lines.map((l) => ({
       id: l.id,
       productId: l.productId,
       title: l.title,
       unitPrice: l.unitPrice,
       qty: l.qty,
+      imageUrl: l.product?.imageUrl ?? null,
+      slug: l.product?.slug ?? null,
     })),
   }
 }
+
+const orderInclude = {
+  lines: { include: { product: true } },
+  tradeIn: true,
+} as const
+
+function mapTradeIn(t: {
+  id: string
+  orderId: string
+  email: string
+  name: string
+  label: string
+  deviceId: string
+  grade: string
+  battery: number
+  simLocked: boolean
+  activationLocked: boolean
+  estimateLow: number
+  estimateHigh: number
+  provisionalCredit: number
+  finalCredit: number | null
+  images?: unknown
+  videoUrl?: string | null
+  imei?: string | null
+  status: string
+  staffNote: string | null
+  createdAt: Date
+  updatedAt: Date
+  order?: { id: string; status: string; total: number; subtotal: number; shippingFee: number } | null
+}) {
+  return {
+    id: t.id,
+    orderId: t.orderId,
+    email: t.email,
+    name: t.name,
+    label: t.label,
+    deviceId: t.deviceId,
+    grade: t.grade,
+    battery: t.battery,
+    simLocked: t.simLocked,
+    activationLocked: t.activationLocked,
+    estimateLow: t.estimateLow,
+    estimateHigh: t.estimateHigh,
+    provisionalCredit: t.provisionalCredit,
+    finalCredit: t.finalCredit,
+    images: normalizeImageList(t.images, null),
+    videoUrl: t.videoUrl?.trim() || null,
+    imei: t.imei?.trim() || null,
+    status: t.status,
+    staffNote: t.staffNote,
+    createdAt: t.createdAt.toISOString(),
+    updatedAt: t.updatedAt.toISOString(),
+    orderStatus: t.order?.status ?? null,
+    orderTotal: t.order?.total ?? null,
+  }
+}
+
+function mapTradeInDevice(d: {
+  id: string
+  brand: string
+  model: string
+  capacity: string
+  baseUsd: number
+  active: boolean
+  sortOrder: number
+}) {
+  return {
+    id: d.id,
+    brand: d.brand,
+    model: d.model,
+    capacity: d.capacity,
+    baseUsd: d.baseUsd,
+    active: d.active,
+    sortOrder: d.sortOrder,
+  }
+}
+
+function deviceSlug(brand: string, model: string, capacity: string) {
+  return slugify(`${brand}-${model}-${capacity}`)
+}
+
+/** Public FX rates for store display (USD base). Refreshes when stale. */
+storeRoutes.get('/fx', async (c) => {
+  await ensureFxRatesFresh()
+  return c.json(await loadFxSnapshot())
+})
+
+storeRoutes.post('/fx/refresh', requireUser, requireStaff, async (c) => {
+  return c.json(await refreshFxRates())
+})
 
 /** Public store checkout policy (guests + buyers). */
 storeRoutes.get('/fulfillment', (c) => {
@@ -293,6 +447,162 @@ storeRoutes.post('/upload', requireUser, requireStaff, async (c) => {
     return c.json({ error: e instanceof Error ? e.message : 'Image processing failed.' }, 400)
   }
   return c.json({ urls })
+})
+
+const TRADE_IN_UPLOAD_MAX = 4
+
+/** Guest/buyer trade-in condition photos (front/back/sides). */
+storeRoutes.post('/trade-in/upload', async (c) => {
+  const body = await c.req.parseBody({ all: true })
+  const raw = body['files'] ?? body['file']
+  const list = Array.isArray(raw) ? raw : raw ? [raw] : []
+  const files = list.filter((f): f is File => typeof f === 'object' && f !== null && 'arrayBuffer' in f)
+
+  if (!files.length) return c.json({ error: 'Choose a photo.' }, 400)
+  if (files.length > TRADE_IN_UPLOAD_MAX) {
+    return c.json({ error: `Upload at most ${TRADE_IN_UPLOAD_MAX} photos at a time.` }, 400)
+  }
+
+  const urls: string[] = []
+  try {
+    for (const file of files) {
+      if (file.size > MAX_UPLOAD_BYTES) {
+        return c.json({ error: `${file.name || 'Image'} is over 12 MB.` }, 400)
+      }
+      const buf = Buffer.from(await file.arrayBuffer())
+      const url = await processAndSaveStoreImage(buf, file.type || 'application/octet-stream')
+      urls.push(url)
+    }
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : 'Image processing failed.' }, 400)
+  }
+  return c.json({ urls })
+})
+
+/** Consumer IMEI → TAC brand/model + Matrix match (identity lock). */
+storeRoutes.post('/trade-in/imei-lookup', async (c) => {
+  const body = z.object({ imei: z.string().min(8).max(24) }).safeParse(await c.req.json())
+  if (!body.success) return c.json({ error: 'Enter an IMEI.' }, 400)
+  const result = await lookupImeiAgainstMatrix(body.data.imei)
+  if (!result.ok) {
+    return c.json(
+      {
+        ok: false,
+        error: result.error,
+        imei: 'imei' in result ? result.imei : undefined,
+        tac: 'tac' in result ? result.tac : undefined,
+        brand: 'brand' in result ? result.brand : undefined,
+        model: 'model' in result ? result.model : undefined,
+      },
+      200,
+    )
+  }
+  return c.json(result)
+})
+
+/** Optional guest condition video (mp4/webm/mov, ≤40 MB). */
+storeRoutes.post('/trade-in/upload-video', async (c) => {
+  const body = await c.req.parseBody({ all: true })
+  const raw = body['file'] ?? body['files']
+  const file = Array.isArray(raw) ? raw[0] : raw
+  if (!file || typeof file !== 'object' || !('arrayBuffer' in file)) {
+    return c.json({ error: 'Choose a video.' }, 400)
+  }
+  if (file.size > MAX_TRADE_IN_VIDEO_BYTES) {
+    return c.json({ error: 'Video must be under 40 MB.' }, 400)
+  }
+  try {
+    const buf = Buffer.from(await file.arrayBuffer())
+    const url = await saveTradeInVideo(buf, file.type || 'application/octet-stream')
+    return c.json({ url })
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : 'Video upload failed.' }, 400)
+  }
+})
+
+/** Public active trade-in estimate matrix. */
+storeRoutes.get('/trade-in/devices', async (c) => {
+  const rows = await prisma.storeTradeInDevice.findMany({
+    where: { active: true },
+    orderBy: [{ sortOrder: 'asc' }, { brand: 'asc' }, { model: 'asc' }],
+  })
+  return c.json({ devices: rows.map(mapTradeInDevice) })
+})
+
+/** Staff: full matrix including inactive. */
+storeRoutes.get('/trade-in/devices/all', requireUser, requireStaff, async (c) => {
+  const rows = await prisma.storeTradeInDevice.findMany({
+    orderBy: [{ sortOrder: 'asc' }, { brand: 'asc' }, { model: 'asc' }],
+  })
+  return c.json({ devices: rows.map(mapTradeInDevice) })
+})
+
+storeRoutes.post('/trade-in/devices', requireUser, requireStaff, async (c) => {
+  const body = z
+    .object({
+      id: z.string().min(2).max(80).optional(),
+      brand: z.string().min(1).max(60),
+      model: z.string().min(1).max(80),
+      capacity: z.string().min(1).max(40),
+      baseUsd: z.number().positive().max(20000),
+      active: z.boolean().optional(),
+      sortOrder: z.number().int().min(0).max(9999).optional(),
+    })
+    .safeParse(await c.req.json())
+  if (!body.success) return c.json({ error: 'Invalid device.' }, 400)
+  const id = (body.data.id || deviceSlug(body.data.brand, body.data.model, body.data.capacity)).slice(0, 80)
+  const existing = await prisma.storeTradeInDevice.findUnique({ where: { id } })
+  if (existing) return c.json({ error: 'Device id already exists.' }, 409)
+  const row = await prisma.storeTradeInDevice.create({
+    data: {
+      id,
+      brand: body.data.brand.trim(),
+      model: body.data.model.trim(),
+      capacity: body.data.capacity.trim(),
+      baseUsd: Math.round(body.data.baseUsd * 100) / 100,
+      active: body.data.active ?? true,
+      sortOrder: body.data.sortOrder ?? 0,
+    },
+  })
+  return c.json({ device: mapTradeInDevice(row) })
+})
+
+storeRoutes.patch('/trade-in/devices/:id', requireUser, requireStaff, async (c) => {
+  const body = z
+    .object({
+      brand: z.string().min(1).max(60).optional(),
+      model: z.string().min(1).max(80).optional(),
+      capacity: z.string().min(1).max(40).optional(),
+      baseUsd: z.number().positive().max(20000).optional(),
+      active: z.boolean().optional(),
+      sortOrder: z.number().int().min(0).max(9999).optional(),
+    })
+    .safeParse(await c.req.json())
+  if (!body.success) return c.json({ error: 'Invalid device update.' }, 400)
+  const existing = await prisma.storeTradeInDevice.findUnique({ where: { id: c.req.param('id') } })
+  if (!existing) return c.json({ error: 'Device not found.' }, 404)
+  const row = await prisma.storeTradeInDevice.update({
+    where: { id: existing.id },
+    data: {
+      brand: body.data.brand?.trim() ?? existing.brand,
+      model: body.data.model?.trim() ?? existing.model,
+      capacity: body.data.capacity?.trim() ?? existing.capacity,
+      baseUsd:
+        body.data.baseUsd != null
+          ? Math.round(body.data.baseUsd * 100) / 100
+          : existing.baseUsd,
+      active: body.data.active ?? existing.active,
+      sortOrder: body.data.sortOrder ?? existing.sortOrder,
+    },
+  })
+  return c.json({ device: mapTradeInDevice(row) })
+})
+
+storeRoutes.delete('/trade-in/devices/:id', requireUser, requireStaff, async (c) => {
+  const existing = await prisma.storeTradeInDevice.findUnique({ where: { id: c.req.param('id') } })
+  if (!existing) return c.json({ error: 'Device not found.' }, 404)
+  await prisma.storeTradeInDevice.delete({ where: { id: existing.id } })
+  return c.json({ ok: true })
 })
 
 storeRoutes.post('/products', requireUser, requireStaff, async (c) => {
@@ -425,6 +735,24 @@ const checkoutSchema = z.object({
   courierAccount: z.string().max(80).optional(),
   pickupDate: z.string().max(12).optional(),
   pickupSlot: z.string().max(40).optional(),
+  /** Shopper display currency; charge and stock stay USD. */
+  displayCurrency: z.string().regex(/^[A-Za-z]{3}$/).optional(),
+  tradeIn: z
+    .object({
+      deviceId: z.string().min(1).max(80),
+      label: z.string().min(1).max(160),
+      grade: z.string().min(1).max(8),
+      battery: z.number().int().min(0).max(100),
+      simLocked: z.boolean(),
+      activationLocked: z.boolean(),
+      estimateLow: z.number().positive().max(20000),
+      estimateHigh: z.number().positive().max(20000),
+      creditUsd: z.number().positive().max(20000),
+      images: z.array(z.string().min(1).max(400)).min(4).max(8),
+      videoUrl: z.string().min(1).max(400).nullable().optional(),
+      imei: z.string().min(14).max(16),
+    })
+    .optional(),
   lines: z
     .array(
       z.object({
@@ -498,7 +826,21 @@ storeRoutes.post('/orders', optionalUser, async (c) => {
   const subtotal = built.reduce((s, l) => s + l.unitPrice * l.qty, 0)
   const quote = resolveShippingQuote({ mode, subtotal, cfg })
   const shippingFee = quote.fee
-  const total = Math.round((subtotal + shippingFee) * 100) / 100
+  const tiIn = body.data.tradeIn
+  if (tiIn) {
+    const imeiCheck = normImei(tiIn.imei)
+    if (!isValidImei(imeiCheck)) {
+      return c.json({ error: 'Enter a valid 15-digit IMEI for trade-in.' }, 400)
+    }
+  }
+  const tradeInCredit = tiIn
+    ? Math.min(Math.round(tiIn.creditUsd * 100) / 100, Math.round(subtotal * 100) / 100)
+    : 0
+  const total = Math.round((subtotal + shippingFee - tradeInCredit) * 100) / 100
+  const displayCurrency = (body.data.displayCurrency || 'USD').trim().toUpperCase() || 'USD'
+  await ensureFxRatesFresh()
+  const displayRate = await getPerUsd(displayCurrency)
+  const displayTotal = usdToDisplay(total, displayRate)
   const id = `ST-${Date.now().toString(36).toUpperCase()}`
   const shipAddress =
     mode === 'delivery'
@@ -515,7 +857,7 @@ storeRoutes.post('/orders', optionalUser, async (c) => {
       })
       if (updated.count !== 1) throw new Error('STOCK')
     }
-    return tx.storeOrder.create({
+    const created = await tx.storeOrder.create({
       data: {
         id,
         accountId: user?.accountId ?? null,
@@ -534,7 +876,11 @@ storeRoutes.post('/orders', optionalUser, async (c) => {
         subtotal,
         shippingFee,
         shippingFeeQuoted: quote.quoted,
+        tradeInCredit,
         total,
+        displayCurrency,
+        displayRate,
+        displayTotal,
         lines: {
           create: built.map((l) => ({
             productId: l.productId,
@@ -544,8 +890,36 @@ storeRoutes.post('/orders', optionalUser, async (c) => {
           })),
         },
       },
-      include: { lines: true },
+      include: orderInclude,
     })
+    if (tiIn && tradeInCredit > 0) {
+      await tx.storeTradeIn.create({
+        data: {
+          id: `TI-${Date.now().toString(36).toUpperCase()}`,
+          orderId: created.id,
+          email: created.email,
+          name: created.name,
+          label: tiIn.label.trim(),
+          deviceId: tiIn.deviceId.trim(),
+          grade: tiIn.grade.trim(),
+          battery: tiIn.battery,
+          simLocked: tiIn.simLocked,
+          activationLocked: tiIn.activationLocked,
+          estimateLow: Math.round(tiIn.estimateLow * 100) / 100,
+          estimateHigh: Math.round(tiIn.estimateHigh * 100) / 100,
+          provisionalCredit: tradeInCredit,
+          images: tiIn.images.map((u) => u.trim()).filter(Boolean).slice(0, 8),
+          videoUrl: tiIn.videoUrl?.trim() || null,
+          imei: normImei(tiIn.imei),
+          status: 'pending_receive',
+        },
+      })
+      return tx.storeOrder.findUniqueOrThrow({
+        where: { id: created.id },
+        include: orderInclude,
+      })
+    }
+    return created
   }).catch((e) => {
     if (e instanceof Error && e.message === 'STOCK') return null
     throw e
@@ -555,12 +929,30 @@ storeRoutes.post('/orders', optionalUser, async (c) => {
   return c.json({ order: mapOrder(order) }, 201)
 })
 
+storeRoutes.post('/orders/lookup', async (c) => {
+  const body = z
+    .object({
+      id: z.string().trim().min(4).max(48),
+      email: z.string().trim().email().max(120),
+    })
+    .safeParse(await c.req.json())
+  if (!body.success) return c.json({ error: 'Enter a valid order id and email.' }, 400)
+  const order = await prisma.storeOrder.findUnique({
+    where: { id: body.data.id },
+    include: orderInclude,
+  })
+  if (!order || order.email.toLowerCase() !== body.data.email.toLowerCase()) {
+    return c.json({ error: 'Order not found.' }, 404)
+  }
+  return c.json({ order: mapOrder(order) })
+})
+
 storeRoutes.get('/orders', requireUser, async (c) => {
   const user = c.get('user')!
   const staff = isStaff(user)
   const orders = await prisma.storeOrder.findMany({
     where: staff ? {} : { OR: [{ accountId: user.accountId }, { email: user.email }] },
-    include: { lines: true },
+    include: orderInclude,
     orderBy: { createdAt: 'desc' },
     take: 100,
   })
@@ -572,7 +964,7 @@ storeRoutes.get('/orders/:id', requireUser, async (c) => {
   const staff = isStaff(user)
   const order = await prisma.storeOrder.findUnique({
     where: { id: c.req.param('id') },
-    include: { lines: true },
+    include: orderInclude,
   })
   if (!order) return c.json({ error: 'Order not found.' }, 404)
   if (!staff && order.accountId !== user.accountId && order.email !== user.email) {
@@ -641,7 +1033,7 @@ storeRoutes.patch('/orders/:id', requireUser, requireStaff, async (c) => {
           ? undefined
           : body.data.courierCarrier.trim() || null,
     },
-    include: { lines: true },
+    include: orderInclude,
   })
 
   if (becomingReady && existing.accountId) {
@@ -683,4 +1075,79 @@ storeRoutes.patch('/orders/:id', requireUser, requireStaff, async (c) => {
   }
 
   return c.json({ order: mapOrder(product), shippingInvoiceId })
+})
+
+storeRoutes.get('/trade-ins', requireUser, requireStaff, async (c) => {
+  const rows = await prisma.storeTradeIn.findMany({
+    include: {
+      order: { select: { id: true, status: true, total: true, subtotal: true, shippingFee: true } },
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 120,
+  })
+  return c.json({ tradeIns: rows.map(mapTradeIn) })
+})
+
+storeRoutes.patch('/trade-ins/:id', requireUser, requireStaff, async (c) => {
+  const body = z
+    .object({
+      status: z.enum(['pending_receive', 'received', 'accepted', 'adjusted', 'rejected']).optional(),
+      finalCredit: z.number().min(0).max(20000).optional(),
+      staffNote: z.string().max(500).nullable().optional(),
+    })
+    .safeParse(await c.req.json())
+  if (!body.success) return c.json({ error: 'Invalid trade-in update.' }, 400)
+
+  const existing = await prisma.storeTradeIn.findUnique({
+    where: { id: c.req.param('id') },
+    include: { order: true },
+  })
+  if (!existing) return c.json({ error: 'Trade-in not found.' }, 404)
+
+  const status = body.data.status ?? existing.status
+  let finalCredit = existing.finalCredit
+  if (status === 'accepted') {
+    finalCredit = body.data.finalCredit ?? existing.provisionalCredit
+  } else if (status === 'adjusted') {
+    if (body.data.finalCredit == null && existing.finalCredit == null) {
+      return c.json({ error: 'Enter final credit for an adjusted trade-in.' }, 400)
+    }
+    finalCredit = body.data.finalCredit ?? existing.finalCredit
+  } else if (status === 'rejected') {
+    finalCredit = 0
+  }
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const ti = await tx.storeTradeIn.update({
+      where: { id: existing.id },
+      data: {
+        status,
+        finalCredit,
+        staffNote:
+          body.data.staffNote !== undefined ? body.data.staffNote : existing.staffNote,
+      },
+      include: {
+        order: { select: { id: true, status: true, total: true, subtotal: true, shippingFee: true } },
+      },
+    })
+
+    /* Recalculate order total while still awaiting payment. */
+    if (
+      existing.order.status === 'pending_payment' &&
+      finalCredit != null &&
+      (status === 'accepted' || status === 'adjusted' || status === 'rejected')
+    ) {
+      const credit = Math.min(finalCredit, existing.order.subtotal)
+      const nextTotal =
+        Math.round((existing.order.subtotal + existing.order.shippingFee - credit) * 100) / 100
+      await tx.storeOrder.update({
+        where: { id: existing.orderId },
+        data: { tradeInCredit: credit, total: nextTotal },
+      })
+    }
+
+    return ti
+  })
+
+  return c.json({ tradeIn: mapTradeIn(updated) })
 })

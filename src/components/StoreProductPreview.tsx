@@ -1,28 +1,69 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { originLabel } from '../lib/auctionLists'
-import { ModalShell } from './ModalShell'
-import { StoreGallery } from './StoreGallery'
-import { BatteryMark } from './BatteryMark'
-import { usd } from '../lib/format'
-import type { StoreProductDto } from '../lib/api'
-import { storeProductBrand } from '../lib/storeBrand'
+import { lotItemSub } from '../lib/itemLine'
+import { api, type StoreProductDto } from '../lib/api'
+import { storeProductBrand, storeProductHeadline } from '../lib/storeBrand'
+import { storeNeedsBuyAck } from '../lib/storeCondition'
 import { addToStoreCart } from '../lib/storeCart'
-import { pushToast } from '../lib/toast'
+import { storeAddedToCart, storeNeedsAckWarn } from '../lib/storeFeedback'
+import { useStoreFx } from '../lib/storeFx'
+import { pickSimilarStoreProducts } from '../lib/stockFilter'
+import { storeProductFallback, storeProductImage } from '../lib/storePhotos'
+import { AskAboutItem } from './AskAboutItem'
+import { BatteryMark } from './BatteryMark'
+import { ModalShell } from './ModalShell'
+import { StoreConditionAck } from './StoreConditionAck'
+import { StoreConditionBadges } from './StoreConditionBadges'
+import { StoreGallery } from './StoreGallery'
+import { StoreVariantPicker } from './StoreVariantPicker'
 
 type Props = {
   product: StoreProductDto
   onClose: () => void
+  /** Optional: switch preview to another product (similar tiles). */
+  onOpenProduct?: (product: StoreProductDto) => void
 }
 
-/** Detail dialog matching auction/marketplace lot-modal layout. */
-export function StoreProductPreview({ product, onClose }: Props) {
+/** Detail dialog — same frame as auction lot modal; retail buy actions. */
+export function StoreProductPreview({ product, onClose, onOpenProduct }: Props) {
+  const { money } = useStoreFx()
   const [qty, setQty] = useState(1)
   const [msg, setMsg] = useState<string | null>(null)
+  const [catalog, setCatalog] = useState<StoreProductDto[]>([])
+  const [acked, setAcked] = useState(false)
+  const [ackNudge, setAckNudge] = useState(0)
   const soldOut = product.stock < 1
+  const needsAck = storeNeedsBuyAck(product)
   const brand = storeProductBrand(product)
   const battery = Math.max(0, Math.floor(Number(product.battery) || 0))
-  const title = [brand, product.title, product.modelNumber].filter(Boolean).join(' ')
+  const headline = storeProductHeadline(product, brand)
+  const sub = lotItemSub({
+    capacity: product.capacity,
+    origin: product.origin,
+    color: product.color,
+  })
+
+  useEffect(() => {
+    setQty(1)
+    setAcked(false)
+    setAckNudge(0)
+  }, [product.id])
+
+  useEffect(() => {
+    let alive = true
+    void api
+      .storeProducts()
+      .then((res) => {
+        if (alive) setCatalog(res.products)
+      })
+      .catch(() => {
+        if (alive) setCatalog([])
+      })
+    return () => {
+      alive = false
+    }
+  }, [])
 
   useEffect(() => {
     if (!msg) return
@@ -41,16 +82,17 @@ export function StoreProductPreview({ product, onClose }: Props) {
       >
         <div className="lot-modal-head">
           <div>
-            <span className="pill pill-hybrid">Retail</span>
             {brand ? <p className="deal-card-maker store-card-maker">{brand}</p> : null}
-            <h2 id="store-preview-title">{title || product.title}</h2>
+            <h2 id="store-preview-title">{headline}</h2>
+            {sub ? <p className="muted item-specs">{sub}</p> : null}
             <p className="muted">
-              {usd(product.price)} / pc
+              {money(product.price)} / pc
               {product.compareAt && product.compareAt > product.price
-                ? ` · was ${usd(product.compareAt)}`
+                ? ` · was ${money(product.compareAt)}`
                 : ''}
               {' · '}
               {soldOut ? 'Sold out' : `${product.stock} in stock`}
+              {product.grade ? ` · Grade ${product.grade}` : ''}
             </p>
           </div>
           <button type="button" className="btn btn-ghost" onClick={onClose}>
@@ -59,6 +101,18 @@ export function StoreProductPreview({ product, onClose }: Props) {
         </div>
 
         <StoreGallery product={product} variant="detail" />
+
+        {catalog.length ? (
+          <StoreVariantPicker
+            product={product}
+            catalog={catalog}
+            onSelect={(next) => {
+              setQty(1)
+              onOpenProduct?.(next)
+            }}
+            className="store-preview-variants"
+          />
+        ) : null}
 
         <dl className="specs">
           {brand ? (
@@ -104,14 +158,6 @@ export function StoreProductPreview({ product, onClose }: Props) {
             </div>
           ) : null}
           <div>
-            <dt>SIM</dt>
-            <dd>{product.simLocked ? 'Locked' : 'Unlocked'}</dd>
-          </div>
-          <div>
-            <dt>Activation</dt>
-            <dd>{product.activationLocked ? 'Locked' : 'Open'}</dd>
-          </div>
-          <div>
             <dt>Category</dt>
             <dd>{product.category}</dd>
           </div>
@@ -121,7 +167,8 @@ export function StoreProductPreview({ product, onClose }: Props) {
           </div>
         </dl>
 
-        <h3 className="detail-notes-title">Condition notes</h3>
+        <h3 className="detail-notes-title">Condition & locks</h3>
+        <StoreConditionBadges product={product} variant="detail" />
         <p>{product.description || 'Retail unit. Inspected and ready to ship.'}</p>
 
         <div className="store-preview-buy">
@@ -137,26 +184,53 @@ export function StoreProductPreview({ product, onClose }: Props) {
               onChange={(e) => setQty(Math.max(1, Number(e.target.value) || 1))}
             />
           </label>
+          {needsAck && !soldOut ? (
+            <StoreConditionAck
+              product={product}
+              checked={acked}
+              onChange={setAcked}
+              nudge={ackNudge}
+            />
+          ) : null}
           <div className="store-buy-actions">
             <button
               type="button"
-              className="btn btn-primary"
+              className="btn btn-primary store-buy-primary"
               disabled={soldOut}
               onClick={() => {
+                if (needsAck && !acked) {
+                  storeNeedsAckWarn()
+                  setAckNudge((n) => n + 1)
+                  return
+                }
                 addToStoreCart(product.id, qty)
-                pushToast(`Added ${qty} × ${product.title} to cart`, 'ok', {
-                  href: '/store/cart',
-                  label: 'View cart',
-                })
+                storeAddedToCart(product.title, qty)
+                onClose()
               }}
             >
               Add to cart
             </button>
-            <Link to="/store/cart" className="btn btn-primary" onClick={onClose}>
-              Checkout
+            <Link
+              to={`/store/p/${product.slug}`}
+              className="btn btn-ghost store-buy-secondary"
+              onClick={onClose}
+            >
+              View details
             </Link>
           </div>
         </div>
+
+        <div className="lot-modal-ask" style={{ marginTop: 12 }}>
+          <AskAboutItem
+            channel="store"
+            itemId={product.id}
+            itemTitle={headline}
+            itemHref={`/store/p/${product.slug}`}
+          />
+        </div>
+
+        <SimilarStoreProducts product={product} onOpen={onOpenProduct} onClose={onClose} />
+
         {msg ? (
           <p className="tiny retail-toast shop-toast" role="status">
             {msg}
@@ -164,5 +238,86 @@ export function StoreProductPreview({ product, onClose }: Props) {
         ) : null}
       </div>
     </ModalShell>
+  )
+}
+
+function SimilarStoreProducts({
+  product,
+  onOpen,
+  onClose,
+}: {
+  product: StoreProductDto
+  onOpen?: (product: StoreProductDto) => void
+  onClose: () => void
+}) {
+  const { money } = useStoreFx()
+  const [rows, setRows] = useState<StoreProductDto[]>([])
+
+  useEffect(() => {
+    let gone = false
+    void api
+      .storeProducts()
+      .then((res) => {
+        if (gone) return
+        setRows(pickSimilarStoreProducts(product, res.products, 4))
+      })
+      .catch(() => {
+        if (!gone) setRows([])
+      })
+    return () => {
+      gone = true
+    }
+  }, [product])
+
+  if (!rows.length) return null
+
+  return (
+    <div className="similar-lots store-similar-preview">
+      <h3 className="detail-notes-title">You may also like</h3>
+      <div className="store-similar-tiles" role="list">
+        {rows.map((row) => {
+          const label = storeProductHeadline(row)
+          const body = (
+            <>
+              <img
+                src={storeProductImage(row)}
+                alt=""
+                loading="lazy"
+                onError={(e) => {
+                  e.currentTarget.onerror = null
+                  e.currentTarget.src = storeProductFallback(row)
+                }}
+              />
+              <span className="store-similar-tile-name">{label}</span>
+              <span className="store-similar-tile-price">{money(row.price)}</span>
+            </>
+          )
+          if (onOpen) {
+            return (
+              <button
+                key={row.id}
+                type="button"
+                className="store-similar-tile"
+                role="listitem"
+                onClick={() => onOpen(row)}
+              >
+                {body}
+              </button>
+            )
+          }
+          return (
+            <Link
+              key={row.id}
+              to={`/store/p/${row.slug}`}
+              className="store-similar-tile"
+              role="listitem"
+              onClick={onClose}
+            >
+              {body}
+            </Link>
+          )
+        })}
+      </div>
+    </div>
   )
 }

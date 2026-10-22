@@ -41,7 +41,7 @@ export function AppToastHost() {
 
   if (!toast) return null
 
-  const ok = toast.tone === 'ok'
+  const mark = toast.tone === 'ok' ? '✓' : '!'
 
   return (
     <div
@@ -52,7 +52,7 @@ export function AppToastHost() {
       onMouseLeave={() => setPaused(false)}
     >
       <span className="app-toast-mark" aria-hidden>
-        {ok ? '✓' : '!'}
+        {mark}
       </span>
       <p>{toast.text}</p>
       {toast.action ? (

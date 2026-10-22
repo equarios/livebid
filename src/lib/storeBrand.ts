@@ -1,3 +1,42 @@
+function escapeRe(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/**
+ * Retail display name — brand / SKU / grade / capacity stripped so maker line
+ * and option chips don't repeat the same words.
+ */
+export function storeProductHeadline(
+  product: {
+    title: string
+    brand?: string | null
+    modelNumber?: string | null
+    capacity?: string | null
+  },
+  brand = storeProductBrand(product),
+) {
+  let title = product.title.trim()
+  if (brand && title.toLowerCase().startsWith(`${brand.toLowerCase()} `)) {
+    title = title.slice(brand.length).trim()
+  }
+  title = title
+    .replace(/\s*[—–-]\s*Grade\s+[A-Z0-9]+\s*$/i, ' ')
+    .replace(/\bGrade\s+[A-Z0-9]+\b/gi, ' ')
+    .replace(/\b\d+\s?(?:GB|TB)\b/gi, ' ')
+    .replace(/\s*[—–-]\s*$/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+  const model = (product.modelNumber || '').trim()
+  if (model) {
+    title = title.replace(new RegExp(`\\b${escapeRe(model)}\\b`, 'i'), ' ').replace(/\s{2,}/g, ' ').trim()
+  }
+  const capacity = (product.capacity || '').trim()
+  if (capacity) {
+    title = title.replace(new RegExp(`\\b${escapeRe(capacity)}\\b`, 'i'), ' ').replace(/\s{2,}/g, ' ').trim()
+  }
+  return title || product.title
+}
+
 /** Resolve brand for store cards — explicit field, else common title patterns. */
 export function storeProductBrand(product: { brand?: string | null; title: string }) {
   const explicit = (product.brand || '').trim()

@@ -1,30 +1,38 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { PublicShell } from '../components/PublicShell'
 import { StoreWholesaleHandoff } from '../components/StoreWholesaleHandoff'
 import { StoreGallery } from '../components/StoreGallery'
 import { StoreProductCard } from '../components/StoreProductCard'
 import { StoreProductPreview } from '../components/StoreProductPreview'
 import { StoreRail } from '../components/StoreRail'
+import { StoreVariantPicker } from '../components/StoreVariantPicker'
 import { StoreBlockSkeleton } from '../components/StoreSkeleton'
 import { api, type StoreProductDto } from '../lib/api'
-import { usd } from '../lib/format'
-import { storeProductBrand } from '../lib/storeBrand'
+import { storeProductBrand, storeProductHeadline } from '../lib/storeBrand'
+import { storeNeedsBuyAck } from '../lib/storeCondition'
+import { useStoreFx } from '../lib/storeFx'
 import { AskAboutItem } from '../components/AskAboutItem'
 import { BatteryMark } from '../components/BatteryMark'
+import { StoreConditionAck } from '../components/StoreConditionAck'
+import { StoreConditionBadges } from '../components/StoreConditionBadges'
 import { originLabel } from '../lib/auctionLists'
-import { similarStoreScore } from '../lib/stockFilter'
+import { pickSimilarStoreProducts } from '../lib/stockFilter'
 import { addToStoreCart } from '../lib/storeCart'
-import { pushToast } from '../lib/toast'
+import { storeAddedToCart, storeNeedsAckWarn } from '../lib/storeFeedback'
 import { useStore } from '../store'
 
 /** Deep-link PDP — same rail language as Store / Cart / Orders. */
 export function StoreProductPage() {
   const { slug = '' } = useParams()
+  const navigate = useNavigate()
   const { settings } = useStore()
+  const { money } = useStoreFx()
   const [product, setProduct] = useState<StoreProductDto | null>(null)
   const [catalog, setCatalog] = useState<StoreProductDto[]>([])
   const [qty, setQty] = useState(1)
+  const [acked, setAcked] = useState(false)
+  const [ackNudge, setAckNudge] = useState(0)
   const [err, setErr] = useState<string | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
   const [similarPreview, setSimilarPreview] = useState<StoreProductDto | null>(null)
@@ -33,6 +41,9 @@ export function StoreProductPage() {
     let alive = true
     setProduct(null)
     setErr(null)
+    setQty(1)
+    setAcked(false)
+    setAckNudge(0)
     void api
       .storeProduct(slug)
       .then((res) => {
@@ -68,13 +79,8 @@ export function StoreProductPage() {
   }, [msg])
 
   const similar = useMemo(() => {
-    if (!product || product.stock > 0) return []
-    return catalog
-      .map((p) => ({ p, score: similarStoreScore(product, p) }))
-      .filter((x) => x.score > 0)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 4)
-      .map((x) => x.p)
+    if (!product || !catalog.length) return []
+    return pickSimilarStoreProducts(product, catalog, 4)
   }, [product, catalog])
 
   if (!settings.showStore) {
@@ -87,20 +93,23 @@ export function StoreProductPage() {
 
   const storeName = settings.storeLabel || 'Store'
   const soldOut = Boolean(product && product.stock < 1)
+  const needsAck = product ? storeNeedsBuyAck(product) : false
   const brand = product ? storeProductBrand(product) : ''
+  const headline = product ? storeProductHeadline(product, brand) : ''
 
   return (
     <PublicShell mode="consumer">
       <div className="retail-store retail-pdp">
         <StoreRail
           page="product"
-          title={product?.title || 'Product'}
+          title={headline || product?.title || 'Product'}
           note={
             product
-              ? `${[product.brand, product.category].filter(Boolean).join(' · ')} · fixed retail price`
+              ? `${[brand || product.brand, product.category].filter(Boolean).join(' · ')} · fixed retail price`
               : 'Fixed retail price — add to cart and check out here.'
           }
           label={storeName}
+          crumb={headline || product?.title || 'Product'}
         />
 
         {err ? (
@@ -121,16 +130,30 @@ export function StoreProductPage() {
             </div>
             <div className="store-pdp-body">
               {brand ? <p className="deal-card-maker store-card-maker">{brand}</p> : null}
+              <h1 className="store-pdp-title">{headline}</h1>
               <p className="store-pdp-price">
-                <strong>{usd(product.price)}</strong>
+                <strong>{money(product.price)}</strong>
                 <span> / pc</span>
                 {product.compareAt && product.compareAt > product.price ? (
-                  <s>{usd(product.compareAt)}</s>
+                  <s>{money(product.compareAt)}</s>
                 ) : null}
               </p>
               <p className="muted tiny">
                 {soldOut ? 'Sold out' : `${product.stock} in warehouse`} · Consumer store
               </p>
+
+              {catalog.length ? (
+                <StoreVariantPicker
+                  product={product}
+                  catalog={catalog}
+                  onSelect={(next) => {
+                    setQty(1)
+                    if (next.slug !== slug) navigate(`/store/p/${next.slug}`)
+                    else setProduct(next)
+                  }}
+                  className="store-pdp-variants"
+                />
+              ) : null}
 
               <dl className="specs store-pdp-specs">
                 {brand ? (
@@ -176,14 +199,6 @@ export function StoreProductPage() {
                   </div>
                 ) : null}
                 <div>
-                  <dt>SIM</dt>
-                  <dd>{product.simLocked ? 'Locked' : 'Unlocked'}</dd>
-                </div>
-                <div>
-                  <dt>Activation</dt>
-                  <dd>{product.activationLocked ? 'Locked' : 'Open'}</dd>
-                </div>
-                <div>
                   <dt>Category</dt>
                   <dd>{product.category}</dd>
                 </div>
@@ -193,7 +208,8 @@ export function StoreProductPage() {
                 </div>
               </dl>
 
-              <h3 className="detail-notes-title">Condition notes</h3>
+              <h3 className="detail-notes-title">Condition & locks</h3>
+              <StoreConditionBadges product={product} variant="detail" />
               <p className="store-pdp-desc">
                 {product.description || 'Retail unit. Inspected and ready to ship.'}
               </p>
@@ -212,6 +228,14 @@ export function StoreProductPage() {
                     />
                   </label>
                 ) : null}
+                {needsAck && !soldOut ? (
+                  <StoreConditionAck
+                    product={product}
+                    checked={acked}
+                    onChange={setAcked}
+                    nudge={ackNudge}
+                  />
+                ) : null}
                 <div className="store-buy-actions">
                   {soldOut ? (
                     <AskAboutItem
@@ -229,11 +253,13 @@ export function StoreProductPage() {
                       type="button"
                       className="btn btn-primary"
                       onClick={() => {
+                        if (needsAck && !acked) {
+                          storeNeedsAckWarn()
+                          setAckNudge((n) => n + 1)
+                          return
+                        }
                         addToStoreCart(product.id, qty)
-                        pushToast(`Added ${qty} × ${product.title} to cart`, 'ok', {
-                          href: '/store/cart',
-                          label: 'View cart',
-                        })
+                        storeAddedToCart(product.title, qty)
                       }}
                     >
                       Add to cart
@@ -251,6 +277,10 @@ export function StoreProductPage() {
                     itemHref={`/store/p/${encodeURIComponent(product.slug || product.id)}`}
                   />
                 </div>
+                <p className="muted tiny store-we-buy-note">
+                  Trade in your old device toward this —{' '}
+                  <Link to="/store/trade-in">estimate credit</Link>.
+                </p>
               </div>
               {msg ? (
                 <p className="tiny retail-toast shop-toast" role="status">
@@ -262,10 +292,10 @@ export function StoreProductPage() {
         ) : null}
 
         {similar.length ? (
-          <section className="store-similar" aria-label="Similar in stock">
-            <h2 className="store-similar-title">Similar in stock</h2>
+          <section className="store-similar" aria-label="You may also like">
+            <h2 className="store-similar-title">You may also like</h2>
             <p className="muted tiny store-similar-note">
-              Close matches still available — same brand, category, or capacity.
+              Same brand or category — not other colors/GB of this model.
             </p>
             <div className="store-lot-grid" aria-label="Similar products">
               {similar.map((p, i) => (
@@ -273,6 +303,7 @@ export function StoreProductPage() {
                   key={p.id}
                   product={p}
                   index={i}
+                  catalog={catalog}
                   onOpen={setSimilarPreview}
                   onAdded={(title) => setMsg(`Added ${title}`)}
                 />
@@ -285,7 +316,11 @@ export function StoreProductPage() {
       </div>
 
       {similarPreview ? (
-        <StoreProductPreview product={similarPreview} onClose={() => setSimilarPreview(null)} />
+        <StoreProductPreview
+          product={similarPreview}
+          onClose={() => setSimilarPreview(null)}
+          onOpenProduct={setSimilarPreview}
+        />
       ) : null}
     </PublicShell>
   )

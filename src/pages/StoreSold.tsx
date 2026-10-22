@@ -6,6 +6,7 @@ import { StoreProductPreview } from '../components/StoreProductPreview'
 import { StoreRail } from '../components/StoreRail'
 import { StoreCatalogSkeleton } from '../components/StoreSkeleton'
 import { api, type StoreProductDto } from '../lib/api'
+import { collapseStoreFamilies } from '../lib/storeVariants'
 import { useStore } from '../store'
 
 /** Sold items that left the shop (older than 14 days, kept 180 days). */
@@ -51,6 +52,7 @@ export function StoreSold() {
   }
 
   const storeName = settings.storeLabel || 'Store'
+  const cards = collapseStoreFamilies(products)
 
   return (
     <PublicShell mode="consumer">
@@ -58,7 +60,7 @@ export function StoreSold() {
         <StoreRail
           page="sold"
           title="Recently sold"
-          count={loading ? '…' : products.length}
+          count={loading ? '…' : cards.length}
           note="Left the shop after 14 days. Kept here for 180 days. Not for sale."
           label={storeName}
         />
@@ -70,13 +72,14 @@ export function StoreSold() {
         {err ? <p className="tiny imei-err">{err}</p> : null}
         {loading && !products.length ? (
           <StoreCatalogSkeleton />
-        ) : products.length ? (
+        ) : cards.length ? (
           <div className="store-lot-grid" aria-label="Recently sold products">
-            {products.map((p, i) => (
+            {cards.map((p, i) => (
               <StoreProductCard
                 key={p.id}
                 product={p}
                 index={i}
+                catalog={products}
                 onOpen={setPreview}
               />
             ))}
@@ -90,7 +93,13 @@ export function StoreSold() {
           </div>
         )}
       </div>
-      {preview ? <StoreProductPreview product={preview} onClose={() => setPreview(null)} /> : null}
+      {preview ? (
+        <StoreProductPreview
+          product={preview}
+          onClose={() => setPreview(null)}
+          onOpenProduct={setPreview}
+        />
+      ) : null}
     </PublicShell>
   )
 }

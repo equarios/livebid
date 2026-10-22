@@ -871,6 +871,87 @@ export const api = {
     if (!res.ok) throw new ApiError(data.error || `Upload failed (${res.status})`)
     return { urls: data.urls || [] }
   },
+  uploadTradeInPhotos: async (files: File[]) => {
+    const fd = new FormData()
+    for (const f of files) fd.append('files', f)
+    const res = await fetch('/api/store/trade-in/upload', {
+      method: 'POST',
+      credentials: 'include',
+      body: fd,
+    })
+    const data = (await res.json().catch(() => ({}))) as { urls?: string[]; error?: string }
+    if (!res.ok) throw new ApiError(data.error || `Upload failed (${res.status})`)
+    return { urls: data.urls || [] }
+  },
+  lookupTradeInImei: (imei: string) =>
+    req<{
+      ok: boolean
+      error?: string
+      imei?: string
+      tac?: string
+      brand?: string
+      model?: string
+      name?: string
+      matches?: Array<{
+        id: string
+        brand: string
+        model: string
+        capacity: string
+        baseUsd: number
+      }>
+    }>('/api/store/trade-in/imei-lookup', {
+      method: 'POST',
+      body: JSON.stringify({ imei }),
+    }),
+  uploadTradeInVideo: async (file: File) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    const res = await fetch('/api/store/trade-in/upload-video', {
+      method: 'POST',
+      credentials: 'include',
+      body: fd,
+    })
+    const data = (await res.json().catch(() => ({}))) as { url?: string; error?: string }
+    if (!res.ok) throw new ApiError(data.error || `Upload failed (${res.status})`)
+    if (!data.url) throw new ApiError('Upload failed.')
+    return { url: data.url }
+  },
+  storeTradeInDevices: () =>
+    req<{ devices: StoreTradeInDeviceDto[] }>('/api/store/trade-in/devices'),
+  storeTradeInDevicesAll: () =>
+    req<{ devices: StoreTradeInDeviceDto[] }>('/api/store/trade-in/devices/all'),
+  createStoreTradeInDevice: (body: {
+    id?: string
+    brand: string
+    model: string
+    capacity: string
+    baseUsd: number
+    active?: boolean
+    sortOrder?: number
+  }) =>
+    req<{ device: StoreTradeInDeviceDto }>('/api/store/trade-in/devices', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  updateStoreTradeInDevice: (
+    id: string,
+    body: {
+      brand?: string
+      model?: string
+      capacity?: string
+      baseUsd?: number
+      active?: boolean
+      sortOrder?: number
+    },
+  ) =>
+    req<{ device: StoreTradeInDeviceDto }>(`/api/store/trade-in/devices/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+  deleteStoreTradeInDevice: (id: string) =>
+    req<{ ok: boolean }>(`/api/store/trade-in/devices/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    }),
   uploadBrandLogo: async (file: File) => {
     const fd = new FormData()
     fd.append('file', file)
@@ -884,6 +965,8 @@ export const api = {
     if (!data.url) throw new ApiError('Upload failed.')
     return { url: data.url }
   },
+  storeFx: () =>
+    req<{ base: 'USD'; rates: Record<string, number>; fetchedAt: string | null }>('/api/store/fx'),
   placeStoreOrder: (body: {
     email: string
     name: string
@@ -896,6 +979,21 @@ export const api = {
     courierAccount?: string
     pickupDate?: string
     pickupSlot?: string
+    displayCurrency?: string
+    tradeIn?: {
+      deviceId: string
+      label: string
+      grade: string
+      battery: number
+      simLocked: boolean
+      activationLocked: boolean
+      estimateLow: number
+      estimateHigh: number
+      creditUsd: number
+      images: string[]
+      videoUrl?: string | null
+      imei: string
+    }
     lines: Array<{ productId: string; qty: number }>
   }) =>
     req<{ order: StoreOrderDto }>('/api/store/orders', {
@@ -903,6 +1001,24 @@ export const api = {
       body: JSON.stringify(body),
     }),
   storeOrders: () => req<{ orders: StoreOrderDto[] }>('/api/store/orders'),
+  storeTradeIns: () => req<{ tradeIns: StoreTradeInDto[] }>('/api/store/trade-ins'),
+  updateStoreTradeIn: (
+    id: string,
+    body: {
+      status?: 'pending_receive' | 'received' | 'accepted' | 'adjusted' | 'rejected'
+      finalCredit?: number
+      staffNote?: string | null
+    },
+  ) =>
+    req<{ tradeIn: StoreTradeInDto }>(`/api/store/trade-ins/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+  lookupStoreOrder: (body: { id: string; email: string }) =>
+    req<{ order: StoreOrderDto }>('/api/store/orders/lookup', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
   storeOrder: (id: string) =>
     req<{ order: StoreOrderDto }>(`/api/store/orders/${encodeURIComponent(id)}`),
   updateStoreOrder: (
@@ -1005,6 +1121,42 @@ export type StoreProductDto = {
   updatedAt: string
 }
 
+export type StoreTradeInDeviceDto = {
+  id: string
+  brand: string
+  model: string
+  capacity: string
+  baseUsd: number
+  active: boolean
+  sortOrder: number
+}
+
+export type StoreTradeInDto = {
+  id: string
+  orderId: string
+  email: string
+  name: string
+  label: string
+  deviceId: string
+  grade: string
+  battery: number
+  simLocked: boolean
+  activationLocked: boolean
+  estimateLow: number
+  estimateHigh: number
+  provisionalCredit: number
+  finalCredit: number | null
+  images?: string[]
+  videoUrl?: string | null
+  imei?: string | null
+  status: string
+  staffNote: string | null
+  createdAt: string
+  updatedAt: string
+  orderStatus?: string | null
+  orderTotal?: number | null
+}
+
 export type StoreOrderDto = {
   id: string
   accountId: string | null
@@ -1024,18 +1176,44 @@ export type StoreOrderDto = {
   paymentRef: string | null
   subtotal: number
   shippingFee: number
+  tradeInCredit?: number
   total: number
+  displayCurrency?: string
+  displayRate?: number
+  displayTotal?: number
   note: string | null
   createdAt: string
   paidAt: string | null
   shippedAt: string | null
   trackingNo?: string | null
+  tradeIn?: {
+    id: string
+    label: string
+    deviceId: string
+    grade: string
+    battery: number
+    simLocked: boolean
+    activationLocked: boolean
+    estimateLow: number
+    estimateHigh: number
+    provisionalCredit: number
+    finalCredit: number | null
+    images?: string[]
+    videoUrl?: string | null
+    imei?: string | null
+    status: string
+    staffNote: string | null
+    createdAt: string
+    updatedAt: string
+  } | null
   lines: Array<{
     id: string
     productId: string | null
     title: string
     unitPrice: number
     qty: number
+    imageUrl?: string | null
+    slug?: string | null
   }>
 }
 

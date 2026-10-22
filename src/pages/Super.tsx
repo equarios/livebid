@@ -25,22 +25,23 @@ import {
 } from '../lib/deskBanner'
 import { opsQueueCounts } from '../lib/opsQueues'
 import { useNow, useStore } from '../store'
-import type {
-  Account,
-  AccountRole,
-  AccountStatus,
-  AuctionFillMode,
-  AuctionTypeDef,
-  DeskBannerKey,
-  DeskBannerSlide,
-  FeatureFlags,
-  ContentCard,
-  MarketingPageCopy,
-  SiteContact,
-  SitePages,
-  SiteSettings,
-  StoreHeroSlide,
-  WholesaleHeroSlide,
+import {
+  MAX_LANDER_HERO_SLIDES,
+  type Account,
+  type AccountRole,
+  type AccountStatus,
+  type AuctionFillMode,
+  type AuctionTypeDef,
+  type DeskBannerKey,
+  type DeskBannerSlide,
+  type FeatureFlags,
+  type ContentCard,
+  type MarketingPageCopy,
+  type SiteContact,
+  type SitePages,
+  type SiteSettings,
+  type StoreHeroSlide,
+  type WholesaleHeroSlide,
 } from '../types'
 
 const ROLE_LABEL: Record<AccountRole, string> = {
@@ -69,7 +70,7 @@ const COPY_LABEL: Record<keyof typeof DEFAULT_SETTINGS.copy, string> = {
   navHelp: 'Nav · Help',
   navNotifications: 'Nav · Notifications',
   navTutorial: 'Nav · How it works',
-  navContact: 'Nav · Contact us',
+  navContact: 'Nav · Contact us (floating button)',
   navLanguage: 'Nav · Language',
   searchGeneric: 'Public search placeholder',
   ariaSearch: 'Aria · Search',
@@ -854,7 +855,8 @@ export function Super() {
             cta: (h.cta || '').trim(),
             imageUrl: (h.imageUrl || '').trim(),
           }))
-          .filter((h) => h.title || h.body || h.kicker),
+          .filter((h) => h.title || h.body || h.kicker)
+          .slice(0, MAX_LANDER_HERO_SLIDES),
         wholesaleHeroes: p.wholesaleHeroes
           .map((h) => ({
             kicker: (h.kicker || '').trim(),
@@ -864,7 +866,8 @@ export function Super() {
             to: (h.to || '/auctions').trim() || '/auctions',
             imageUrl: (h.imageUrl || '').trim(),
           }))
-          .filter((h) => h.title || h.body || h.kicker),
+          .filter((h) => h.title || h.body || h.kicker)
+          .slice(0, MAX_LANDER_HERO_SLIDES),
         deskBanners,
         wholesaleHowTitle: p.wholesaleHowTitle.trim() || DEFAULT_SETTINGS.pages.wholesaleHowTitle,
         wholesaleHowSteps: p.wholesaleHowSteps.map(trimCard).filter((c) => c.title || c.body),
@@ -2084,13 +2087,14 @@ export function Super() {
         <section className="card admin-section">
           <h2>Pages &amp; marketing copy</h2>
           <p className="muted tiny" style={{ marginTop: 0 }}>
-            Store + wholesale heroes, workbench banners, hub strips, login aside, buyers / sellers / support.
-            Body tips: use{' '}
-            <code>Title|Detail</code> for steps, or <code>- item</code> for bullets.
+            Full sliders only on Store shop and Wholesale hub (max {MAX_LANDER_HERO_SLIDES} each).
+            Desks use compact banners. Support / buyers / sellers stay a single static hero — no
+            carousel. Body tips: <code>Title|Detail</code> for steps, or <code>- item</code> for
+            bullets.
           </p>
           <form className="admin-form" onSubmit={(e) => onSaveSettings(e, 'keep')}>
             <label>
-              Hero auto-slide (seconds)
+              Lander auto-slide (seconds)
               <input
                 type="number"
                 min={5}
@@ -2136,6 +2140,10 @@ export function Super() {
 
             <div className="invoice-profile-panel admin-span">
               <h3>Store hero slides</h3>
+              <p className="tiny muted admin-span" style={{ margin: '0 0 10px' }}>
+                Shop lander only — not cart, orders, or product pages. Max {MAX_LANDER_HERO_SLIDES}{' '}
+                slides.
+              </p>
               {pagesDraft.storeHeroes.map((hero, i) => (
                 <div key={i} className="admin-form invoice-profile-fields" style={{ marginBottom: 12 }}>
                   <p className="tiny muted admin-span" style={{ margin: 0 }}>
@@ -2171,20 +2179,22 @@ export function Super() {
                   </label>
                 </div>
               ))}
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                onClick={() =>
-                  patchPages({
-                    storeHeroes: [
-                      ...pagesDraft.storeHeroes,
-                      { kicker: '', title: '', body: '', cta: 'Shop', imageUrl: '' },
-                    ],
-                  })
-                }
-              >
-                Add slide
-              </button>
+              {pagesDraft.storeHeroes.length < MAX_LANDER_HERO_SLIDES ? (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() =>
+                    patchPages({
+                      storeHeroes: [
+                        ...pagesDraft.storeHeroes,
+                        { kicker: '', title: '', body: '', cta: 'Shop', imageUrl: '' },
+                      ],
+                    })
+                  }
+                >
+                  Add slide
+                </button>
+              ) : null}
               {pagesDraft.storeHeroes.length > 1 ? (
                 <button
                   type="button"
@@ -2200,6 +2210,10 @@ export function Super() {
 
             <div className="invoice-profile-panel admin-span">
               <h3>Wholesale hero slides</h3>
+              <p className="tiny muted admin-span" style={{ margin: '0 0 10px' }}>
+                Wholesale hub lander only — Auctions / Marketplace desks keep compact banners. Max{' '}
+                {MAX_LANDER_HERO_SLIDES} slides.
+              </p>
               {pagesDraft.wholesaleHeroes.map((hero, i) => (
                 <div key={i} className="admin-form invoice-profile-fields" style={{ marginBottom: 12 }}>
                   <p className="tiny muted admin-span" style={{ margin: 0 }}>
@@ -2252,20 +2266,22 @@ export function Super() {
                   </label>
                 </div>
               ))}
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                onClick={() =>
-                  patchPages({
-                    wholesaleHeroes: [
-                      ...pagesDraft.wholesaleHeroes,
-                      { kicker: '', title: '', body: '', cta: 'Enter', to: '/wholesale', imageUrl: '' },
-                    ],
-                  })
-                }
-              >
-                Add wholesale slide
-              </button>
+              {pagesDraft.wholesaleHeroes.length < MAX_LANDER_HERO_SLIDES ? (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() =>
+                    patchPages({
+                      wholesaleHeroes: [
+                        ...pagesDraft.wholesaleHeroes,
+                        { kicker: '', title: '', body: '', cta: 'Enter', to: '/wholesale', imageUrl: '' },
+                      ],
+                    })
+                  }
+                >
+                  Add wholesale slide
+                </button>
+              ) : null}
               {pagesDraft.wholesaleHeroes.length > 1 ? (
                 <button
                   type="button"
@@ -2534,6 +2550,9 @@ export function Super() {
               return (
                 <div key={key} className="invoice-profile-panel admin-span">
                   <h3>{titles[key]}</h3>
+                  <p className="tiny muted admin-span" style={{ margin: '0 0 10px' }}>
+                    Single static hero — not a rotating slider.
+                  </p>
                   <div className="admin-form invoice-profile-fields">
                     <label>
                       Kicker

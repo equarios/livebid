@@ -1,4 +1,4 @@
-export type ToastTone = 'ok' | 'err'
+export type ToastTone = 'ok' | 'err' | 'warn'
 
 export type ToastAction = { href: string; label: string }
 

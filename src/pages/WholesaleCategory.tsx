@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { PublicShell } from '../components/PublicShell'
 import { SeoHead } from '../components/SeoHead'
+import { useLotPreview } from '../components/LotPreview'
 import { canUseWholesaleDesk } from '../lib/channelAccess'
 import { listPath } from '../lib/auctionLists'
 import { usd } from '../lib/format'
@@ -29,6 +30,7 @@ import {
   upsertWatchFilter,
 } from '../lib/watchFilters'
 import { useNow, useStore } from '../store'
+import type { Lot } from '../types'
 
 function crumbs(facet: SeoFacet) {
   const rows: { label: string; to: string }[] = [
@@ -153,10 +155,64 @@ function CategoryHub() {
   )
 }
 
+function SeoLotRow({
+  lot,
+  deskOk,
+  showPrice,
+}: {
+  lot: Lot
+  deskOk: boolean
+  showPrice: boolean
+}) {
+  const navigate = useNavigate()
+  const { openLot: openLotPreview } = useLotPreview()
+  const title = lotItemTitle(lot)
+
+  function onOpen() {
+    if (deskOk) {
+      openLotPreview(lot.id)
+      return
+    }
+    navigate('/login', { state: { from: listPath(lot.auctionType || 'live') } })
+  }
+
+  return (
+    <button
+      type="button"
+      className="seo-lot-row"
+      onClick={onOpen}
+      aria-label={`${deskOk ? 'Quick view' : 'Sign in to view'} ${title}`}
+    >
+      <span className="seo-lot-thumb has-quick-view">
+        <img
+          src={lotThumb(lot)}
+          alt=""
+          onError={(e) => {
+            e.currentTarget.onerror = null
+            e.currentTarget.src = photoFallback(lot)
+          }}
+        />
+        <span className="quick-view-hint" aria-hidden>
+          {deskOk ? 'Quick view' : 'Sign in'}
+        </span>
+      </span>
+      <span className="seo-lot-copy">
+        <strong>{title}</strong>
+        <span className="muted tiny">
+          {lotItemSub(lot)} · Grade {lot.grade}
+        </span>
+        <span className="item-details-cue">{deskOk ? 'Details' : 'Sign in for details'}</span>
+      </span>
+      <span className="seo-lot-price">
+        {showPrice ? `${usd(lot.currentPrice)} / pc` : 'Sign in for price'}
+      </span>
+    </button>
+  )
+}
+
 function CategoryDetail({ facet }: { facet: SeoFacet }) {
   const { lots, settings, user, isStaff } = useStore()
   const now = useNow()
-  const navigate = useNavigate()
   const brand = settings.brandName || 'Equarios'
   const topic = facetTitle(facet)
   const title = `${topic} wholesale | ${brand}`
@@ -199,12 +255,6 @@ function CategoryDetail({ facet }: { facet: SeoFacet }) {
         name: lotItemTitle(lot),
       })),
     },
-  }
-
-  function openLot(_lotId: string, auctionType?: string) {
-    const to = listPath(auctionType || 'live')
-    if (deskOk) navigate(to)
-    else navigate('/login', { state: { from: to } })
   }
 
   return (
@@ -302,23 +352,7 @@ function CategoryDetail({ facet }: { facet: SeoFacet }) {
             <ul className="seo-lot-list">
               {matched.map((lot) => (
                 <li key={lot.id}>
-                  <button type="button" className="seo-lot-row" onClick={() => openLot(lot.id, lot.auctionType)}>
-                    <img
-                      src={lotThumb(lot)}
-                      alt=""
-                      onError={(e) => {
-                        e.currentTarget.onerror = null
-                        e.currentTarget.src = photoFallback(lot)
-                      }}
-                    />
-                    <span className="seo-lot-copy">
-                      <strong>{lotItemTitle(lot)}</strong>
-                      <span className="muted tiny">{lotItemSub(lot)} · Grade {lot.grade}</span>
-                    </span>
-                    <span className="seo-lot-price">
-                      {user ? `${usd(lot.currentPrice)} / pc` : 'Sign in for price'}
-                    </span>
-                  </button>
+                  <SeoLotRow lot={lot} deskOk={deskOk} showPrice={Boolean(user)} />
                 </li>
               ))}
             </ul>
