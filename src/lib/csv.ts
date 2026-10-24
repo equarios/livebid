@@ -245,6 +245,81 @@ export function parseImeiCsv(text: string): { rows: CsvImeiRow[]; error?: string
   return { rows }
 }
 
-export function stockLeft(qty: number, inCart: number) {
-  return Math.max(0, qty - inCart)
+export type CsvTradeInDeviceRow = {
+  id?: string
+  brand: string
+  model: string
+  modelNumber: string
+  capacity: string
+  baseUsd: number
+  active: boolean
+  sortOrder?: number
+  line: number
 }
+
+/** Admin trade-in matrix: brand, model, capacity, baseUsd required; modelNumber/id/active/sortOrder optional. */
+export function parseTradeInMatrixCsv(text: string): { rows: CsvTradeInDeviceRow[]; error?: string } {
+  const table = parseCsv(text)
+  if (!table.length) return { rows: [], error: 'That file is empty.' }
+  const head = table[0].map(headerKey)
+  const idIx = head.findIndex((h) => ['id', 'deviceid', 'sku'].includes(h))
+  const brandIx = head.findIndex((h) => ['brand', 'make', 'manufacturer'].includes(h))
+  const modelIx = head.findIndex((h) =>
+    ['model', 'modelname', 'devicemodel', 'name'].includes(h),
+  )
+  const modelNumberIx = head.findIndex((h) =>
+    ['modelnumber', 'modelno', 'modelnum', 'mpn', 'anumber'].includes(h),
+  )
+  const capacityIx = head.findIndex((h) =>
+    ['capacity', 'storage', 'gb', 'size', 'memory'].includes(h),
+  )
+  const baseIx = head.findIndex((h) =>
+    ['baseusd', 'base', 'price', 'priceusd', 'credit', 'value'].includes(h),
+  )
+  const activeIx = head.findIndex((h) => ['active', 'enabled', 'on'].includes(h))
+  const sortIx = head.findIndex((h) => ['sortorder', 'sort', 'order'].includes(h))
+  if (brandIx < 0 || modelIx < 0 || capacityIx < 0 || baseIx < 0) {
+    return {
+      rows: [],
+      error: 'Header must include brand, model, capacity (or storage/GB), and baseUsd (or price).',
+    }
+  }
+  const rows: CsvTradeInDeviceRow[] = []
+  table.slice(1).forEach((cols, i) => {
+    const brand = (cols[brandIx] || '').trim()
+    const model = (cols[modelIx] || '').trim()
+    const capacity = (cols[capacityIx] || '').trim()
+    const baseRaw = (cols[baseIx] || '').replace(/[$,]/g, '').trim()
+    const baseUsd = Number(baseRaw)
+    if (!brand || !model || !capacity || !(baseUsd > 0)) return
+    const activeRaw =
+      activeIx >= 0 ? (cols[activeIx] || 'true').trim().toLowerCase() : 'true'
+    const active = !['0', 'false', 'no', 'off', 'inactive'].includes(activeRaw)
+    const sortRaw = sortIx >= 0 ? Number(cols[sortIx]) : NaN
+    const id = idIx >= 0 ? (cols[idIx] || '').trim() : ''
+    rows.push({
+      id: id || undefined,
+      brand,
+      model,
+      modelNumber: modelNumberIx >= 0 ? (cols[modelNumberIx] || '').trim() : '',
+      capacity,
+      baseUsd: Math.round(baseUsd * 100) / 100,
+      active,
+      sortOrder: Number.isFinite(sortRaw) ? Math.floor(sortRaw) : undefined,
+      line: i + 2,
+    })
+  })
+  if (!rows.length) return { rows: [], error: 'No valid data rows found.' }
+  return { rows }
+}
+
+export const TRADE_IN_MATRIX_CSV_HEADER = [
+  'id',
+  'brand',
+  'model',
+  'modelNumber',
+  'capacity',
+  'baseUsd',
+  'active',
+  'sortOrder',
+] as const

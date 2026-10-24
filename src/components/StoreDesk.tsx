@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { ORIGINS, normalizeOrigin } from '../lib/auctionLists'
 import {
   api,
@@ -7,6 +7,11 @@ import {
   type StoreTradeInDeviceDto,
   type StoreTradeInDto,
 } from '../lib/api'
+import {
+  downloadCsv,
+  parseTradeInMatrixCsv,
+  TRADE_IN_MATRIX_CSV_HEADER,
+} from '../lib/csv'
 import { READY_FOR_COLLECT_LABEL, SHIP_CARRIERS } from '../lib/fulfillment'
 import { usd } from '../lib/format'
 import { storeProductImage } from '../lib/storePhotos'
@@ -24,6 +29,7 @@ export function StoreDesk() {
   const [matrixDraft, setMatrixDraft] = useState({
     brand: 'Apple',
     model: '',
+    modelNumber: '',
     capacity: '128GB',
     baseUsd: '200',
   })
@@ -40,6 +46,7 @@ export function StoreDesk() {
     toastMsg(next)
   }
   const [busy, setBusy] = useState(false)
+  const matrixCsvRef = useRef<HTMLInputElement | null>(null)
   const [title, setTitle] = useState('')
   const [price, setPrice] = useState('199')
   const [compareAt, setCompareAt] = useState('')
@@ -300,12 +307,13 @@ export function StoreDesk() {
       await api.createStoreTradeInDevice({
         brand: matrixDraft.brand.trim(),
         model: matrixDraft.model.trim(),
+        modelNumber: matrixDraft.modelNumber.trim(),
         capacity: matrixDraft.capacity.trim(),
         baseUsd,
         active: true,
         sortOrder: (matrix[matrix.length - 1]?.sortOrder || 0) + 10,
       })
-      setMatrixDraft((d) => ({ ...d, model: '' }))
+      setMatrixDraft((d) => ({ ...d, model: '', modelNumber: '' }))
       setMsg('Matrix device added.')
       await refresh()
     } catch (ex) {
@@ -338,6 +346,58 @@ export function StoreDesk() {
       await refresh()
     } catch (ex) {
       setErr(ex instanceof Error ? ex.message : 'Delete failed.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function downloadMatrixTemplate() {
+    downloadCsv('tradein-matrix-template.csv', [...TRADE_IN_MATRIX_CSV_HEADER], [
+      ['iphone-15-128', 'Apple', 'iPhone 15', 'A3090', '128GB', 420, 'true', 10],
+      ['s24-256', 'Samsung', 'Galaxy S24', 'SM-S921B', '256GB', 380, 'true', 20],
+    ])
+  }
+
+  function downloadMatrixCsv() {
+    downloadCsv(
+      'tradein-matrix.csv',
+      [...TRADE_IN_MATRIX_CSV_HEADER],
+      matrix.map((d) => [
+        d.id,
+        d.brand,
+        d.model,
+        d.modelNumber || '',
+        d.capacity,
+        d.baseUsd,
+        d.active ? 'true' : 'false',
+        d.sortOrder,
+      ]),
+    )
+  }
+
+  async function importMatrixCsv(file: File) {
+    setBusy(true)
+    setErr(null)
+    try {
+      const text = await file.text()
+      const parsed = parseTradeInMatrixCsv(text)
+      if (parsed.error) throw new Error(parsed.error)
+      const res = await api.importStoreTradeInDevices(
+        parsed.rows.map((r) => ({
+          id: r.id,
+          brand: r.brand,
+          model: r.model,
+          modelNumber: r.modelNumber,
+          capacity: r.capacity,
+          baseUsd: r.baseUsd,
+          active: r.active,
+          sortOrder: r.sortOrder,
+        })),
+      )
+      setMatrix(res.devices)
+      setMsg(`CSV import: ${res.created} added, ${res.updated} updated.`)
+    } catch (ex) {
+      setErr(ex instanceof Error ? ex.message : 'CSV import failed.')
     } finally {
       setBusy(false)
     }
@@ -930,8 +990,40 @@ export function StoreDesk() {
         <div className="table-wrap">
           <p className="muted tiny" style={{ marginBottom: 10 }}>
             Grade A unlocked base USD for consumer estimates. Inactive rows stay hidden on
-            /store/trade-in.
+            /store/trade-in. Upload CSV to bulk add/update models, storage, and prices.
           </p>
+          <div className="store-desk-matrix-csv" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+            <input
+              ref={matrixCsvRef}
+              type="file"
+              accept=".csv,text/csv"
+              hidden
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                e.target.value = ''
+                if (file) void importMatrixCsv(file)
+              }}
+            />
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              disabled={busy}
+              onClick={() => matrixCsvRef.current?.click()}
+            >
+              Upload CSV
+            </button>
+            <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={downloadMatrixTemplate}>
+              Template
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              disabled={busy || !matrix.length}
+              onClick={downloadMatrixCsv}
+            >
+              Download current
+            </button>
+          </div>
           <form className="store-desk-matrix-form" onSubmit={(e) => void addMatrixDevice(e)}>
             <input
               placeholder="Brand"
@@ -940,10 +1032,15 @@ export function StoreDesk() {
               onChange={(e) => setMatrixDraft((d) => ({ ...d, brand: e.target.value }))}
             />
             <input
-              placeholder="Model"
+              placeholder="Model name"
               required
               value={matrixDraft.model}
               onChange={(e) => setMatrixDraft((d) => ({ ...d, model: e.target.value }))}
+            />
+            <input
+              placeholder="Model number"
+              value={matrixDraft.modelNumber}
+              onChange={(e) => setMatrixDraft((d) => ({ ...d, modelNumber: e.target.value }))}
             />
             <input
               placeholder="Capacity"
@@ -1014,6 +1111,7 @@ function MatrixRow({
       <td>
         <strong>
           {device.brand} {device.model}
+          {device.modelNumber ? ` · ${device.modelNumber}` : ''}
         </strong>
         <div className="muted tiny">
           {device.capacity} · {device.id}

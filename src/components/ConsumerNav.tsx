@@ -1,29 +1,20 @@
-import { useEffect, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { canUseWholesaleDesk } from '../lib/channelAccess'
-import { storeCartCount } from '../lib/storeCart'
 import { useStore } from '../store'
 
-/** Retail-only nav — GoDaddy-style text links + cart count. */
+/**
+ * Consumer site nav — Store + Wholesale only.
+ * Trade-in / Cart / Orders live in the store page hero (StoreRail).
+ */
 export function ConsumerNav({ onNavigate }: { onNavigate?: () => void }) {
   const { settings, user, isStaff } = useStore()
   const wholesaleOk = canUseWholesaleDesk(user, isStaff)
   const location = useLocation()
-  const [cartN, setCartN] = useState(() => storeCartCount())
 
-  useEffect(() => {
-    const sync = () => setCartN(storeCartCount())
-    window.addEventListener('livebid-store-cart', sync)
-    return () => window.removeEventListener('livebid-store-cart', sync)
-  }, [])
-
-  const shopOpen =
+  const storeOpen =
     location.pathname === '/' ||
     location.pathname === '/store' ||
-    location.pathname.startsWith('/store/p')
-  const cartOpen = location.pathname.startsWith('/store/cart')
-  const tradeInOpen = location.pathname.startsWith('/store/trade-in')
-  const ordersOpen = location.pathname.startsWith('/store/orders')
+    location.pathname.startsWith('/store/')
 
   return (
     <nav
@@ -32,20 +23,10 @@ export function ConsumerNav({ onNavigate }: { onNavigate?: () => void }) {
         onNavigate?.()
       }}
     >
-      <NavLink to="/store" end className={shopOpen ? 'active' : undefined}>
+      <NavLink to="/store" end className={storeOpen ? 'active' : undefined}>
         {settings.storeLabel && settings.storeLabel !== 'Store'
           ? settings.storeLabel
           : settings.copy.navStore}
-      </NavLink>
-      <NavLink to="/store/trade-in" className={tradeInOpen ? 'active' : undefined}>
-        Trade-in
-      </NavLink>
-      <NavLink to="/store/cart" className={cartOpen ? 'active' : undefined}>
-        {settings.copy.navCart}
-        {cartN > 0 ? <span className="gd-count">{cartN}</span> : null}
-      </NavLink>
-      <NavLink to="/store/orders" className={ordersOpen ? 'active' : undefined}>
-        {settings.copy.navOrders}
       </NavLink>
       {wholesaleOk ? (
         <NavLink to="/wholesale">{settings.copy.navWholesale}</NavLink>

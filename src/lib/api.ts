@@ -887,6 +887,7 @@ export const api = {
     req<{
       ok: boolean
       error?: string
+      hint?: string
       imei?: string
       tac?: string
       brand?: string
@@ -896,6 +897,7 @@ export const api = {
         id: string
         brand: string
         model: string
+        modelNumber?: string
         capacity: string
         baseUsd: number
       }>
@@ -916,14 +918,30 @@ export const api = {
     if (!data.url) throw new ApiError('Upload failed.')
     return { url: data.url }
   },
+  /** Tax + promo rules for the cart (public). */
+  storePricing: () =>
+    req<{
+      pricing: {
+        taxMode: 'none' | 'inclusive' | 'exclusive'
+        taxLabel: string
+        taxRatePct: number
+        promos: string[]
+      }
+    }>('/api/store/pricing'),
+  /** Validate a promo code against a subtotal (USD). */
+  applyStorePromo: (code: string, subtotal: number) =>
+    req<{ ok: boolean; code: string; pctOff: number; discount: number; error?: string }>(
+      '/api/store/promo',
+      { method: 'POST', body: JSON.stringify({ code, subtotal }) },
+    ),
   storeTradeInDevices: () =>
-    req<{ devices: StoreTradeInDeviceDto[] }>('/api/store/trade-in/devices'),
-  storeTradeInDevicesAll: () =>
+    req<{ devices: StoreTradeInDeviceDto[] }>('/api/store/trade-in/devices'),  storeTradeInDevicesAll: () =>
     req<{ devices: StoreTradeInDeviceDto[] }>('/api/store/trade-in/devices/all'),
   createStoreTradeInDevice: (body: {
     id?: string
     brand: string
     model: string
+    modelNumber?: string
     capacity: string
     baseUsd: number
     active?: boolean
@@ -938,6 +956,7 @@ export const api = {
     body: {
       brand?: string
       model?: string
+      modelNumber?: string
       capacity?: string
       baseUsd?: number
       active?: boolean
@@ -951,6 +970,27 @@ export const api = {
   deleteStoreTradeInDevice: (id: string) =>
     req<{ ok: boolean }>(`/api/store/trade-in/devices/${encodeURIComponent(id)}`, {
       method: 'DELETE',
+    }),
+  importStoreTradeInDevices: (
+    devices: Array<{
+      id?: string
+      brand: string
+      model: string
+      modelNumber?: string
+      capacity: string
+      baseUsd: number
+      active?: boolean
+      sortOrder?: number
+    }>,
+  ) =>
+    req<{
+      ok: boolean
+      created: number
+      updated: number
+      devices: StoreTradeInDeviceDto[]
+    }>('/api/store/trade-in/devices/import', {
+      method: 'POST',
+      body: JSON.stringify({ devices }),
     }),
   uploadBrandLogo: async (file: File) => {
     const fd = new FormData()
@@ -980,6 +1020,7 @@ export const api = {
     pickupDate?: string
     pickupSlot?: string
     displayCurrency?: string
+    promoCode?: string
     tradeIn?: {
       deviceId: string
       label: string
@@ -1125,6 +1166,7 @@ export type StoreTradeInDeviceDto = {
   id: string
   brand: string
   model: string
+  modelNumber: string
   capacity: string
   baseUsd: number
   active: boolean
@@ -1175,6 +1217,9 @@ export type StoreOrderDto = {
   paymentMethod: string
   paymentRef: string | null
   subtotal: number
+  discount?: number
+  promoCode?: string | null
+  tax?: number
   shippingFee: number
   tradeInCredit?: number
   total: number

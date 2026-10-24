@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { StoreProductDto } from '../lib/api'
 import { storeProductBrand, storeProductHeadline } from '../lib/storeBrand'
 import { addToStoreCart } from '../lib/storeCart'
 import { storeAddedToCart } from '../lib/storeFeedback'
+import { pushToast } from '../lib/toast'
 import { useStoreFx } from '../lib/storeFx'
 import { storeConditionHint, storeNeedsBuyAck } from '../lib/storeCondition'
 import { AskAboutItem } from './AskAboutItem'
@@ -24,14 +25,20 @@ type Props = {
 /** Consumer grid tile — photo, brand, title, price; urgency/locks only when they matter. */
 export function StoreProductCard({ product, onOpen, onAdded, index = 0, catalog }: Props) {
   const { money } = useStoreFx()
-  const soldOut = product.stock < 1
-  const onSale = Boolean(product.compareAt && product.compareAt > product.price)
-  const brand = storeProductBrand(product)
-  const headline = storeProductHeadline(product, brand)
-  const variantCatalog = catalog?.length ? catalog : [product]
-  const lowStock = !soldOut && product.stock > 0 && product.stock <= LOW_STOCK_AT
-  const priceHint = storeNeedsBuyAck(product) ? storeConditionHint(product) : null
+  const [active, setActive] = useState(product)
   const [adding, setAdding] = useState(false)
+
+  useEffect(() => {
+    setActive(product)
+  }, [product])
+
+  const soldOut = active.stock < 1
+  const onSale = Boolean(active.compareAt && active.compareAt > active.price)
+  const brand = storeProductBrand(active)
+  const headline = storeProductHeadline(active, brand)
+  const variantCatalog = catalog?.length ? catalog : [active]
+  const lowStock = !soldOut && active.stock > 0 && active.stock <= LOW_STOCK_AT
+  const priceHint = storeNeedsBuyAck(active) ? storeConditionHint(active) : null
 
   return (
     <article
@@ -40,13 +47,13 @@ export function StoreProductCard({ product, onOpen, onAdded, index = 0, catalog 
       aria-disabled={soldOut || undefined}
     >
       <div className="store-lot-card-media">
-        <StoreGallery product={product} variant="card" onOpen={() => onOpen(product)} />
+        <StoreGallery product={active} variant="card" onOpen={() => onOpen(active)} />
         {soldOut ? (
           <span className="sold-badge">Sold out</span>
         ) : (
           <>
-            {product.grade ? (
-              <span className={`grade grade-${product.grade}`}>Grade {product.grade}</span>
+            {active.grade ? (
+              <span className={`grade grade-${active.grade}`}>Grade {active.grade}</span>
             ) : null}
             {onSale ? <span className="store-sale-badge">Sale</span> : null}
           </>
@@ -58,49 +65,49 @@ export function StoreProductCard({ product, onOpen, onAdded, index = 0, catalog 
             {brand}
           </span>
         ) : null}
-        <h3>
-          <button type="button" className="item-link" onClick={() => onOpen(product)}>
-            {headline}
+        <div className="store-card-title-row">
+          <h3>
+            <button type="button" className="item-link" onClick={() => onOpen(active)}>
+              {headline}
+            </button>
+          </h3>
+          <button type="button" className="item-details-cue" onClick={() => onOpen(active)}>
+            Quick view
           </button>
-        </h3>
-        <button type="button" className="item-details-cue" onClick={() => onOpen(product)}>
-          Details
-        </button>
-        <StoreColorDots product={product} catalog={variantCatalog} onOpen={onOpen} />
-        <StoreCapacityPills product={product} catalog={variantCatalog} onOpen={onOpen} />
-        {lowStock ? <p className="muted store-card-stock">{product.stock} left</p> : null}
+        </div>
+        <StoreColorDots product={active} catalog={variantCatalog} onOpen={setActive} />
+        <StoreCapacityPills product={active} catalog={variantCatalog} onOpen={setActive} />
+        {lowStock ? <p className="muted store-card-stock">{active.stock} left</p> : null}
         <div className="lot-price-row">
           <div>
-            <div className="price">
-              {money(product.price)}
-            </div>
+            <div className="price">{money(active.price)}</div>
             {onSale ? (
               <div className="store-was">
-                <s>{money(product.compareAt!)}</s>
-                <span>Save {money(product.compareAt! - product.price)}</span>
+                <s>{money(active.compareAt!)}</s>
+                <span>Save {money(active.compareAt! - active.price)}</span>
               </div>
             ) : null}
             {priceHint ? <p className="store-card-price-hint">{priceHint}</p> : null}
           </div>
         </div>
-        <StoreConditionBadges product={product} />
+        <StoreConditionBadges product={active} />
         <div className="store-card-actions">
           {soldOut ? (
             <AskAboutItem
               channel="store"
-              itemId={product.slug || product.id}
-              itemTitle={product.title}
-              itemHref={`/store/p/${encodeURIComponent(product.slug || product.id)}`}
+              itemId={active.slug || active.id}
+              itemTitle={active.title}
+              itemHref={`/store/p/${encodeURIComponent(active.slug || active.id)}`}
               className="btn btn-primary btn-sm store-card-cta"
               label="Notify me"
               dialogTitle="Notify when back"
-              presetMessage={`Please notify me when "${product.title}" is back in stock.`}
+              presetMessage={`Please notify me when "${active.title}" is back in stock.`}
             />
-          ) : storeNeedsBuyAck(product) ? (
+          ) : storeNeedsBuyAck(active) ? (
             <button
               type="button"
               className="btn btn-primary btn-sm store-card-cta"
-              onClick={() => onOpen(product)}
+              onClick={() => onOpen(active)}
             >
               Review & add
             </button>
@@ -111,10 +118,13 @@ export function StoreProductCard({ product, onOpen, onAdded, index = 0, catalog 
               disabled={adding}
               onClick={() => {
                 setAdding(true)
-                addToStoreCart(product.id, 1)
-                storeAddedToCart(product.title, 1)
-                onAdded?.(product.title)
+                const landed = addToStoreCart(active.id, 1, active.stock)
+                storeAddedToCart(active.title, 1)
+                onAdded?.(active.title)
                 window.setTimeout(() => setAdding(false), 700)
+                if (!landed) {
+                  pushToast(`${active.title} is out of stock.`)
+                }
               }}
             >
               {adding ? 'Added' : 'Add to cart'}

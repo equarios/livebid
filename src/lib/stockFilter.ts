@@ -62,7 +62,7 @@ export function parseTimeMs(raw: string | number | null | undefined) {
 export function pickSimilarStoreProducts(
   seed: StoreProductDto,
   catalog: StoreProductDto[],
-  limit = 4,
+  limit = 12,
 ) {
   const family = storeVariantFamilyKey(seed)
   return catalog

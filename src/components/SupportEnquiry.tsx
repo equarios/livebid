@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { DEFAULT_SETTINGS } from '../data'
 import { useStore } from '../store'
 
@@ -29,6 +30,8 @@ export function SupportEnquiry({
   variant?: 'page' | 'panel'
 }) {
   const { settings, user } = useStore()
+  const [params] = useSearchParams()
+  const orderRef = (params.get('order') || '').trim()
   const brand = settings.brandName || 'eQuarios'
   const contact = {
     ...DEFAULT_SETTINGS.contact,
@@ -40,7 +43,9 @@ export function SupportEnquiry({
   const [name, setName] = useState(() => displayName(user))
   const [email, setEmail] = useState(() => user?.email || '')
   const [topic, setTopic] = useState<TopicId>('store')
-  const [message, setMessage] = useState('')
+  const [message, setMessage] = useState(() =>
+    orderRef ? `Regarding store order ${orderRef}:\n` : '',
+  )
   const [status, setStatus] = useState<'idle' | 'ready' | 'copied' | 'missing'>('idle')
 
   useEffect(() => {
@@ -48,6 +53,14 @@ export function SupportEnquiry({
     setName((prev) => prev || displayName(user))
     setEmail((prev) => prev || user.email || '')
   }, [user])
+
+  useEffect(() => {
+    if (!orderRef) return
+    setTopic('store')
+    setMessage((prev) =>
+      prev.includes(orderRef) ? prev : `Regarding store order ${orderRef}:\n${prev}`,
+    )
+  }, [orderRef])
 
   const topicLabel = useMemo(
     () => TOPICS.find((t) => t.id === topic)?.label || 'Other',

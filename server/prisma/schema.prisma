@@ -207,6 +207,12 @@ model StoreOrder {
   paymentMethod String
   paymentRef    String?
   subtotal      Float
+  /// Promo discount applied to subtotal (USD).
+  discount      Float    @default(0)
+  /// Normalised promo code used at checkout.
+  promoCode     String?
+  /// Tax charged on top (exclusive mode). 0 when tax is none or inclusive.
+  tax           Float    @default(0)
   shippingFee   Float    @default(0)
   total         Float
   /// Shopper display currency at checkout (prices above stay USD).
@@ -282,15 +288,17 @@ model StoreImeiTac {
 
 /// Staff-editable trade-in estimate matrix (Grade A unlocked base USD).
 model StoreTradeInDevice {
-  id        String   @id
-  brand     String
-  model     String
-  capacity  String
-  baseUsd   Float
-  active    Boolean  @default(true)
-  sortOrder Int      @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String   @id
+  brand       String
+  model       String
+  /// Hardware / marketing model number (e.g. A3090, SM-S921B).
+  modelNumber String   @default("")
+  capacity    String
+  baseUsd     Float
+  active      Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@index([active, sortOrder])
   @@index([brand])

@@ -61,6 +61,7 @@ export type MatrixDeviceRow = {
   id: string
   brand: string
   model: string
+  modelNumber?: string | null
   capacity: string
   baseUsd: number
   active: boolean
@@ -138,13 +139,13 @@ export async function lookupImeiAgainstMatrix(imeiRaw: string) {
   const tac = tacFromImei(imei)
   const row = await resolveTacRow(tac, imei)
   if (!row) {
+    // Still accept the device — shopper picks or types the model below.
     return {
-      ok: false as const,
-      error: hicelltekConfigured()
-        ? 'IMEI not recognized. Pick a model from our buy list.'
-        : 'IMEI not in local catalog. Pick a model from our buy list (or set HICELLTEK_API_KEY).',
+      ok: true as const,
       imei,
       tac,
+      matches: [],
+      hint: 'IMEI saved — pick or enter your device below.',
     }
   }
 
@@ -153,17 +154,6 @@ export async function lookupImeiAgainstMatrix(imeiRaw: string) {
     orderBy: [{ sortOrder: 'asc' }, { brand: 'asc' }],
   })
   const matches = matchMatrixDevices(row.brand, row.model, matrix)
-  if (!matches.length) {
-    return {
-      ok: false as const,
-      error: `Recognized ${row.brand} ${row.model}, but we are not buying that model right now.`,
-      imei,
-      tac,
-      brand: row.brand,
-      model: row.model,
-      name: row.name,
-    }
-  }
 
   return {
     ok: true as const,
@@ -176,8 +166,12 @@ export async function lookupImeiAgainstMatrix(imeiRaw: string) {
       id: d.id,
       brand: d.brand,
       model: d.model,
+      modelNumber: d.modelNumber || '',
       capacity: d.capacity,
       baseUsd: d.baseUsd,
     })),
+    hint: matches.length
+      ? undefined
+      : `Recognized ${row.brand} ${row.model} — confirm details below. Final credit after inspection.`,
   }
 }

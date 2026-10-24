@@ -1,26 +1,29 @@
-import { useEffect, useMemo, useState, type FormEvent, type KeyboardEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { PublicShell } from '../components/PublicShell'
 import { StoreConditionBadges } from '../components/StoreConditionBadges'
+import { BatteryMark } from '../components/BatteryMark'
 import { StoreWholesaleHandoff } from '../components/StoreWholesaleHandoff'
 import { StoreRail } from '../components/StoreRail'
 import { StoreBlockSkeleton } from '../components/StoreSkeleton'
 import { api, type StoreProductDto } from '../lib/api'
 import { usd } from '../lib/format'
+import { originLabel } from '../lib/auctionLists'
 import {
   DEFAULT_FULFILLMENT,
-  FULFILLMENT_LABELS,
   earliestPickupDate,
   formatShippingMoney,
   resolveClientShippingQuote,
-  shippingFeeHint,
 } from '../lib/fulfillment'
-import { storeProductHeadline } from '../lib/storeBrand'
+import { storeProductHeadline, storeProductBrand } from '../lib/storeBrand'
+import { colorSwatch } from '../lib/storeSwatch'
 import { useStoreFx } from '../lib/storeFx'
+import { pushToast } from '../lib/toast'
 import { storeProductFallback, storeProductImage } from '../lib/storePhotos'
 import {
   clearStoreCart,
   pruneStoreCart,
+  pruneStoreCartReport,
   readStoreCart,
   replaceStoreCartProduct,
   setStoreCartQty,
@@ -45,6 +48,9 @@ import { useStore } from '../store'
 import type { FulfillmentMode, FulfillmentSettings } from '../types'
 
 type PayMethod = 'card' | 'paypal' | 'bank' | 'usdt' | 'cash'
+
+/** Cart review and checkout are two stages of the same route. */
+type Stage = 'cart' | 'checkout'
 
 type StoreFulfillmentPublic = {
   modes: FulfillmentMode[]
@@ -100,6 +106,7 @@ function CartQtyStepper({
   onChange: (next: number) => void
 }) {
   const cap = Math.max(1, max)
+  const soldOut = cap <= 1 && max <= 0
   const [draft, setDraft] = useState(String(qty))
 
   useEffect(() => {
@@ -143,6 +150,7 @@ function CartQtyStepper({
         pattern="[0-9]*"
         value={draft}
         aria-label="Quantity"
+        readOnly={soldOut}
         onChange={(e) => setDraft(e.target.value.replace(/[^\d]/g, ''))}
         onBlur={() => commit(draft)}
         onKeyDown={onKey}
@@ -151,7 +159,7 @@ function CartQtyStepper({
         type="button"
         className="store-cart-step"
         aria-label="Increase quantity"
-        disabled={qty >= cap}
+        disabled={soldOut || qty >= cap}
         onClick={() => bump(1)}
       >
         +
@@ -160,19 +168,70 @@ function CartQtyStepper({
   )
 }
 
+/** Checkout form draft — survives a refresh so nobody retypes their details. */
+const CHECKOUT_DRAFT_KEY = 'livebid-store-checkout-draft'
+
+type CheckoutDraft = {
+  email: string
+  name: string
+  phone: string
+  address: string
+  note: string
+  promo: string
+  stage: Stage
+}
+
+function readCheckoutDraft(): Partial<CheckoutDraft> {
+  try {
+    const raw = localStorage.getItem(CHECKOUT_DRAFT_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as Partial<CheckoutDraft>
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function writeCheckoutDraft(d: CheckoutDraft) {
+  try {
+    localStorage.setItem(CHECKOUT_DRAFT_KEY, JSON.stringify(d))
+  } catch {
+    /* storage full / blocked — drafts are best-effort */
+  }
+}
+
+function clearCheckoutDraft() {
+  try {
+    localStorage.removeItem(CHECKOUT_DRAFT_KEY)
+  } catch {
+    /* ignore */
+  }
+}
+
 export function StoreCart() {
   const { settings, user } = useStore()
   const { money, currency } = useStoreFx()
   const navigate = useNavigate()
+  const draft = readCheckoutDraft()
+  const [stage, setStage] = useState<Stage>(draft.stage === 'checkout' ? 'checkout' : 'cart')
   const [lines, setLines] = useState<StoreCartLine[]>(() => readStoreCart())
   const [tradeIn, setTradeIn] = useState<TradeInPending | null>(() => readTradeInPending())
   const [products, setProducts] = useState<StoreProductDto[]>([])
   const [catalogReady, setCatalogReady] = useState(false)
-  const [email, setEmail] = useState(user?.email || '')
-  const [name, setName] = useState('')
-  const [phone, setPhone] = useState('')
-  const [address, setAddress] = useState('')
-  const [note, setNote] = useState('')
+  const [email, setEmail] = useState(draft.email || user?.email || '')
+  const [name, setName] = useState(draft.name || '')
+  const [phone, setPhone] = useState(draft.phone || '')
+  const [address, setAddress] = useState(draft.address || '')
+  const [note, setNote] = useState(draft.note || '')
+  const [promoInput, setPromoInput] = useState(draft.promo || '')
+  const [promo, setPromo] = useState<{ code: string; pctOff: number } | null>(null)
+  const [promoBusy, setPromoBusy] = useState(false)
+  const [promoErr, setPromoErr] = useState<string | null>(null)
+  const [pricing, setPricing] = useState<{
+    taxMode: 'none' | 'inclusive' | 'exclusive'
+    taxLabel: string
+    taxRatePct: number
+  } | null>(null)
   const [pay, setPay] = useState<PayMethod>('card')
   const [fulfillment, setFulfillment] = useState<StoreFulfillmentPublic | null>(null)
   const [mode, setMode] = useState<FulfillmentMode>('delivery')
@@ -185,6 +244,8 @@ export function StoreCart() {
   const [err, setErr] = useState<string | null>(null)
   const [catalogErr, setCatalogErr] = useState<string | null>(null)
   const [catalogTick, setCatalogTick] = useState(0)
+  /** Lines dropped on catalog load because the product is gone. */
+  const [dropped, setDropped] = useState<StoreCartLine[]>([])
 
   useEffect(() => {
     const sync = () => setLines(readStoreCart())
@@ -193,6 +254,31 @@ export function StoreCart() {
   }, [])
 
   useEffect(() => subscribeTradeIn(() => setTradeIn(readTradeInPending())), [])
+
+  useEffect(() => {
+    let alive = true
+    void api
+      .storePricing()
+      .then((res) => {
+        if (!alive) return
+        setPricing({
+          taxMode: res.pricing.taxMode,
+          taxLabel: res.pricing.taxLabel,
+          taxRatePct: res.pricing.taxRatePct,
+        })
+      })
+      .catch(() => {
+        /* pricing rules unavailable — cart renders without tax */
+      })
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  /** Persist the checkout draft whenever a field changes. */
+  useEffect(() => {
+    writeCheckoutDraft({ email, name, phone, address, note, promo: promoInput, stage })
+  }, [email, name, phone, address, note, promoInput, stage])
 
   useEffect(() => {
     let alive = true
@@ -283,7 +369,14 @@ export function StoreCart() {
       .then((res) => {
         if (!alive) return
         setProducts(res.products)
-        setLines(pruneStoreCart(res.products.map((p) => p.id)))
+        const { kept, removed } = pruneStoreCartReport(res.products.map((p) => p.id))
+        if (removed.length) {
+          setDropped(removed)
+          pushToast(
+            `${removed.length} item${removed.length === 1 ? '' : 's'} were removed — no longer available.`,
+          )
+        }
+        setLines(kept)
       })
       .catch((e) => {
         if (alive) {
@@ -315,13 +408,87 @@ export function StoreCart() {
   const cartN = storeCartCount()
   const storeName = settings.storeLabel || 'Store'
   const subtotal = rows.reduce((n, r) => n + r.product.price * r.line.qty, 0)
+  const discount = promo ? Math.round(subtotal * (promo.pctOff / 100) * 100) / 100 : 0
+  /** Goods after promo — the base for shipping thresholds, trade-in cap and tax. */
+  const goods = Math.round((subtotal - discount) * 100) / 100
+  const taxRate = pricing?.taxMode === 'exclusive' ? pricing.taxRatePct : 0
+  const tax = Math.round(goods * (taxRate / 100) * 100) / 100
+  const taxIncluded =
+    pricing?.taxMode === 'inclusive'
+      ? Math.round(goods * (pricing.taxRatePct / (100 + pricing.taxRatePct)) * 100) / 100
+      : 0
+  const taxLabel =
+    pricing && pricing.taxMode !== 'none' && pricing.taxRatePct > 0
+      ? `${pricing.taxLabel} (${pricing.taxRatePct}%${
+          pricing.taxMode === 'inclusive' ? ' incl.' : ''
+        })`
+      : null
   const cfg = fulfillment ? toSettings(fulfillment) : settings.fulfillment || DEFAULT_FULFILLMENT
   const modes = fulfillment?.modes?.length ? fulfillment.modes : cfg.storeModes
-  const quote = resolveClientShippingQuote(mode, subtotal, cfg)
+  const quote = resolveClientShippingQuote(mode, goods, cfg)
   const shipping = quote.fee
-  const tradeInCredit = tradeIn ? applyTradeInCap(tradeIn.creditUsd, subtotal) : 0
-  const total = Math.round((subtotal + shipping - tradeInCredit) * 100) / 100
-  const shipHint = shippingFeeHint(mode, subtotal, cfg)
+  const tradeInCredit = tradeIn ? applyTradeInCap(tradeIn.creditUsd, goods) : 0
+  const total = Math.round((goods + shipping + tax - tradeInCredit) * 100) / 100
+  /** Cart stage has no fulfillment choice yet — preview plain delivery. */
+  const cartShipQuote = resolveClientShippingQuote('delivery', goods, cfg)
+  const cartTotal = Math.round((goods + cartShipQuote.fee + tax - tradeInCredit) * 100) / 100
+
+  const itemCount = rows.reduce((n, r) => n + r.line.qty, 0)
+  const freeShipGap =
+    cfg.deliveryPayer === 'buyer' && cfg.freeDeliveryMin > 0 && goods < cfg.freeDeliveryMin
+      ? Math.round((cfg.freeDeliveryMin - goods) * 100) / 100
+      : 0
+  const freeShipPct =
+    cfg.freeDeliveryMin > 0
+      ? Math.min(100, Math.round((goods / cfg.freeDeliveryMin) * 100))
+      : 100
+
+  /** Auto-validate a remembered promo once the catalog gives us a real subtotal. */
+  const promoBootRef = useRef(false)
+  useEffect(() => {
+    if (promoBootRef.current || promo || !promoInput.trim() || subtotal <= 0) return
+    promoBootRef.current = true
+    void api
+      .applyStorePromo(promoInput, subtotal)
+      .then((res) => setPromo({ code: res.code, pctOff: res.pctOff }))
+      .catch((ex) => {
+        setPromo(null)
+        setPromoErr(ex instanceof Error ? ex.message : 'That code isn’t valid.')
+      })
+  }, [promoInput, promo, subtotal])
+
+  async function applyPromo() {
+    const code = promoInput.trim()
+    if (!code) {
+      setPromoErr('Enter a promo code.')
+      return
+    }
+    setPromoBusy(true)
+    setPromoErr(null)
+    try {
+      const res = await api.applyStorePromo(code, subtotal)
+      setPromo({ code: res.code, pctOff: res.pctOff })
+      setPromoInput(res.code)
+      pushToast(`${res.code} applied — ${res.pctOff}% off.`)
+    } catch (ex) {
+      setPromo(null)
+      setPromoErr(ex instanceof Error ? ex.message : 'That code isn’t valid.')
+    } finally {
+      setPromoBusy(false)
+    }
+  }
+
+  function removePromo() {
+    setPromo(null)
+    setPromoInput('')
+    setPromoErr(null)
+  }
+
+  function goCheckout() {
+    setErr(null)
+    setStage('checkout')
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
 
   async function checkout(e: FormEvent) {
     e.preventDefault()
@@ -374,27 +541,28 @@ export function StoreCart() {
         pickupDate: mode === 'pickup' ? pickupDate : undefined,
         pickupSlot: mode === 'pickup' ? pickupSlot : undefined,
         displayCurrency: currency,
-        tradeIn:
-          tradeIn && tradeInCredit > 0
-            ? {
-                deviceId: tradeIn.deviceId,
-                label: tradeIn.label,
-                grade: tradeIn.grade,
-                battery: tradeIn.battery,
-                simLocked: tradeIn.simLocked,
-                activationLocked: tradeIn.activationLocked,
-                estimateLow: tradeIn.lowUsd,
-                estimateHigh: tradeIn.highUsd,
-                creditUsd: tradeInCredit,
-                images: tradeIn.images,
-                videoUrl: tradeIn.videoUrl || null,
-                imei: tradeIn.imei,
-              }
-            : undefined,
+        promoCode: promo?.code,
+        tradeIn: tradeIn
+          ? {
+              deviceId: tradeIn.deviceId,
+              label: tradeIn.label,
+              grade: tradeIn.grade,
+              battery: tradeIn.battery,
+              simLocked: tradeIn.simLocked,
+              activationLocked: tradeIn.activationLocked,
+              estimateLow: tradeIn.lowUsd,
+              estimateHigh: tradeIn.highUsd,
+              creditUsd: tradeInCredit,
+              images: tradeIn.images,
+              videoUrl: tradeIn.videoUrl || null,
+              imei: tradeIn.imei,
+            }
+          : undefined,
         lines: rows.map((r) => ({ productId: r.product.id, qty: r.line.qty })),
       })
       clearStoreCart()
       clearTradeInPending()
+      clearCheckoutDraft()
       storeOrderPlaced(res.order.id, pay)
       navigate(`/store/orders?placed=${encodeURIComponent(res.order.id)}&pay=${pay}`)
     } catch (ex) {
@@ -414,19 +582,196 @@ export function StoreCart() {
     )
   }
 
+  /** Order summary — cart stage previews plain delivery; checkout uses the chosen mode. */
+  const summary = (showCheckoutCta: boolean) => {
+    const shipQuote = showCheckoutCta ? cartShipQuote : quote
+    const grandTotal = showCheckoutCta ? cartTotal : total
+    return (
+    <aside className="cart2-summary">
+      <div className="store-cart-summary">
+        <h2 className="store-cart-summary-title">Order summary</h2>
+        <div className="retail-totals">
+          <div>
+            <span>
+              Subtotal
+              {itemCount > 0 ? ` · ${itemCount} item${itemCount === 1 ? '' : 's'}` : ''}
+            </span>
+            <strong>{money(subtotal)}</strong>
+          </div>
+          {discount > 0 ? (
+            <div className="cart2-row-discount">
+              <span>
+                Promo {promo?.code}
+                <button type="button" className="linkish tiny" onClick={removePromo}>
+                  Remove
+                </button>
+              </span>
+              <strong>−{money(discount)}</strong>
+            </div>
+          ) : null}
+          <div>
+            <span>
+              {showCheckoutCta
+                ? 'Shipping'
+                : mode === 'pickup'
+                  ? 'Pickup'
+                  : mode === 'buyer_courier'
+                    ? 'Your courier'
+                    : 'Shipping'}
+              {!shipQuote.quoted ? ' (TBD)' : shipQuote.fee === 0 ? ' (free)' : ''}
+            </span>
+            <strong>{formatShippingMoney(shipQuote.fee, shipQuote.quoted, money)}</strong>
+          </div>
+          {taxLabel ? (
+            <div>
+              <span>
+                {taxLabel}
+                {taxIncluded > 0 ? ' — included' : ''}
+              </span>
+              <strong>{taxIncluded > 0 ? money(taxIncluded) : money(tax)}</strong>
+            </div>
+          ) : null}
+          {tradeIn && tradeInCredit > 0 ? (
+            <div className="store-cart-tradein">
+              <span>Trade-in credit (pending)</span>
+              <strong>−{money(tradeInCredit)}</strong>
+            </div>
+          ) : null}
+          <div className="is-grand">
+            <span>Total{!shipQuote.quoted ? ' + shipping TBD' : ''}</span>
+            <strong>{money(grandTotal)}</strong>
+          </div>
+          {currency !== 'USD' ? (
+            <div className="cart2-usd-note">
+              <div>
+                <span>Card charged in USD</span>
+                <strong>{usd(grandTotal)}</strong>
+              </div>
+              <p className="muted tiny">
+                Shown in {currency} for reference. Your bank converts the USD charge and may add a
+                conversion fee.
+              </p>
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      {tradeIn ? (
+        <div className="cart2-tradein">
+          <div className="cart2-tradein-top">
+            <strong>{tradeIn.label}</strong>
+            <span>{tradeInCredit > 0 ? `−${money(tradeInCredit)}` : 'TBD'}</span>
+          </div>
+          <p className="muted tiny">
+            IMEI {tradeIn.imei} · {tradeIn.images.length} photos · final after inspection
+          </p>
+          <div className="cart2-tradein-actions">
+            <Link to="/store/trade-in" className="linkish tiny">
+              Edit
+            </Link>
+            <button
+              type="button"
+              className="linkish tiny"
+              onClick={() => {
+                clearTradeInPending()
+                setTradeIn(null)
+              }}
+            >
+              Remove
+            </button>
+          </div>
+        </div>
+      ) : (
+        <p className="muted tiny store-cart-tradein-cta">
+          Have an old device? <Link to="/store/trade-in">Get a trade-in estimate</Link>
+        </p>
+      )}
+
+      {showCheckoutCta ? (
+        <>
+          <div className="cart2-promo">
+            <label className="field">
+              <span>Promo code</span>
+              <div className="cart2-promo-row">
+                <input
+                  value={promoInput}
+                  onChange={(e) => {
+                    setPromoInput(e.target.value.toUpperCase())
+                    if (promoErr) setPromoErr(null)
+                  }}
+                  placeholder="Enter code"
+                  autoComplete="off"
+                  autoCapitalize="characters"
+                  disabled={promoBusy || Boolean(promo)}
+                />
+                {promo ? (
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={removePromo}>
+                    Remove
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    disabled={promoBusy || !promoInput.trim()}
+                    onClick={() => void applyPromo()}
+                  >
+                    {promoBusy ? 'Checking…' : 'Apply'}
+                  </button>
+                )}
+              </div>
+            </label>
+            {promoErr ? (
+              <p className="cart2-promo-err" role="alert">
+                {promoErr}
+              </p>
+            ) : promo ? (
+              <p className="cart2-promo-ok">
+                {promo.code} applied — {promo.pctOff}% off.
+              </p>
+            ) : null}
+          </div>
+          <button type="button" className="btn btn-primary cart2-cta" onClick={goCheckout}>
+            Checkout · {money(cartTotal)}
+          </button>
+          <ul className="store-cart-trust">
+            <li>Secure checkout</li>
+            <li>Trade-in credit applied at checkout</li>
+            <li>Track status in Orders</li>
+          </ul>
+        </>
+      ) : (
+        <ul className="store-cart-trust">
+          <li>Prices charged in USD</li>
+          <li>Pickup, courier, or delivery</li>
+          <li>Bank, USDT &amp; cash confirmed by staff</li>
+        </ul>
+      )}
+    </aside>
+    )
+  }
+
   return (
     <PublicShell mode="consumer">
       <div className="retail-store retail-cart">
         <StoreRail
           page="cart"
-          title="Cart"
+          title={stage === 'cart' ? 'Cart' : 'Checkout'}
+          headline={stage === 'cart' ? 'Your cart' : 'Checkout'}
           count={cartN}
           note={
-            currency !== 'USD'
-              ? `Prices shown in ${currency}. You’ll be charged in USD at checkout.`
-              : 'Review your items, then check out securely.'
+            stage === 'cart'
+              ? currency !== 'USD'
+                ? `Prices shown in ${currency}. You’ll be charged in USD at checkout.`
+                : 'Review your items, then check out securely.'
+              : 'Contact, delivery and payment — then place your order.'
           }
           label={storeName}
+          hero
+          trust={
+            stage === 'cart'
+              ? ['Secure checkout', 'Trade-in credit at checkout', 'Track status in Orders']
+              : ['Encrypted checkout', 'Free returns within 14 days', 'Track status in Orders']
+          }
         />
 
         {!lines.length ? (
@@ -471,11 +816,67 @@ export function StoreCart() {
               Continue shopping
             </Link>
           </div>
-        ) : (
-          <div className="retail-checkout-grid">
+        ) : stage === 'cart' ? (
+          <>
+          <ol className="ck-steps is-bar" aria-label="Checkout steps">
+            <li className="is-on" aria-current="step">
+              <span className="ck-steps-dot" aria-hidden>
+                1
+              </span>
+              Cart
+            </li>
+            <li>
+              <span className="ck-steps-dot" aria-hidden>
+                2
+              </span>
+              Details
+            </li>
+            <li>
+              <span className="ck-steps-dot" aria-hidden>
+                3
+              </span>
+              Payment
+            </li>
+          </ol>
+          <div className="cart2-grid">
             <div className="store-cart-lines">
+              {dropped.length ? (
+                <div className="cart2-dropped" role="status">
+                  <p>
+                    <strong>
+                      {dropped.length} item{dropped.length === 1 ? '' : 's'}
+                    </strong>{' '}
+                    removed — no longer available.
+                  </p>
+                  <button
+                    type="button"
+                    className="linkish tiny"
+                    onClick={() => setDropped([])}
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              ) : null}
+              {freeShipGap > 0 ? (
+                <div className="cart2-freeship">
+                  <p>
+                    <strong>{money(freeShipGap)}</strong> away from free delivery
+                  </p>
+                  <div
+                    className="cart2-freeship-track"
+                    role="progressbar"
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={freeShipPct}
+                    aria-label="Progress to free delivery"
+                  >
+                    <span style={{ width: `${freeShipPct}%` }} />
+                  </div>
+                </div>
+              ) : null}
+
               {rows.map(({ line, product }) => {
-                const img = storeProductImage(product, 160)
+                const img = storeProductImage(product, 200)
                 const { colorOptions, capacityOptions } = storeVariantOptions(
                   product,
                   products,
@@ -487,9 +888,13 @@ export function StoreCart() {
                   )
                   storeCartUpdated()
                 }
+                const variantBits = [product.color, product.capacity].filter(Boolean)
                 return (
-                  <article key={product.id} className="store-cart-line">
-                    <Link to={`/store/p/${product.slug}`} className="store-cart-thumb">
+                  <article
+                    key={product.id}
+                    className={`cart2-line${product.stock <= 0 ? ' is-oos' : ''}`}
+                  >
+                    <Link to={`/store/p/${product.slug}`} className="cart2-line-thumb">
                       <img
                         src={img}
                         alt=""
@@ -499,99 +904,164 @@ export function StoreCart() {
                         }}
                       />
                     </Link>
-                    <div className="store-cart-line-body">
-                      <div className="store-cart-line-top">
-                        <div className="store-cart-line-main">
-                          <Link to={`/store/p/${product.slug}`} className="store-cart-title">
+
+                    <div className="cart2-line-body">
+                      <div className="cart2-line-head">
+                        <div>
+                          <Link to={`/store/p/${product.slug}`} className="cart2-line-title">
                             {storeProductHeadline(product)}
                           </Link>
-                          {product.grade ? (
-                            <p className="muted tiny">Grade {product.grade}</p>
+                          <p className="cart2-line-sub">
+                            {product.color ? (
+                              <span className="cart2-line-dot-wrap">
+                                <span
+                                  className="cart2-line-dot"
+                                  style={{ background: colorSwatch(product.color).background }}
+                                  aria-hidden
+                                />
+                              </span>
+                            ) : null}
+                            {variantBits.length ? variantBits.join(' · ') : product.category}
+                            {product.grade ? ` · Grade ${product.grade}` : ''}
+                          </p>
+                          {product.description?.trim() ? (
+                            <p className="cart2-line-desc">{product.description.trim()}</p>
                           ) : null}
-                          <StoreConditionBadges product={product} variant="cart" />
-                          {colorOptions.length ? (
-                            <div className="store-cart-variants" role="group" aria-label="Color">
-                              <span className="store-cart-variant-label">Color</span>
-                              <div className="store-cart-variant-chips">
-                                {colorOptions.map((opt) => (
-                                  <button
-                                    key={opt.value}
-                                    type="button"
-                                    className={`store-cart-chip${opt.selected ? ' is-on' : ''}${
-                                      opt.inStock ? '' : ' is-oos'
-                                    }`}
-                                    disabled={!opt.inStock}
-                                    title={
-                                      opt.inStock ? opt.value : `${opt.value} · out of stock`
-                                    }
-                                    onClick={() => swapTo(opt)}
-                                  >
-                                    {opt.value}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          ) : null}
-                          {capacityOptions.length ? (
-                            <div className="store-cart-variants" role="group" aria-label="Storage">
-                              <span className="store-cart-variant-label">Storage</span>
-                              <div className="store-cart-variant-chips">
-                                {capacityOptions.map((opt) => (
-                                  <button
-                                    key={opt.value}
-                                    type="button"
-                                    className={`store-cart-chip${opt.selected ? ' is-on' : ''}${
-                                      opt.inStock ? '' : ' is-oos'
-                                    }`}
-                                    disabled={!opt.inStock}
-                                    title={
-                                      opt.inStock ? opt.value : `${opt.value} · out of stock`
-                                    }
-                                    onClick={() => swapTo(opt)}
-                                  >
-                                    {opt.value}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          ) : null}
-                          {!colorOptions.length && !capacityOptions.length ? (
-                            <p className="store-cart-options">
-                              {[product.capacity, product.color].filter(Boolean).join(' · ') ||
-                                product.category}
-                            </p>
-                          ) : null}
+                          <ul className="cart2-line-chips" aria-label="Item details">
+                            {storeProductBrand(product) ? (
+                              <li>
+                                <span className="k">Brand</span>
+                                {storeProductBrand(product)}
+                              </li>
+                            ) : null}
+                            {product.modelNumber ? (
+                              <li>
+                                <span className="k">Model</span>
+                                {product.modelNumber}
+                              </li>
+                            ) : null}
+                            {product.origin ? (
+                              <li>
+                                <span className="k">Origin</span>
+                                {originLabel(product.origin)}
+                              </li>
+                            ) : null}
+                            {product.battery && product.battery > 0 ? (
+                              <li>
+                                <span className="k">Battery</span>
+                                <BatteryMark value={product.battery} size={16} />
+                              </li>
+                            ) : null}
+                            {variantBits.length ? <li>{product.category}</li> : null}
+                            {product.stock > 3 ? <li>{product.stock} in stock</li> : null}
+                          </ul>
                         </div>
-                        <div className="store-cart-line-side">
-                          <strong className="store-cart-line-total">
-                            {money(product.price * line.qty)}
-                          </strong>
-                          <p className="muted tiny store-cart-unit">{money(product.price)} each</p>
+                        <div className="cart2-line-money">
+                          <strong>{money(product.price * line.qty)}</strong>
+                          <span className="muted tiny">{money(product.price)} each</span>
                         </div>
                       </div>
-                      <div className="store-cart-line-actions">
-                        <CartQtyStepper
-                          productId={product.id}
-                          qty={line.qty}
-                          max={product.stock}
-                          onChange={(next) => {
-                            setStoreCartQty(product.id, next)
-                            setLines(readStoreCart())
-                            storeCartUpdated()
-                          }}
-                        />
-                        <button
-                          type="button"
-                          className="store-cart-remove"
-                          onClick={() => {
-                            setStoreCartQty(product.id, 0)
-                            setLines(readStoreCart())
-                            storeRemovedFromCart(product.title)
-                          }}
-                        >
-                          Remove
-                        </button>
-                      </div>
+
+                      {product.stock <= 0 ? (
+                        <p className="cart2-line-oos">
+                          Out of stock — remove it or pick another option to check out.
+                        </p>
+                      ) : product.stock <= 3 ? (
+                        <p className="cart2-line-low">
+                          Only {product.stock} left — checkout soon.
+                        </p>
+                      ) : null}
+
+                      <StoreConditionBadges product={product} variant="card" />
+
+                      {colorOptions.length || capacityOptions.length ? (
+                        <details className="cart2-line-options">
+                          <summary>
+                            Change options
+                            {variantBits.length ? (
+                              <span className="muted tiny"> · {variantBits.join(' / ')}</span>
+                            ) : null}
+                          </summary>
+                          <div className="cart2-line-choices">
+                            {colorOptions.length ? (
+                              <div className="store-cart-variants" role="group" aria-label="Color">
+                                <span className="store-cart-variant-label">Colour</span>
+                                <div className="store-cart-variant-chips">
+                                  {colorOptions.map((opt) => {
+                                    const sw = colorSwatch(opt.value)
+                                    return (
+                                      <button
+                                        key={opt.value}
+                                        type="button"
+                                        className={`store-cart-chip is-dot${
+                                          opt.selected ? ' is-on' : ''
+                                        }${opt.inStock ? '' : ' is-oos'}`}
+                                        disabled={!opt.inStock}
+                                        onClick={() => swapTo(opt)}
+                                      >
+                                        <span
+                                          className="store-cart-chip-dot"
+                                          style={{ background: sw.background }}
+                                          aria-hidden
+                                        />
+                                        {opt.value}
+                                      </button>
+                                    )
+                                  })}
+                                </div>
+                              </div>
+                            ) : null}
+                            {capacityOptions.length ? (
+                              <div
+                                className="store-cart-variants"
+                                role="group"
+                                aria-label="Storage"
+                              >
+                                <span className="store-cart-variant-label">Storage</span>
+                                <div className="store-cart-variant-chips">
+                                  {capacityOptions.map((opt) => (
+                                    <button
+                                      key={opt.value}
+                                      type="button"
+                                      className={`store-cart-chip${opt.selected ? ' is-on' : ''}${
+                                        opt.inStock ? '' : ' is-oos'
+                                      }`}
+                                      disabled={!opt.inStock}
+                                      onClick={() => swapTo(opt)}
+                                    >
+                                      {opt.value}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : null}
+                          </div>
+                        </details>
+                      ) : null}
+                    </div>
+
+                    <div className="cart2-line-actions">
+                      <CartQtyStepper
+                        productId={product.id}
+                        qty={line.qty}
+                        max={product.stock}
+                        onChange={(next) => {
+                          setStoreCartQty(product.id, next, product.stock)
+                          setLines(readStoreCart())
+                          storeCartUpdated()
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className="cart2-line-remove"
+                        onClick={() => {
+                          setStoreCartQty(product.id, 0)
+                          setLines(readStoreCart())
+                          storeRemovedFromCart(product.title)
+                        }}
+                      >
+                        Remove
+                      </button>
                     </div>
                   </article>
                 )
@@ -600,238 +1070,327 @@ export function StoreCart() {
                 <Link to="/store" className="store-cart-continue">
                   ← Continue shopping
                 </Link>
-                {shipHint ? <p className="muted tiny">{shipHint}</p> : null}
               </div>
             </div>
 
-            <form className="retail-checkout" onSubmit={(e) => void checkout(e)}>
-              <div className="store-cart-summary">
-                <h2 className="store-cart-summary-title">Order summary</h2>
-                <div className="retail-totals">
-                  <div>
-                    <span>Subtotal</span>
-                    <strong>{money(subtotal)}</strong>
-                  </div>
-                  <div>
-                    <span>
-                      {mode === 'pickup'
-                        ? 'Pickup'
-                        : mode === 'buyer_courier'
-                          ? 'Your courier'
-                          : 'Shipping'}
-                      {mode === 'delivery' && quote.quoted && shipping === 0 && cfg.freeDeliveryMin > 0
-                        ? ` (free over $${cfg.freeDeliveryMin})`
-                        : ''}
-                      {!quote.quoted ? ' (TBD)' : ''}
-                    </span>
-                    <strong>{formatShippingMoney(shipping, quote.quoted, money)}</strong>
-                  </div>
-                  {tradeIn && tradeInCredit > 0 ? (
-                    <div className="store-cart-tradein">
-                      <span>
-                        Trade-in credit (pending)
-                        <Link to="/store/trade-in" className="store-cart-tradein-edit">
-                          Edit
-                        </Link>
-                        <button
-                          type="button"
-                          className="linkish store-cart-tradein-remove"
-                          onClick={() => {
-                            clearTradeInPending()
-                            setTradeIn(null)
-                          }}
-                        >
-                          Remove
-                        </button>
-                      </span>
-                      <strong>−{money(tradeInCredit)}</strong>
-                      <p className="muted tiny store-cart-tradein-note">
-                        {tradeIn.label} · IMEI {tradeIn.imei} · {tradeIn.images.length} photos ·
-                        final after inspection · maxed to cart subtotal
-                      </p>
-                    </div>
-                  ) : (
-                    <p className="muted tiny store-cart-tradein-cta">
-                      Have an old device?{' '}
-                      <Link to="/store/trade-in">Get a trade-in estimate</Link>
-                    </p>
-                  )}
-                  <div className="is-grand">
-                    <span>Total{!quote.quoted ? ' + shipping TBD' : ''}</span>
-                    <strong>{money(total)}</strong>
-                  </div>
-                  {currency !== 'USD' ? (
-                    <div className="muted tiny store-cart-usd">
-                      <span>Charged in USD</span>
-                      <strong>{usd(total)}</strong>
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-
-              <h2>Fulfillment</h2>
-              <div className="retail-pay-options" role="radiogroup" aria-label="Fulfillment">
-                {modes.map((m) => (
-                  <label key={m} className={mode === m ? 'on' : undefined}>
-                    <input
-                      type="radio"
-                      name="fulfillment"
-                      checked={mode === m}
-                      onChange={() => setMode(m)}
-                    />
-                    <span className="retail-pay-label">
-                      <strong>{FULFILLMENT_LABELS[m]}</strong>
-                      <em>
-                        {m === 'pickup'
-                          ? cfg.pickupHours
-                          : m === 'buyer_courier'
-                            ? cfg.courierHints
-                            : PAYER_SHORT(cfg)}
-                      </em>
-                    </span>
-                  </label>
-                ))}
-              </div>
-
-              {mode === 'pickup' ? (
-                <>
-                  <p className="muted tiny">
-                    {cfg.pickupLabel} — {cfg.pickupHours}. Book a window; staff confirms when ready.
-                  </p>
-                  <label className="field">
-                    <span>Pickup date</span>
-                    <input
-                      type="date"
-                      required
-                      min={earliestPickupDate(cfg)}
-                      value={pickupDate}
-                      onChange={(e) => setPickupDate(e.target.value)}
-                    />
-                  </label>
-                  <label className="field">
-                    <span>Time window</span>
-                    <select
-                      required
-                      value={pickupSlot}
-                      onChange={(e) => setPickupSlot(e.target.value)}
-                    >
-                      {(cfg.pickupSlots || []).map((s) => {
-                        const occ = slotOcc.find((o) => o.slot === s)
-                        const full = Boolean(occ?.full)
-                        const left =
-                          occ?.remaining != null ? ` · ${occ.remaining} left` : ''
-                        return (
-                          <option key={s} value={s} disabled={full}>
-                            {s}
-                            {full ? ' · full' : left}
-                          </option>
-                        )
-                      })}
-                    </select>
-                  </label>
-                </>
-              ) : null}
-
-              {mode === 'buyer_courier' ? (
-                <>
-                  <label className="field">
-                    <span>Courier</span>
-                    <select
-                      value={courierCarrier}
-                      onChange={(e) => setCourierCarrier(e.target.value)}
-                    >
-                      {['FedEx', 'UPS', 'DHL', 'Other'].map((c) => (
-                        <option key={c} value={c}>
-                          {c}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="field">
-                    <span>Your account # (optional)</span>
-                    <input
-                      value={courierAccount}
-                      onChange={(e) => setCourierAccount(e.target.value)}
-                      placeholder="Staff will confirm before collect"
-                    />
-                  </label>
-                </>
-              ) : null}
-
-              <h2>{mode === 'delivery' ? 'Ship to' : 'Contact'}</h2>
-              <label className="field">
-                <span>Email</span>
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                />
-              </label>
-              <label className="field">
-                <span>Full name</span>
-                <input required value={name} onChange={(e) => setName(e.target.value)} />
-              </label>
-              {mode === 'delivery' ? (
-                <label className="field">
-                  <span>Address</span>
-                  <textarea
-                    required
-                    rows={3}
-                    value={address}
-                    onChange={(e) => setAddress(e.target.value)}
-                  />
-                </label>
-              ) : null}
-              <label className="field">
-                <span>Phone (optional)</span>
-                <input value={phone} onChange={(e) => setPhone(e.target.value)} />
-              </label>
-              <label className="field">
-                <span>Note (optional)</span>
-                <input value={note} onChange={(e) => setNote(e.target.value)} />
-              </label>
-
-              <h2>Payment</h2>
-              <div className="retail-pay-options" role="radiogroup" aria-label="Payment method">
-                {(
-                  [
-                    ['card', 'Card', 'Pay at checkout'],
-                    ['paypal', 'PayPal', 'Pay with PayPal'],
-                    ['bank', 'Bank transfer', 'Staff confirms'],
-                    ['usdt', 'USDT (crypto)', 'Staff confirms'],
-                    ['cash', 'Cash', 'Pay on pickup / collect'],
-                  ] as const
-                ).map(([id, label, hint]) => (
-                  <label key={id} className={pay === id ? 'on' : undefined}>
-                    <input
-                      type="radio"
-                      name="pay"
-                      checked={pay === id}
-                      onChange={() => setPay(id)}
-                    />
-                    <span className="retail-pay-label">
-                      <strong>{label}</strong>
-                      <em>{hint}</em>
-                    </span>
-                  </label>
-                ))}
-              </div>
-              {err ? <p className="tiny imei-err" role="alert">{err}</p> : null}
-              <button type="submit" className="btn btn-primary store-checkout-btn" disabled={busy}>
-                {busy
-                  ? 'Placing order…'
-                  : pay === 'bank' || pay === 'usdt' || pay === 'cash'
-                    ? `Place order · ${money(total)}`
-                    : `Pay with ${pay === 'paypal' ? 'PayPal' : 'card'} · ${money(total)}`}
-              </button>
-              <ul className="store-cart-trust">
-                <li>Prices charged in USD</li>
-                <li>Pickup, courier, or delivery</li>
-                <li>Bank, USDT & cash confirmed by staff</li>
-              </ul>
-            </form>
+            {summary(true)}
           </div>
+          </>
+        ) : (
+          <form className="cart2-grid is-checkout" onSubmit={(e) => void checkout(e)}>
+            <div className="cart2-flow">
+              <div className="ck-top">
+                <button type="button" className="cart2-back" onClick={() => setStage('cart')}>
+                  ← Back to cart
+                </button>
+                <ol className="ck-steps is-bar" aria-label="Checkout steps">
+                  <li className="is-done">
+                    <span className="ck-steps-dot" aria-hidden>
+                      ✓
+                    </span>
+                    Cart
+                  </li>
+                  <li className="is-on" aria-current="step">
+                    <span className="ck-steps-dot" aria-hidden>
+                      2
+                    </span>
+                    Details
+                  </li>
+                  <li>
+                    <span className="ck-steps-dot" aria-hidden>
+                      3
+                    </span>
+                    Payment
+                  </li>
+                </ol>
+              </div>
+
+              <section className="cart2-step cart2-recap" aria-labelledby="ck-items">
+                <h2 id="ck-items" className="cart2-step-title">
+                  <span className="cart2-step-copy">
+                    Your items
+                    <em>
+                      {itemCount} item{itemCount === 1 ? '' : 's'} · {money(goods)}
+                    </em>
+                  </span>
+                  <button type="button" className="cart2-recap-edit" onClick={() => setStage('cart')}>
+                    Edit
+                  </button>
+                </h2>
+                <ul className="cart2-recap-list">
+                  {rows.map(({ line, product }) => (
+                    <li key={product.id}>
+                      <img
+                        src={storeProductImage(product, 120)}
+                        alt=""
+                        loading="lazy"
+                        onError={(e) => {
+                          e.currentTarget.onerror = null
+                          e.currentTarget.src = storeProductFallback(product)
+                        }}
+                      />
+                      <div className="cart2-recap-copy">
+                        <strong>{storeProductHeadline(product)}</strong>
+                        <span>
+                          {[product.color, product.capacity].filter(Boolean).join(' · ') ||
+                            product.category}
+                          {' · '}
+                          Qty {line.qty}
+                        </span>
+                      </div>
+                      <span className="cart2-recap-price">{money(product.price * line.qty)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+
+              <section className="cart2-step" aria-labelledby="ck-contact">
+                <h2 id="ck-contact" className="cart2-step-title">
+                  <span className="cart2-step-num">1</span>
+                  <span className="cart2-step-copy">
+                    Contact
+                    <em>Where the receipt and updates go</em>
+                  </span>
+                </h2>
+                <div className="cart2-fields is-contact">
+                  <label className="field">
+                    <span>Email</span>
+                    <input
+                      type="email"
+                      required
+                      value={email}
+                      autoComplete="email"
+                      inputMode="email"
+                      onChange={(e) => setEmail(e.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Full name</span>
+                    <input
+                      required
+                      value={name}
+                      autoComplete="name"
+                      onChange={(e) => setName(e.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Phone (optional)</span>
+                    <input
+                      value={phone}
+                      autoComplete="tel"
+                      inputMode="tel"
+                      onChange={(e) => setPhone(e.target.value)}
+                    />
+                  </label>
+                </div>
+              </section>
+
+              <section className="cart2-step" aria-labelledby="ck-delivery">
+                <h2 id="ck-delivery" className="cart2-step-title">
+                  <span className="cart2-step-num">2</span>
+                  <span className="cart2-step-copy">
+                    Delivery
+                    <em>How you want to receive it</em>
+                  </span>
+                </h2>
+                <div className="cart2-fulfill" role="radiogroup" aria-label="Fulfillment">
+                  {modes.map((m) => (
+                    <label key={m} className={mode === m ? 'on' : undefined}>
+                      <input
+                        type="radio"
+                        name="fulfillment"
+                        checked={mode === m}
+                        onChange={() => setMode(m)}
+                      />
+                      <span>
+                        {m === 'delivery' ? 'Ship' : m === 'pickup' ? 'Pickup' : 'Courier'}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+
+                <div className="cart2-fulfill-panel">
+                  {mode === 'delivery' ? (
+                    <>
+                      <p className="cart2-fulfill-hint">{PAYER_SHORT(cfg)}</p>
+                      <label className="field">
+                        <span>Shipping address</span>
+                        <textarea
+                          required
+                          rows={2}
+                          value={address}
+                          autoComplete="street-address"
+                          onChange={(e) => setAddress(e.target.value)}
+                          placeholder="Street, city, postal code, country"
+                        />
+                      </label>
+                    </>
+                  ) : null}
+
+                  {mode === 'pickup' ? (
+                    <>
+                      <div className="cart2-fields">
+                        <label className="field">
+                          <span>Pickup date</span>
+                          <input
+                            type="date"
+                            required
+                            min={earliestPickupDate(cfg)}
+                            value={pickupDate}
+                            onChange={(e) => setPickupDate(e.target.value)}
+                          />
+                        </label>
+                        <label className="field">
+                          <span>Time window</span>
+                          <select
+                            required
+                            value={pickupSlot}
+                            onChange={(e) => setPickupSlot(e.target.value)}
+                          >
+                            {(cfg.pickupSlots || []).map((s) => {
+                              const occ = slotOcc.find((o) => o.slot === s)
+                              const full = Boolean(occ?.full)
+                              const left = occ?.remaining != null ? ` · ${occ.remaining} left` : ''
+                              return (
+                                <option key={s} value={s} disabled={full}>
+                                  {s}
+                                  {full ? ' · full' : left}
+                                </option>
+                              )
+                            })}
+                          </select>
+                        </label>
+                      </div>
+                      <p className="cart2-fulfill-hint">
+                        {cfg.pickupLabel} — {cfg.pickupHours}. Staff confirms when ready.
+                      </p>
+                    </>
+                  ) : null}
+
+                  {mode === 'buyer_courier' ? (
+                    <>
+                      {cfg.courierHints ? (
+                        <p className="cart2-fulfill-hint">{cfg.courierHints}</p>
+                      ) : null}
+                      <div className="cart2-fields">
+                        <label className="field">
+                          <span>Courier</span>
+                          <select
+                            value={courierCarrier}
+                            onChange={(e) => setCourierCarrier(e.target.value)}
+                          >
+                            {['FedEx', 'UPS', 'DHL', 'Other'].map((c) => (
+                              <option key={c} value={c}>
+                                {c}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="field">
+                          <span>Your account # (optional)</span>
+                          <input
+                            value={courierAccount}
+                            onChange={(e) => setCourierAccount(e.target.value)}
+                            placeholder="Staff will confirm before collect"
+                          />
+                        </label>
+                      </div>
+                    </>
+                  ) : null}
+
+                  <label className="field cart2-fulfill-note">
+                    <span>Order note (optional)</span>
+                    <input
+                      value={note}
+                      autoComplete="off"
+                      maxLength={500}
+                      onChange={(e) => setNote(e.target.value)}
+                      placeholder="Delivery instructions, gift note…"
+                    />
+                  </label>
+                </div>
+              </section>
+
+              <section className="cart2-step" aria-labelledby="ck-pay">
+                <h2 id="ck-pay" className="cart2-step-title">
+                  <span className="cart2-step-num">3</span>
+                  <span className="cart2-step-copy">
+                    Payment
+                    <em>Choose how to pay</em>
+                  </span>
+                </h2>
+                <div className="cart2-pay" role="radiogroup" aria-label="Payment method">
+                  {(
+                    [
+                      ['card', 'Card'],
+                      ['paypal', 'PayPal'],
+                      ['bank', 'Bank'],
+                      ['usdt', 'USDT'],
+                      ['cash', 'Cash'],
+                    ] as const
+                  ).map(([id, label]) => (
+                    <label key={id} className={pay === id ? 'on' : undefined}>
+                      <input
+                        type="radio"
+                        name="pay"
+                        checked={pay === id}
+                        onChange={() => setPay(id)}
+                      />
+                      <span>{label}</span>
+                    </label>
+                  ))}
+                </div>
+                <p className="cart2-pay-hint">
+                  {
+                    (
+                      {
+                        card: 'Pay at checkout',
+                        paypal: 'Pay with PayPal',
+                        bank: 'Staff confirms bank transfer',
+                        usdt: 'Staff confirms crypto payment',
+                        cash: 'Pay on pickup / collect',
+                      } as const
+                    )[pay]
+                  }
+                </p>
+
+                {err ? (
+                  <p className="tiny imei-err" role="alert">
+                    {err}
+                  </p>
+                ) : null}
+                <button
+                  type="submit"
+                  className="btn btn-primary store-checkout-btn"
+                  disabled={busy}
+                >
+                  {busy
+                    ? 'Placing order…'
+                    : pay === 'bank' || pay === 'usdt' || pay === 'cash'
+                      ? `Place order · ${money(total)}`
+                      : `Pay with ${pay === 'paypal' ? 'PayPal' : 'card'} · ${money(total)}`}
+                </button>
+                <p className="muted tiny cart2-terms">
+                  By placing this order you accept the store terms and the trade-in inspection
+                  policy. Credit never exceeds your cart total.
+                </p>
+              </section>
+            </div>
+
+            {summary(false)}
+            <div className="ck-mobile-bar" role="region" aria-label="Order total">
+              <div>
+                <span className="muted tiny">
+                  {itemCount} item{itemCount === 1 ? '' : 's'}
+                  {!quote.quoted ? ' · shipping TBD' : ''}
+                </span>
+                <strong>{money(total)}</strong>
+              </div>
+              <button type="submit" className="btn btn-primary" disabled={busy}>
+                {busy ? 'Placing…' : 'Place order'}
+              </button>
+            </div>
+          </form>
         )}
         <StoreWholesaleHandoff />
       </div>

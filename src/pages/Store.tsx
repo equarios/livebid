@@ -299,18 +299,17 @@ export function Store() {
         <StoreRail
           page="store"
           title={storeName}
+          headline={storeName}
           count={loading ? '…' : filtered.length}
           note={
             q
               ? `Results for “${params.get('q')}”.`
-              : 'Browse fixed prices, add to cart, and check out here.'
+              : 'Browse fixed prices, add to cart, and check out here. Trade in your old phone toward the total.'
           }
           label={storeName}
+          hero
+          trust={['Fixed prices', 'Trade-in toward cart', 'Secure checkout']}
         />
-        <p className="muted tiny store-we-buy-note">
-          We buy used phones too —{' '}
-          <Link to="/store/trade-in">get a trade-in estimate</Link> toward your cart.
-        </p>
 
         {showFilters ? (
           <div className="filters filters-no-search store-origin-filters" ref={filtersRef}>
@@ -408,9 +407,18 @@ export function Store() {
                   ))}
                 </select>
               </label>
+              <Link to="/store/sold" className="store-sold-link">
+                Recently sold
+              </Link>
             </div>
           </div>
-        ) : null}
+        ) : (
+          <p className="store-sold-link-fallback">
+            <Link to="/store/sold" className="store-sold-link">
+              Recently sold
+            </Link>
+          </p>
+        )}
 
         {chips.length ? (
           <div className="store-filter-chips" aria-label="Active filters">
@@ -431,10 +439,6 @@ export function Store() {
             </button>
           </div>
         ) : null}
-
-        <p className="store-sold-link">
-          <Link to="/store/sold">Recently sold →</Link>
-        </p>
 
         {toast ? (
           <p className="tiny retail-toast shop-toast" role="status">

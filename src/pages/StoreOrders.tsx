@@ -269,33 +269,87 @@ function OrderCard({
           </ul>
           <div className="store-order-totals tiny">
             <span>Subtotal {usd(o.subtotal)}</span>
-            <span>Shipping {usd(o.shippingFee)}</span>
-            {(o.tradeInCredit || 0) > 0 ? (
+            {(o.discount || 0) > 0 ? (
               <span>
-                Trade-in −{usd(o.tradeInCredit || 0)}
-                {o.tradeIn ? ` · ${o.tradeIn.status.replace(/_/g, ' ')}` : ' · pending QC'}
-                {o.tradeIn?.label ? ` · ${o.tradeIn.label}` : ''}
-                {o.tradeIn?.imei ? ` · IMEI ${o.tradeIn.imei}` : ''}
+                Promo {o.promoCode ? `${o.promoCode} ` : ''}−{usd(o.discount || 0)}
               </span>
             ) : null}
-            {o.tradeIn?.images?.length ? (
-              <div className="store-order-trade-thumbs" aria-label="Trade-in photos">
-                {o.tradeIn.images.map((url) => (
-                  <a
-                    key={url}
-                    href={url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="store-order-trade-thumb"
-                  >
-                    <img src={url} alt="" />
-                  </a>
-                ))}
-              </div>
-            ) : null}
-            {o.tradeIn?.videoUrl ? (
-              <div className="store-order-trade-video">
-                <video src={o.tradeIn.videoUrl} controls playsInline preload="metadata" />
+            <span>Shipping {usd(o.shippingFee)}</span>
+            {(o.tax || 0) > 0 ? <span>Tax {usd(o.tax || 0)}</span> : null}
+            {o.tradeIn ? (
+              <div className="store-order-tradein">
+                <span>
+                  Trade-in{' '}
+                  {(o.tradeInCredit || 0) > 0
+                    ? `−${usd(o.tradeInCredit || 0)}`
+                    : o.tradeIn.finalCredit != null && o.tradeIn.finalCredit > 0
+                      ? `−${usd(o.tradeIn.finalCredit)}`
+                      : '(quote after inspection)'}
+                  {o.tradeIn.label ? ` · ${o.tradeIn.label}` : ''}
+                  {o.tradeIn.imei ? ` · IMEI ${o.tradeIn.imei}` : ''}
+                </span>
+                <ol className="store-order-tradein-steps" aria-label="Trade-in status">
+                  {(
+                    [
+                      ['pending_receive', 'Ship device'],
+                      ['received', 'Received'],
+                      ['accepted', 'Credit final'],
+                    ] as const
+                  ).map(([id, label]) => {
+                    const status = o.tradeIn!.status
+                    const rejected = status === 'rejected'
+                    const adjusted = status === 'adjusted'
+                    const order = ['pending_receive', 'received', 'accepted'] as const
+                    const cur =
+                      status === 'adjusted'
+                        ? 2
+                        : status === 'rejected'
+                          ? -1
+                          : Math.max(0, order.indexOf(status as (typeof order)[number]))
+                    const stepIx = order.indexOf(id)
+                    const done = !rejected && cur >= stepIx
+                    const current = !rejected && cur === stepIx
+                    return (
+                      <li
+                        key={id}
+                        className={`store-order-tradein-step${done ? ' is-done' : ''}${
+                          current ? ' is-current' : ''
+                        }${rejected && id === 'pending_receive' ? ' is-rejected' : ''}`}
+                      >
+                        {rejected && id === 'accepted'
+                          ? 'Not accepted'
+                          : adjusted && id === 'accepted'
+                            ? 'Credit adjusted'
+                            : label}
+                      </li>
+                    )
+                  })}
+                </ol>
+                <p className="muted tiny">
+                  Status: {o.tradeIn.status.replace(/_/g, ' ')}
+                  {o.tradeIn.staffNote ? ` · ${o.tradeIn.staffNote}` : ''}
+                  {' · '}Check your email for ship-in / QC updates.
+                </p>
+                {o.tradeIn.images?.length ? (
+                  <div className="store-order-trade-thumbs" aria-label="Trade-in photos">
+                    {o.tradeIn.images.map((url) => (
+                      <a
+                        key={url}
+                        href={url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="store-order-trade-thumb"
+                      >
+                        <img src={url} alt="" />
+                      </a>
+                    ))}
+                  </div>
+                ) : null}
+                {o.tradeIn.videoUrl ? (
+                  <div className="store-order-trade-video">
+                    <video src={o.tradeIn.videoUrl} controls playsInline preload="metadata" />
+                  </div>
+                ) : null}
               </div>
             ) : null}
             <strong>Total {usd(o.total)}</strong>
@@ -303,6 +357,12 @@ function OrderCard({
           <div className="store-order-again">
             <Link to="/store" className="btn btn-ghost btn-sm">
               Buy again
+            </Link>
+            <Link
+              to={`/support?order=${encodeURIComponent(o.id)}#enquiry`}
+              className="linkish tiny store-order-help"
+            >
+              Need help with this order?
             </Link>
           </div>
         </div>
@@ -382,9 +442,12 @@ export function StoreOrders() {
         <StoreRail
           page="orders"
           title="Orders"
-          count={count}
-          note="Track your store orders, payments, and delivery."
+          headline="Your orders"
+          count={count != null && count !== '' && count !== 0 ? count : null}
+          note="Track payments, delivery, and trade-in status in one place."
           label={storeName}
+          hero
+          trust={['Payment & shipping updates', 'Trade-in QC status', 'Reorder anytime']}
         />
 
         {placed ? (
@@ -409,7 +472,7 @@ export function StoreOrders() {
         ) : null}
 
         {!user ? (
-          <form className="store-order-lookup" onSubmit={(e) => void onLookup(e)}>
+          <form className="store-order-lookup store-order-lookup-panel" onSubmit={(e) => void onLookup(e)}>
             <h3>Find your order</h3>
             <p className="muted tiny">
               Enter the order id and the email used at checkout. Or{' '}
@@ -456,11 +519,17 @@ export function StoreOrders() {
         ) : user && err ? (
           <p className="tiny imei-err">{err}</p>
         ) : user && !orders.length ? (
-          <div className="mh-empty shop-empty">
-            <p>No retail orders yet.</p>
-            <Link to="/store" className="btn btn-primary btn-sm">
-              Continue shopping
-            </Link>
+          <div className="store-page-empty">
+            <p className="store-page-empty-title">No orders yet</p>
+            <p className="muted">When you check out, your receipts and trade-ins show up here.</p>
+            <div className="store-page-empty-actions">
+              <Link to="/store" className="btn btn-primary">
+                Continue shopping
+              </Link>
+              <Link to="/store/trade-in" className="btn btn-ghost">
+                Start a trade-in
+              </Link>
+            </div>
           </div>
         ) : list.length ? (
           <div className="store-orders-list">

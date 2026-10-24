@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { originLabel } from '../lib/auctionLists'
 import { lotItemSub } from '../lib/itemLine'
 import { api, type StoreProductDto } from '../lib/api'
 import { storeProductBrand, storeProductHeadline } from '../lib/storeBrand'
 import { storeNeedsBuyAck } from '../lib/storeCondition'
 import { addToStoreCart } from '../lib/storeCart'
+import { pushToast } from '../lib/toast'
 import { storeAddedToCart, storeNeedsAckWarn } from '../lib/storeFeedback'
 import { useStoreFx } from '../lib/storeFx'
 import { pickSimilarStoreProducts } from '../lib/stockFilter'
@@ -114,23 +115,29 @@ export function StoreProductPreview({ product, onClose, onOpenProduct }: Props) 
           />
         ) : null}
 
-        <dl className="specs">
-          {brand ? (
+        <dl className="specs store-spec-list">
+          {product.grade ? (
             <div>
-              <dt>Brand</dt>
-              <dd>{brand}</dd>
+              <dt>Grade</dt>
+              <dd className={`grade-${product.grade}`}>{product.grade}</dd>
             </div>
           ) : null}
+          {battery > 0 ? (
+            <div>
+              <dt>Battery</dt>
+              <dd>
+                <BatteryMark value={battery} size={22} />
+              </dd>
+            </div>
+          ) : null}
+          <div>
+            <dt>Origin</dt>
+            <dd>{originLabel(product.origin)}</dd>
+          </div>
           {product.modelNumber ? (
             <div>
               <dt>Model #</dt>
               <dd>{product.modelNumber}</dd>
-            </div>
-          ) : null}
-          {product.capacity ? (
-            <div>
-              <dt>Capacity</dt>
-              <dd>{product.capacity}</dd>
             </div>
           ) : null}
           {product.color ? (
@@ -139,22 +146,16 @@ export function StoreProductPreview({ product, onClose, onOpenProduct }: Props) 
               <dd>{product.color}</dd>
             </div>
           ) : null}
-          {product.grade ? (
+          {product.capacity ? (
             <div>
-              <dt>Grade</dt>
-              <dd>Grade {product.grade}</dd>
+              <dt>Capacity</dt>
+              <dd>{product.capacity}</dd>
             </div>
           ) : null}
-          <div>
-            <dt>Origin</dt>
-            <dd>{originLabel(product.origin)}</dd>
-          </div>
-          {battery > 0 ? (
+          {brand ? (
             <div>
-              <dt>Battery</dt>
-              <dd>
-                <BatteryMark value={battery} size={22} />
-              </dd>
+              <dt>Brand</dt>
+              <dd>{brand}</dd>
             </div>
           ) : null}
           <div>
@@ -172,18 +173,6 @@ export function StoreProductPreview({ product, onClose, onOpenProduct }: Props) 
         <p>{product.description || 'Retail unit. Inspected and ready to ship.'}</p>
 
         <div className="store-preview-buy">
-          <label className="field">
-            <span>Qty</span>
-            <input
-              type="number"
-              className="retail-qty"
-              min={1}
-              max={Math.max(1, product.stock)}
-              value={qty}
-              disabled={soldOut}
-              onChange={(e) => setQty(Math.max(1, Number(e.target.value) || 1))}
-            />
-          </label>
           {needsAck && !soldOut ? (
             <StoreConditionAck
               product={product}
@@ -193,6 +182,18 @@ export function StoreProductPreview({ product, onClose, onOpenProduct }: Props) 
             />
           ) : null}
           <div className="store-buy-actions">
+            <label className="field store-buy-qty">
+              <span>Qty</span>
+              <input
+                type="number"
+                className="retail-qty"
+                min={1}
+                max={Math.max(1, product.stock)}
+                value={qty}
+                disabled={soldOut}
+                onChange={(e) => setQty(Math.max(1, Number(e.target.value) || 1))}
+              />
+            </label>
             <button
               type="button"
               className="btn btn-primary store-buy-primary"
@@ -203,7 +204,11 @@ export function StoreProductPreview({ product, onClose, onOpenProduct }: Props) 
                   setAckNudge((n) => n + 1)
                   return
                 }
-                addToStoreCart(product.id, qty)
+                const landed = addToStoreCart(product.id, qty, product.stock)
+                if (!landed) {
+                  pushToast('This item is out of stock.')
+                  return
+                }
                 storeAddedToCart(product.title, qty)
                 onClose()
               }}
@@ -215,7 +220,7 @@ export function StoreProductPreview({ product, onClose, onOpenProduct }: Props) 
               className="btn btn-ghost store-buy-secondary"
               onClick={onClose}
             >
-              View details
+              Full page
             </Link>
           </div>
         </div>
@@ -251,6 +256,7 @@ function SimilarStoreProducts({
   onClose: () => void
 }) {
   const { money } = useStoreFx()
+  const navigate = useNavigate()
   const [rows, setRows] = useState<StoreProductDto[]>([])
 
   useEffect(() => {
@@ -259,7 +265,7 @@ function SimilarStoreProducts({
       .storeProducts()
       .then((res) => {
         if (gone) return
-        setRows(pickSimilarStoreProducts(product, res.products, 4))
+        setRows(pickSimilarStoreProducts(product, res.products, 12))
       })
       .catch(() => {
         if (!gone) setRows([])
@@ -277,44 +283,40 @@ function SimilarStoreProducts({
       <div className="store-similar-tiles" role="list">
         {rows.map((row) => {
           const label = storeProductHeadline(row)
-          const body = (
-            <>
-              <img
-                src={storeProductImage(row)}
-                alt=""
-                loading="lazy"
-                onError={(e) => {
-                  e.currentTarget.onerror = null
-                  e.currentTarget.src = storeProductFallback(row)
-                }}
-              />
-              <span className="store-similar-tile-name">{label}</span>
-              <span className="store-similar-tile-price">{money(row.price)}</span>
-            </>
-          )
-          if (onOpen) {
-            return (
-              <button
-                key={row.id}
-                type="button"
-                className="store-similar-tile"
-                role="listitem"
-                onClick={() => onOpen(row)}
-              >
-                {body}
-              </button>
-            )
+          const openQuick = () => {
+            if (onOpen) {
+              onOpen(row)
+              return
+            }
+            onClose()
+            navigate(`/store/p/${row.slug}`)
           }
           return (
-            <Link
+            <button
               key={row.id}
-              to={`/store/p/${row.slug}`}
+              type="button"
               className="store-similar-tile"
               role="listitem"
-              onClick={onClose}
+              aria-label={`Quick view ${label}`}
+              onClick={openQuick}
             >
-              {body}
-            </Link>
+              <span className="store-similar-tile-media">
+                <img
+                  src={storeProductImage(row)}
+                  alt=""
+                  loading="lazy"
+                  onError={(e) => {
+                    e.currentTarget.onerror = null
+                    e.currentTarget.src = storeProductFallback(row)
+                  }}
+                />
+                <span className="quick-view-hint" aria-hidden>
+                  Quick view
+                </span>
+              </span>
+              <span className="store-similar-tile-name">{label}</span>
+              <span className="store-similar-tile-price">{money(row.price)}</span>
+            </button>
           )
         })}
       </div>
