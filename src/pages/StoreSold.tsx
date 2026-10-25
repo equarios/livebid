@@ -60,9 +60,12 @@ export function StoreSold() {
         <StoreRail
           page="sold"
           title="Recently sold"
+          headline="Recently sold"
           count={loading ? '…' : cards.length}
-          note="Left the shop after 14 days. Kept here for 180 days. Not for sale."
+          note="Left the shop after 14 days. Kept here for 180 days — browse only, not for sale."
           label={storeName}
+          hero
+          trust={['Archive only', 'Kept 180 days', `Back to ${storeName}`]}
         />
         {toast ? (
           <p className="tiny retail-toast shop-toast" role="status">
@@ -73,13 +76,14 @@ export function StoreSold() {
         {loading && !products.length ? (
           <StoreCatalogSkeleton />
         ) : cards.length ? (
-          <div className="store-lot-grid" aria-label="Recently sold products">
+          <div className="store-lot-grid store-archive-grid" aria-label="Recently sold products">
             {cards.map((p, i) => (
               <StoreProductCard
                 key={p.id}
                 product={p}
                 index={i}
                 catalog={products}
+                archive
                 onOpen={setPreview}
               />
             ))}

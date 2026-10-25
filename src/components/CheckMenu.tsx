@@ -40,6 +40,8 @@ export function CheckMenu<T extends string>({
   selected,
   onToggle,
   labelFor,
+  /** When false, selection does not paint the trigger as active (e.g. stock default). */
+  highlight,
 }: {
   title: string
   open: boolean
@@ -48,12 +50,14 @@ export function CheckMenu<T extends string>({
   selected: T[]
   onToggle: (value: T) => void
   labelFor?: (value: T) => string
+  highlight?: boolean
 }) {
   const triggerRef = useRef<HTMLButtonElement>(null)
   const summary = selected.length
     ? selected.map((v) => (labelFor ? labelFor(v) : v)).join(', ')
     : 'All'
-  const active = open || selected.length > 0
+  const marked = highlight ?? selected.length > 0
+  const active = open || marked
 
   return (
     <div className={`filter-menu ${open ? 'open' : ''}`}>
@@ -66,7 +70,7 @@ export function CheckMenu<T extends string>({
       >
         <span className="filter-trigger-title">{title}</span>
         <span className="filter-trigger-value">{summary}</span>
-        {selected.length ? <em>{selected.length}</em> : null}
+        {marked && selected.length ? <em>{selected.length}</em> : null}
       </button>
       <FilterPanel open={open} anchorRef={triggerRef}>
         {options.map((value) => (
@@ -77,6 +81,60 @@ export function CheckMenu<T extends string>({
               onChange={() => onToggle(value)}
             />
             <span>{labelFor ? labelFor(value) : value}</span>
+          </label>
+        ))}
+      </FilterPanel>
+    </div>
+  )
+}
+
+/** Single-select filter/sort menu; closes after a pick via onChange. */
+export function ChoiceMenu<T extends string>({
+  title,
+  open,
+  onOpen,
+  options,
+  value,
+  onChange,
+  labelFor,
+  defaultValue,
+}: {
+  title: string
+  open: boolean
+  onOpen: () => void
+  options: T[]
+  value: T
+  onChange: (value: T) => void
+  labelFor?: (value: T) => string
+  defaultValue?: T
+}) {
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const summary = labelFor ? labelFor(value) : value
+  const marked = defaultValue !== undefined ? value !== defaultValue : false
+  const active = open || marked
+
+  return (
+    <div className={`filter-menu ${open ? 'open' : ''}`}>
+      <button
+        ref={triggerRef}
+        type="button"
+        className={`filter-trigger${active ? ' is-active' : ''}`}
+        onClick={onOpen}
+        aria-expanded={open}
+      >
+        <span className="filter-trigger-title">{title}</span>
+        <span className="filter-trigger-value">{summary}</span>
+      </button>
+      <FilterPanel open={open} anchorRef={triggerRef} role="listbox" aria-label={title}>
+        {options.map((opt) => (
+          <label key={opt} className="filter-check">
+            <input
+              type="radio"
+              name={`choice-${title}`}
+              checked={value === opt}
+              onChange={() => onChange(opt)}
+            />
+            <span>{labelFor ? labelFor(opt) : opt}</span>
           </label>
         ))}
       </FilterPanel>

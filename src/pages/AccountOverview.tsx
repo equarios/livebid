@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom'
+import { MyPageHead } from '../components/MyPageHead'
 import { WholesaleDeskPulseBar } from '../components/WholesaleDeskPulseBar'
 import { WholesaleOnboardChecklist } from '../components/WholesaleOnboardChecklist'
 import { WholesaleStatusCard } from '../components/WholesaleStatusCard'
@@ -171,20 +172,32 @@ export function AccountOverview() {
 
   return (
     <div className="ops-today account-overview mypage-overview">
-      {!wholesaleOk ? <WholesaleStatusCard /> : <WholesaleDeskPulseBar hideWhenEmpty />}
-      {wholesaleOk ? <WholesaleOnboardChecklist /> : null}
-      <header className="ops-today-head">
-        <h2>Today</h2>
-        <p className="muted tiny">
-          Hi, {displayName}
-          {user.company ? ` · ${user.company}` : ''}
-          {waiting.length
-            ? ` · ${waiting.length} queue${waiting.length === 1 ? '' : 's'} need attention.`
+      {!wholesaleOk ? (
+        <WholesaleStatusCard />
+      ) : (
+        <div className="wholesale-desk-strips">
+          <WholesaleDeskPulseBar hideWhenEmpty />
+          <WholesaleOnboardChecklist />
+        </div>
+      )}
+      <MyPageHead
+        title="Today"
+        count={waiting.length || undefined}
+        note={
+          waiting.length
+            ? `Hi, ${displayName}${user.company ? ` · ${user.company}` : ''} · ${waiting.length} queue${
+                waiting.length === 1 ? '' : 's'
+              } need attention.`
             : wholesaleOk
-              ? ' · Nothing waiting — open Bids, Marketplace, or Invoice from the bar above.'
-              : ` · Wholesale: ${WS_LABEL[ws] || ws}. Continue from the status card above.`}
-        </p>
-      </header>
+              ? `Hi, ${displayName}${user.company ? ` · ${user.company}` : ''} · Nothing waiting — open Bids, Cart, or Invoice from the bar above.`
+              : `Hi, ${displayName}${user.company ? ` · ${user.company}` : ''} · Wholesale: ${WS_LABEL[ws] || ws}. Continue from the status card above.`
+        }
+        trust={[
+          { to: '/account/bids', label: 'Bids' },
+          { to: '/account/marketplace-history', label: 'Cart' },
+          { to: '/account/invoices', label: 'Invoice' },
+        ]}
+      />
       <div className="ops-today-grid mypage-overview-grid">
         {cards.map((card) => (
           <button

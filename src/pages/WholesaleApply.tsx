@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
-import { WholesaleStatusCard } from '../components/WholesaleStatusCard'
+import { WholesaleStatusCard, WholesaleStatusHero } from '../components/WholesaleStatusCard'
 import { api } from '../lib/api'
 import { canUseWholesaleDesk } from '../lib/channelAccess'
 import { useStore } from '../store'
@@ -88,24 +88,10 @@ export function WholesaleApply() {
   if (canUseWholesaleDesk(user, isStaff) || wholesaleStatus === 'approved') {
     return (
       <div className="wholesale-apply">
-        <section className="wholesale-status-card is-approved" aria-label="Wholesale approved">
-          <div className="wholesale-status-card-copy">
-            <span className="wholesale-status-card-pill">approved</span>
-            <h2>Wholesale approved</h2>
-            <p className="muted">Your desk is active — bid, buy marketplace, and pay invoices.</p>
-          </div>
-          <div className="wholesale-status-card-actions">
-            <Link className="btn btn-primary" to="/wholesale">
-              Open wholesale hub
-            </Link>
-            <Link className="btn" to="/auctions">
-              Auctions
-            </Link>
-            <Link className="btn" to="/marketplace">
-              Marketplace
-            </Link>
-          </div>
-        </section>
+        <WholesaleStatusHero
+          status="approved"
+          extraTrust={[{ to: '/marketplace', label: 'Marketplace' }]}
+        />
       </div>
     )
   }
@@ -163,10 +149,11 @@ export function WholesaleApply() {
     wholesaleStatus === 'rejected' ||
     locked
   ) {
+    const heroStatus: WholesaleStatus =
+      wholesaleStatus === 'none' && locked ? 'under_review' : wholesaleStatus
     return (
       <div className="wholesale-apply">
-        <WholesaleStatusCard />
-        {staffNote ? <p className="muted tiny">Staff note: {staffNote}</p> : null}
+        <WholesaleStatusHero status={heroStatus} staffNote={staffNote || undefined} />
       </div>
     )
   }
@@ -174,164 +161,211 @@ export function WholesaleApply() {
   return (
     <div className="wholesale-apply">
       <WholesaleStatusCard />
-      <p className="muted tiny mypage-intro">
-        Company, tax/resale, and how you buy. Staff may request documents after you submit.
-      </p>
 
-      <ol className="wholesale-steps">
-        {STEPS.map((s, i) => (
-          <li key={s.id} className={i === step ? 'is-current' : i < step ? 'is-done' : ''}>
-            {s.title}
-          </li>
-        ))}
-      </ol>
-
-      <form className="wholesale-form" onSubmit={onNext}>
-          {step === 0 ? (
-            <>
-              <label>
-                Legal company name
-                <input value={payload.companyLegal} onChange={(e) => setField('companyLegal', e.target.value)} required />
-              </label>
-              <label>
-                DBA / trading as
-                <input value={payload.dba} onChange={(e) => setField('dba', e.target.value)} />
-              </label>
-              <label>
-                Business type
-                <select value={payload.businessType} onChange={(e) => setField('businessType', e.target.value)} required>
-                  <option value="">Select…</option>
-                  <option>Reseller / Refurbisher</option>
-                  <option>Retailer</option>
-                  <option>Distributor</option>
-                  <option>Exporter</option>
-                  <option>Other</option>
-                </select>
-              </label>
-              <label>
-                Website
-                <input value={payload.website} onChange={(e) => setField('website', e.target.value)} />
-              </label>
-              <label>
-                Years in business
-                <input value={payload.yearsInBusiness} onChange={(e) => setField('yearsInBusiness', e.target.value)} />
-              </label>
-            </>
-          ) : null}
-
-          {step === 1 ? (
-            <>
-              <label>
-                Primary contact
-                <input value={payload.contactName} onChange={(e) => setField('contactName', e.target.value)} required />
-              </label>
-              <label>
-                Title
-                <input value={payload.contactTitle} onChange={(e) => setField('contactTitle', e.target.value)} />
-              </label>
-              <label>
-                Phone
-                <input value={payload.phone} onChange={(e) => setField('phone', e.target.value)} required />
-              </label>
-              <label>
-                Billing email
-                <input
-                  type="email"
-                  value={payload.billingEmail}
-                  onChange={(e) => setField('billingEmail', e.target.value)}
-                  required
-                />
-              </label>
-              <label>
-                Shipping / warehouse address
-                <textarea
-                  rows={3}
-                  value={payload.shippingAddress}
-                  onChange={(e) => setField('shippingAddress', e.target.value)}
-                  required
-                />
-              </label>
-            </>
-          ) : null}
-
-          {step === 2 ? (
-            <>
-              <label>
-                Tax ID / EIN / VAT
-                <input value={payload.taxId} onChange={(e) => setField('taxId', e.target.value)} required />
-              </label>
-              <label>
-                Resale certificate #
-                <input value={payload.resaleCert} onChange={(e) => setField('resaleCert', e.target.value)} />
-              </label>
-              <label>
-                State / country of incorporation
-                <input value={payload.stateOfIncorp} onChange={(e) => setField('stateOfIncorp', e.target.value)} />
-              </label>
-              <p className="muted tiny">
-                Upload PDF scans of tax / resale docs on the{' '}
-                <Link to="/account/documents">Documents</Link> tab after submit.
-              </p>
-            </>
-          ) : null}
-
-          {step === 3 ? (
-            <>
-              <label>
-                Estimated monthly purchase volume (USD)
-                <input value={payload.monthlyVolume} onChange={(e) => setField('monthlyVolume', e.target.value)} />
-              </label>
-              <label>
-                Categories of interest
-                <input
-                  value={payload.categories}
-                  onChange={(e) => setField('categories', e.target.value)}
-                  placeholder="Phones, tablets, wearables…"
-                />
-              </label>
-              <label>
-                How did you hear about Equarios?
-                <input value={payload.howHeard} onChange={(e) => setField('howHeard', e.target.value)} />
-              </label>
-              <label>
-                Notes for staff
-                <textarea rows={3} value={payload.notes} onChange={(e) => setField('notes', e.target.value)} />
-              </label>
-            </>
-          ) : null}
-
-          {step === 4 ? (
-            <div className="account-panel">
-              <h3>Review</h3>
-              <dl className="wholesale-review">
-                {Object.entries(payload)
-                  .filter(([, v]) => v)
-                  .map(([k, v]) => (
-                    <div key={k}>
-                      <dt>{k}</dt>
-                      <dd>{v}</dd>
-                    </div>
-                  ))}
-              </dl>
-              <p className="muted tiny">Submitting notifies staff. You can still upload documents afterward.</p>
-            </div>
-          ) : null}
-
-          {error ? <p className="error">{error}</p> : null}
-          <div className="wholesale-form-actions">
-            {step > 0 ? (
-              <button type="button" className="btn" onClick={() => setStep((s) => s - 1)} disabled={saving}>
-                Back
+      <nav className="wholesale-apply-steps" aria-label="Application steps">
+        <h2 className="wholesale-apply-steps-label">Application</h2>
+        <p className="muted tiny wholesale-apply-hint">
+          Company, tax/resale, and how you buy. Staff may request documents after you submit.
+        </p>
+        <ol className="ck-steps is-bar ti-steps wholesale-apply-progress" aria-label="Progress">
+          {STEPS.map((s, i) => (
+            <li
+              key={s.id}
+              className={`${i === step ? 'is-on' : ''}${i < step ? ' is-done' : ''}`.trim()}
+            >
+              <button
+                type="button"
+                className="wholesale-apply-step-btn"
+                aria-current={i === step ? 'step' : undefined}
+                onClick={() => setStep(i)}
+              >
+                <span className="ck-steps-dot" aria-hidden>
+                  {i < step ? '✓' : i + 1}
+                </span>
+                {s.title}
               </button>
-            ) : null}
-            <button type="button" className="btn" disabled={saving} onClick={() => void save(false)}>
-              Save draft
-            </button>
-            <button className="btn btn-primary" type="submit" disabled={saving}>
-              {step === STEPS.length - 1 ? 'Submit application' : 'Continue'}
-            </button>
+            </li>
+          ))}
+        </ol>
+      </nav>
+
+      <form className="wholesale-form help-panel" onSubmit={onNext}>
+        <h2 className="wholesale-form-step-title">{STEPS[step].title}</h2>
+        {step === 0 ? (
+          <>
+            <label>
+              Legal company name
+              <input
+                value={payload.companyLegal}
+                onChange={(e) => setField('companyLegal', e.target.value)}
+                required
+              />
+            </label>
+            <label>
+              DBA / trading as
+              <input value={payload.dba} onChange={(e) => setField('dba', e.target.value)} />
+            </label>
+            <label>
+              Business type
+              <select
+                value={payload.businessType}
+                onChange={(e) => setField('businessType', e.target.value)}
+                required
+              >
+                <option value="">Select…</option>
+                <option>Reseller / Refurbisher</option>
+                <option>Retailer</option>
+                <option>Distributor</option>
+                <option>Exporter</option>
+                <option>Other</option>
+              </select>
+            </label>
+            <label>
+              Website
+              <input value={payload.website} onChange={(e) => setField('website', e.target.value)} />
+            </label>
+            <label>
+              Years in business
+              <input
+                value={payload.yearsInBusiness}
+                onChange={(e) => setField('yearsInBusiness', e.target.value)}
+              />
+            </label>
+          </>
+        ) : null}
+
+        {step === 1 ? (
+          <>
+            <label>
+              Primary contact
+              <input
+                value={payload.contactName}
+                onChange={(e) => setField('contactName', e.target.value)}
+                required
+              />
+            </label>
+            <label>
+              Title
+              <input value={payload.contactTitle} onChange={(e) => setField('contactTitle', e.target.value)} />
+            </label>
+            <label>
+              Phone
+              <input value={payload.phone} onChange={(e) => setField('phone', e.target.value)} required />
+            </label>
+            <label>
+              Billing email
+              <input
+                type="email"
+                value={payload.billingEmail}
+                onChange={(e) => setField('billingEmail', e.target.value)}
+                required
+              />
+            </label>
+            <label>
+              Shipping / warehouse address
+              <textarea
+                rows={3}
+                value={payload.shippingAddress}
+                onChange={(e) => setField('shippingAddress', e.target.value)}
+                required
+              />
+            </label>
+          </>
+        ) : null}
+
+        {step === 2 ? (
+          <>
+            <label>
+              Tax ID / EIN / VAT
+              <input value={payload.taxId} onChange={(e) => setField('taxId', e.target.value)} required />
+            </label>
+            <label>
+              Resale certificate #
+              <input value={payload.resaleCert} onChange={(e) => setField('resaleCert', e.target.value)} />
+            </label>
+            <label>
+              State / country of incorporation
+              <input value={payload.stateOfIncorp} onChange={(e) => setField('stateOfIncorp', e.target.value)} />
+            </label>
+            <p className="muted tiny">
+              Upload PDF scans of tax / resale docs on the{' '}
+              <Link to="/account/documents">Documents</Link> tab after submit.
+            </p>
+          </>
+        ) : null}
+
+        {step === 3 ? (
+          <>
+            <label>
+              Estimated monthly purchase volume (USD)
+              <input value={payload.monthlyVolume} onChange={(e) => setField('monthlyVolume', e.target.value)} />
+            </label>
+            <label>
+              Categories of interest
+              <input
+                value={payload.categories}
+                onChange={(e) => setField('categories', e.target.value)}
+                placeholder="Phones, tablets, wearables…"
+              />
+            </label>
+            <label>
+              How did you hear about Equarios?
+              <input value={payload.howHeard} onChange={(e) => setField('howHeard', e.target.value)} />
+            </label>
+            <label>
+              Notes for staff
+              <textarea rows={3} value={payload.notes} onChange={(e) => setField('notes', e.target.value)} />
+            </label>
+          </>
+        ) : null}
+
+        {step === 4 ? (
+          <div className="wholesale-review-block">
+            <dl className="wholesale-review">
+              {Object.entries(payload)
+                .filter(([, v]) => v)
+                .map(([k, v]) => (
+                  <div key={k}>
+                    <dt>{k}</dt>
+                    <dd>{v}</dd>
+                  </div>
+                ))}
+            </dl>
+            <p className="muted tiny">Submitting notifies staff. You can still upload documents afterward.</p>
           </div>
-        </form>
+        ) : null}
+
+        {error ? <p className="error">{error}</p> : null}
+        <div className="ti-bar wholesale-apply-bar">
+          <div className="ti-bar-estimate">
+            <span className="muted tiny">Step</span>
+            <strong>
+              {step + 1} of {STEPS.length}
+            </strong>
+          </div>
+          {step > 0 ? (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => setStep((s) => s - 1)}
+              disabled={saving}
+            >
+              Back
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            disabled={saving}
+            onClick={() => void save(false)}
+          >
+            Save draft
+          </button>
+          <button className="btn btn-primary" type="submit" disabled={saving}>
+            {step === STEPS.length - 1 ? 'Submit application' : 'Continue'}
+          </button>
+        </div>
+      </form>
     </div>
   )
 }

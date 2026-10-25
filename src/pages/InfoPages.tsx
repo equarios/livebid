@@ -7,8 +7,9 @@ export function DeviceSpec() {
       title="Device spec"
       lead="Grade, battery, SIM, and activation notes used on lots."
     >
-      <div className="card account-card">
-        <dl className="specs">
+      <section className="help-panel">
+        <h2>Grades</h2>
+        <dl className="help-grade-list">
           <div>
             <dt>S</dt>
             <dd>Like new / open box</dd>
@@ -26,7 +27,7 @@ export function DeviceSpec() {
             <dd>Heavy wear or housing damage</dd>
           </div>
         </dl>
-      </div>
+      </section>
     </HelpLayout>
   )
 }
@@ -38,7 +39,7 @@ export function InfoPage() {
       title="Info"
       lead="How fills, invoices, and dual payment approval work."
     >
-      <div className="card account-card">
+      <section className="help-panel">
         <p>
           Bids fill from the last bid per account, highest price first. You only see your own
           allocated pcs.
@@ -47,7 +48,7 @@ export function InfoPage() {
           Marketplace checkout creates unpaid invoices. Mark paid and upload a receipt. Admin and
           super admin both accept before it is paid.
         </p>
-      </div>
+      </section>
     </HelpLayout>
   )
 }
@@ -59,8 +60,8 @@ export function Tutorial() {
       title="How it works"
       lead="Quick path for a wholesale buyer."
     >
-      <div className="card account-card">
-        <ol>
+      <section className="help-panel">
+        <ol className="help-steps">
           <li>Open Auction, set qty and price, confirm bid.</li>
           <li>
             Live Auctions: watch fill and winning in Winning Status. Offline Auctions hide win/lose
@@ -70,7 +71,7 @@ export function Tutorial() {
           <li>My Page → Invoice: pay and upload receipt.</li>
           <li>Bid History shows Won / Partially Won / Lost after you bid.</li>
         </ol>
-      </div>
+      </section>
     </HelpLayout>
   )
 }

@@ -15,6 +15,7 @@ import { resolveDeskBannerSlides } from '../lib/deskBanner'
 import {
   capacityOptions,
   CheckMenu,
+  ChoiceMenu,
   makerOptions,
   originFilterOptions,
   toggleValue,
@@ -31,12 +32,28 @@ import {
   originLabel,
   type AuctionListKind,
 } from '../lib/auctionLists'
+import { CatalogPager } from '../components/CatalogPager'
+import {
+  CATALOG_PAGE_SIZE_DEFAULT,
+  CATALOG_PAGE_SIZE_IDS,
+  readCatalogPageSize,
+  slicePage,
+  writeCatalogPageSize,
+  type CatalogPageSize,
+} from '../lib/catalogPaging'
 import { usd } from '../lib/format'
+import {
+  STORE_CONDITION_LABEL,
+  STORE_CONDITION_OPTIONS,
+  matchesStoreCondition,
+  type StoreConditionFilter,
+} from '../lib/storeCondition'
 import { useNow, useStore } from '../store'
 import type { Grade, SiteSettings } from '../types'
 import { TimeLeft } from '../components/TimeLeft'
 
 const COACH_KEY = 'equarios-bid-coach-dismissed'
+const AUCTION_PAGE_SIZE_KEY = 'equarios.auctions.pageSize'
 
 function filtersFromHash(hash: string, settings: SiteSettings): AuctionListKind[] {
   const kind = hash.replace(/^#/, '') || 'all'
@@ -69,9 +86,15 @@ function AuctionList() {
   const [makers, setMakers] = useState<string[]>([])
   const [memories, setMemories] = useState<string[]>([])
   const [origins, setOrigins] = useState<string[]>([])
-  const [open, setOpen] = useState<'type' | 'maker' | 'grade' | 'memory' | 'origin' | 'csv' | null>(
-    null,
+  /** Empty = All conditions (auctions default). */
+  const [conditions, setConditions] = useState<StoreConditionFilter[]>([])
+  const [pageSize, setPageSize] = useState<CatalogPageSize>(() =>
+    readCatalogPageSize(AUCTION_PAGE_SIZE_KEY),
   )
+  const [groupPages, setGroupPages] = useState<Record<string, number>>({})
+  const [open, setOpen] = useState<
+    'type' | 'maker' | 'grade' | 'memory' | 'origin' | 'csv' | 'condition' | 'pageSize' | null
+  >(null)
   const filtersRef = useRef<HTMLDivElement>(null)
   const toolsRef = useRef<HTMLDivElement>(null)
   const skipHashWrite = useRef(false)
@@ -165,6 +188,7 @@ function AuctionList() {
     if (selectedTypes.length && !selectedTypes.includes(lotType)) return false
     if (wantOngoing && !wantClosed && l.endsAt <= now) return false
     if (wantClosed && !wantOngoing && l.endsAt > now) return false
+    if (!matchesStoreCondition(l, conditions)) return false
     if (grades.length && !grades.includes(l.grade)) return false
     if (makers.length && !makers.includes(l.manufacturer)) return false
     if (memories.length && !memories.includes(l.capacity)) return false
@@ -174,6 +198,26 @@ function AuctionList() {
   })
 
   const groups = groupLotsByType(filtered, settings, closedOnly ? 'close-late' : 'close-soon')
+
+  useEffect(() => {
+    setGroupPages({})
+  }, [q, grades, makers, memories, origins, conditions, pageSize, listFilters.join('|')])
+
+  function changePageSize(next: CatalogPageSize) {
+    setPageSize(next)
+    writeCatalogPageSize(AUCTION_PAGE_SIZE_KEY, next)
+  }
+
+  function goToGroupPage(groupValue: string, n: number, pageCount: number) {
+    setGroupPages((prev) => ({
+      ...prev,
+      [groupValue]: Math.min(Math.max(1, n), pageCount),
+    }))
+    document.getElementById(`auction-list-${groupValue}`)?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start',
+    })
+  }
 
   const hasBids = Boolean(user && bids.some((b) => b.accountId === user.accountId))
   const showCoach = coachOn && user && !hasBids && settings.features.bidding
@@ -256,6 +300,18 @@ function AuctionList() {
               onToggle={toggleListFilter}
               onSelectAll={() => startTransition(() => setListFilters([]))}
             />
+            <CheckMenu
+              title="Condition"
+              open={open === 'condition'}
+              onOpen={() => setOpen((v) => (v === 'condition' ? null : 'condition'))}
+              options={STORE_CONDITION_OPTIONS}
+              selected={conditions}
+              labelFor={(v) => STORE_CONDITION_LABEL[v]}
+              highlight={conditions.length > 0}
+              onToggle={(value) =>
+                startTransition(() => setConditions((prev) => toggleValue(prev, value)))
+              }
+            />
             {settings.filters.maker ? (
               <CheckMenu
                 title="Maker"
@@ -304,6 +360,18 @@ function AuctionList() {
                 }
               />
             ) : null}
+            <ChoiceMenu
+              title="Per page"
+              open={open === 'pageSize'}
+              onOpen={() => setOpen((v) => (v === 'pageSize' ? null : 'pageSize'))}
+              options={[...CATALOG_PAGE_SIZE_IDS]}
+              value={String(pageSize)}
+              defaultValue={String(CATALOG_PAGE_SIZE_DEFAULT)}
+              onChange={(next) => {
+                changePageSize(Number(next) as CatalogPageSize)
+                setOpen(null)
+              }}
+            />
           </div>
         </div>
       </BidTotals>
@@ -333,6 +401,12 @@ function AuctionList() {
                   ? `${group.label} · live close, then Sealed`
                   : `${group.label} · time left`
               : `${group.label} · time left`
+            const groupPage = groupPages[group.value] || 1
+            const {
+              pageCount: groupPageCount,
+              safePage: groupSafePage,
+              items: groupPageLots,
+            } = slicePage(group.lots, groupPage, pageSize)
             return (
             <section
               key={group.value}
@@ -444,11 +518,19 @@ function AuctionList() {
                 </div>
               </AuctionTypeHead>
               <AuctionTable
-                lots={group.lots}
+                lots={groupPageLots}
                 compareIds={compareIds}
                 onToggleCompare={toggleCompare}
                 showTotals={false}
                 showBidGroups={false}
+              />
+              <CatalogPager
+                page={groupSafePage}
+                pageCount={groupPageCount}
+                pageSize={pageSize}
+                total={group.lots.length}
+                onPage={(n) => goToGroupPage(group.value, n, groupPageCount)}
+                label={`${group.label} pages`}
               />
             </section>
             )
@@ -467,8 +549,23 @@ function AuctionList() {
               />
             </div>
           ) : null}
-          <div className="mh-empty">
+          <div className="mh-empty shop-empty">
             <p>{settings.copy.emptyFilters}</p>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={() => {
+                startTransition(() => {
+                  setListFilters([])
+                  setGrades([])
+                  setMakers([])
+                  setMemories([])
+                  setOrigins([])
+                })
+              }}
+            >
+              Clear filters
+            </button>
           </div>
         </>
       )}

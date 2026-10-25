@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { CheckMenu, GRADES, toggleValue } from '../components/CheckMenu'
 import { CommunityListingPreview } from '../components/CommunityListingPreview'
 import { isFilterUiTarget } from '../components/FilterPanel'
+import { MyPageHead } from '../components/MyPageHead'
 import { StoreBlockSkeleton } from '../components/StoreSkeleton'
 import {
   api,
@@ -572,6 +573,14 @@ export function Community() {
 
   return (
     <div className="cm-desk mypage-listings">
+      <MyPageHead
+        title="Community"
+        note="Peer stock board — inquire on live lots, or post your own."
+        trust={[
+          { to: '/marketplace', label: 'Marketplace' },
+          { to: '/account', label: 'Overview' },
+        ]}
+      />
       <div className="cm-switch" role="tablist" aria-label="Community">
         {tabs.map((t) => (
           <button

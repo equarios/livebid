@@ -45,33 +45,61 @@ const COPY: Record<
   },
 }
 
+function statusLabel(ws: WholesaleStatus) {
+  return ws.replace(/_/g, ' ')
+}
+
+/** Desk-style status hero for Apply / Overview. */
+export function WholesaleStatusHero({
+  status,
+  staffNote,
+  extraTrust,
+}: {
+  status: WholesaleStatus
+  staffNote?: string
+  extraTrust?: { to: string; label: string }[]
+}) {
+  const copy = COPY[status] || COPY.none
+  const pill = statusLabel(status)
+  return (
+    <section
+      className={`wholesale-status-hero ending-soon-chip is-hero is-${status}`}
+      aria-label="Wholesale application status"
+    >
+      <div className="ending-soon-hero-body">
+        <h2 className="ending-soon-hero-title">
+          {copy.title}
+          <em className="store-page-hero-count">{pill}</em>
+        </h2>
+        <p className="ending-soon-hero-note">
+          {copy.body}
+          {staffNote ? ` Staff note: ${staffNote}` : ''}
+        </p>
+        <ul className="store-page-trust">
+          <li>
+            <Link to={copy.primary.to}>{copy.primary.label} →</Link>
+          </li>
+          {copy.secondary ? (
+            <li>
+              <Link to={copy.secondary.to}>{copy.secondary.label}</Link>
+            </li>
+          ) : null}
+          {extraTrust?.map((t) => (
+            <li key={t.to}>
+              <Link to={t.to}>{t.label}</Link>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  )
+}
+
 /** Clear application-status card for store → My Page funnel. */
 export function WholesaleStatusCard() {
   const { user, isStaff } = useStore()
   if (!user) return null
   if (canUseWholesaleDesk(user, isStaff)) return null
   const ws = (user.wholesaleStatus || 'none') as WholesaleStatus
-  const copy = COPY[ws] || COPY.none
-  return (
-    <section
-      className={`wholesale-status-card is-${ws}`}
-      aria-label="Wholesale application status"
-    >
-      <div className="wholesale-status-card-copy">
-        <span className="wholesale-status-card-pill">{ws.replace(/_/g, ' ')}</span>
-        <h2>{copy.title}</h2>
-        <p className="muted">{copy.body}</p>
-      </div>
-      <div className="wholesale-status-card-actions">
-        <Link className="btn btn-primary" to={copy.primary.to}>
-          {copy.primary.label}
-        </Link>
-        {copy.secondary ? (
-          <Link className="btn" to={copy.secondary.to}>
-            {copy.secondary.label}
-          </Link>
-        ) : null}
-      </div>
-    </section>
-  )
+  return <WholesaleStatusHero status={ws} />
 }

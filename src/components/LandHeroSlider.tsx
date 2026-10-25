@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
+import { LANDER_FALLBACK_PHOTO } from '../lib/landerMedia'
 
 export type LandHeroSlide = {
   title: string
@@ -13,12 +14,13 @@ type Props = {
   slides: LandHeroSlide[]
   intervalSec?: number
   veilClassName?: string
+  /** Extra classes on the hero section (e.g. wholesale hub compact height). */
+  className?: string
   primary: (slide: LandHeroSlide, index: number) => ReactNode
   secondary: ReactNode
 }
 
-const FALLBACK_PHOTO =
-  'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?auto=format&fit=crop&w=2000&q=72'
+const FALLBACK_PHOTO = LANDER_FALLBACK_PHOTO
 
 /** Full-bleed hero: brand stays fixed; photo + copy crossfade. */
 export function LandHeroSlider({
@@ -27,6 +29,7 @@ export function LandHeroSlider({
   slides,
   intervalSec = 7,
   veilClassName,
+  className,
   primary,
   secondary,
 }: Props) {
@@ -79,7 +82,7 @@ export function LandHeroSlider({
 
   return (
     <section
-      className="land-hero land-hero-slider"
+      className={`land-hero land-hero-slider${className ? ` ${className}` : ''}`}
       aria-label={label}
       aria-roledescription="carousel"
       onMouseEnter={() => setPaused(true)}

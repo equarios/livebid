@@ -30,7 +30,11 @@ export function ConsumerNav({ onNavigate }: { onNavigate?: () => void }) {
       </NavLink>
       {wholesaleOk ? (
         <NavLink to="/wholesale">{settings.copy.navWholesale}</NavLink>
-      ) : null}
+      ) : user ? (
+        <NavLink to="/account/wholesale">{settings.copy.navApplyWholesale}</NavLink>
+      ) : (
+        <NavLink to="/wholesale">{settings.copy.navWholesale}</NavLink>
+      )}
     </nav>
   )
 }

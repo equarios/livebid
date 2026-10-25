@@ -4,6 +4,7 @@ import { CartDesk } from '../components/CartDesk'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { InvoicePreview } from '../components/InvoicePreview'
 import { ItemLink } from '../components/ItemLink'
+import { MyPageHead } from '../components/MyPageHead'
 import { OfferDesk } from '../components/OfferDesk'
 import { downloadCsv } from '../lib/csv'
 import { formatDateTime, usd, usdAmt, usdCents } from '../lib/format'
@@ -108,33 +109,43 @@ export function MarketplaceHistory() {
 
   return (
     <div className="market-history-page mypage-listings">
+      <MyPageHead
+        title={settings.copy.cartTitle || 'Cart'}
+        count={cartRows.length}
+        note="Buy at list price on Marketplace, then send for review."
+        trust={[
+          { to: '/marketplace', label: 'Marketplace' },
+          { to: '/account/invoices', label: 'Invoice' },
+        ]}
+      >
+        {(openCartOrders || myOffers) ? (
+          <ul className="store-page-trust mypage-head-meta">
+            {openCartOrders ? <li>Checkout requests {openCartOrders}</li> : null}
+            {myOffers ? <li>Open offers {myOffers}</li> : null}
+          </ul>
+        ) : null}
+      </MyPageHead>
+
       <section id="cart" className="mh-desk">
-        <header className="mh-desk-head">
-          <h2>
-            {settings.copy.cartTitle}
-            <em>{cartRows.length}</em>
-          </h2>
-          <p className="mh-desk-note">Buy at list price on Marketplace, then send for review.</p>
-          {cartRows.length ? (
-            <div className="mh-desk-actions">
-              <div className="mh-desk-sum">
-                <strong>Est. {usdCents(cartQuote.total)}</strong>
-                {cartQuote.feePct > 0 ? (
-                  <span className="muted tiny">
-                    Goods {usdCents(cartQuote.goods)} · Fee {cartQuote.feePct}%
-                  </span>
-                ) : null}
-              </div>
-              <button
-                type="button"
-                className="btn btn-primary btn-sm"
-                onClick={() => setCheckoutOpen(true)}
-              >
-                {settings.copy.btnCheckout}
-              </button>
+        {cartRows.length ? (
+          <div className="mh-desk-actions mypage-cart-actions">
+            <div className="mh-desk-sum">
+              <strong>Est. {usdCents(cartQuote.total)}</strong>
+              {cartQuote.feePct > 0 ? (
+                <span className="muted tiny">
+                  Goods {usdCents(cartQuote.goods)} · Fee {cartQuote.feePct}%
+                </span>
+              ) : null}
             </div>
-          ) : null}
-        </header>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={() => setCheckoutOpen(true)}
+            >
+              {settings.copy.btnCheckout}
+            </button>
+          </div>
+        ) : null}
 
         <div className="mh-table-wrap">
           <table className="gbs-table mh-table">
@@ -172,9 +183,9 @@ export function MarketplaceHistory() {
             </tbody>
           </table>
           {!cartRows.length ? (
-            <div className="mh-empty">
+            <div className="mh-empty shop-empty">
               <p>{settings.copy.emptyCart}</p>
-              <Link to="/marketplace" className="btn btn-sm">
+              <Link to="/marketplace" className="btn btn-primary btn-sm">
                 Open Marketplace
               </Link>
             </div>
@@ -182,13 +193,10 @@ export function MarketplaceHistory() {
         </div>
         {notice ? <p className={notice.ok ? 'ok' : 'error'}>{notice.text}</p> : null}
 
-        <header className="mh-desk-head is-sub">
-          <h2>
-            Checkout requests
-            <em className={openCartOrders ? 'is-open' : undefined}>{openCartOrders}</em>
-          </h2>
-          <p className="mh-desk-note">Awaiting staff review, then your confirm.</p>
-        </header>
+        <h3 className="mypage-panel-label">
+          Checkout requests{openCartOrders ? ` · ${openCartOrders}` : ''}
+        </h3>
+        <p className="muted tiny mh-sub-note">Awaiting staff review, then your confirm.</p>
         <CartDesk staff={isStaff} />
       </section>
 
@@ -227,29 +235,23 @@ export function MarketplaceHistory() {
       ) : null}
 
       <section id="offers" className="mh-desk">
-        <header className="mh-desk-head">
-          <h2>
-            Offers
-            <em className={myOffers ? 'is-open' : undefined}>{myOffers}</em>
-          </h2>
-          <p className="mh-desk-note">Your prices on listings — staff accept, then you confirm.</p>
-        </header>
+        <h3 className="mypage-panel-label">
+          Offers{myOffers ? ` · ${myOffers}` : ''}
+        </h3>
+        <p className="muted tiny mh-sub-note">Your prices on listings — staff accept, then you confirm.</p>
         <OfferDesk staff={isStaff} />
       </section>
 
       <section id="orders" className="mh-desk">
-        <header className="mh-desk-head">
-          <h2>
-            Orders
-            <em>{rows.length}</em>
-          </h2>
-          <p className="mh-desk-note">Invoiced marketplace buys and confirmed offers.</p>
-          <div className="mh-desk-actions">
-            <button type="button" className="btn btn-ghost btn-sm" onClick={exportCsv}>
-              Export CSV
-            </button>
-          </div>
-        </header>
+        <div className="mypage-section-head">
+          <h3 className="mypage-panel-label">
+            Orders{rows.length ? ` · ${rows.length}` : ''}
+          </h3>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={exportCsv}>
+            Export CSV
+          </button>
+        </div>
+        <p className="muted tiny mh-sub-note">Invoiced marketplace buys and confirmed offers.</p>
         <div className="mh-table-wrap">
           <table className="gbs-table mh-table market-history-table">
             <thead>

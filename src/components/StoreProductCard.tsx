@@ -20,10 +20,19 @@ type Props = {
   index?: number
   /** Full catalog — enables sibling color dots. */
   catalog?: StoreProductDto[]
+  /** Recently-sold archive: Sold stamp, no cart actions. */
+  archive?: boolean
 }
 
 /** Consumer grid tile — photo, brand, title, price; urgency/locks only when they matter. */
-export function StoreProductCard({ product, onOpen, onAdded, index = 0, catalog }: Props) {
+export function StoreProductCard({
+  product,
+  onOpen,
+  onAdded,
+  index = 0,
+  catalog,
+  archive = false,
+}: Props) {
   const { money } = useStoreFx()
   const [active, setActive] = useState(product)
   const [adding, setAdding] = useState(false)
@@ -32,23 +41,27 @@ export function StoreProductCard({ product, onOpen, onAdded, index = 0, catalog 
     setActive(product)
   }, [product])
 
-  const soldOut = active.stock < 1
-  const onSale = Boolean(active.compareAt && active.compareAt > active.price)
+  const soldOut = !archive && active.stock < 1
+  const onSale = !archive && Boolean(active.compareAt && active.compareAt > active.price)
   const brand = storeProductBrand(active)
   const headline = storeProductHeadline(active, brand)
   const variantCatalog = catalog?.length ? catalog : [active]
-  const lowStock = !soldOut && active.stock > 0 && active.stock <= LOW_STOCK_AT
-  const priceHint = storeNeedsBuyAck(active) ? storeConditionHint(active) : null
+  const lowStock = !archive && !soldOut && active.stock > 0 && active.stock <= LOW_STOCK_AT
+  const priceHint = !archive && storeNeedsBuyAck(active) ? storeConditionHint(active) : null
 
   return (
     <article
-      className={`card lot-card store-lot-card shop-card${soldOut ? ' is-sold' : ''}`}
+      className={`card lot-card store-lot-card shop-card${
+        archive ? ' is-archive' : soldOut ? ' is-sold' : ''
+      }`}
       style={{ animationDelay: `${Math.min(index, 12) * 35}ms` }}
       aria-disabled={soldOut || undefined}
     >
       <div className="store-lot-card-media">
         <StoreGallery product={active} variant="card" onOpen={() => onOpen(active)} />
-        {soldOut ? (
+        {archive ? (
+          <span className="sold-badge sold-badge-archive">Sold</span>
+        ) : soldOut ? (
           <span className="sold-badge">Sold out</span>
         ) : (
           <>
@@ -75,24 +88,47 @@ export function StoreProductCard({ product, onOpen, onAdded, index = 0, catalog 
             Quick view
           </button>
         </div>
-        <StoreColorDots product={active} catalog={variantCatalog} onOpen={setActive} />
-        <StoreCapacityPills product={active} catalog={variantCatalog} onOpen={setActive} />
+        {!archive ? (
+          <>
+            <StoreColorDots product={active} catalog={variantCatalog} onOpen={setActive} />
+            <StoreCapacityPills product={active} catalog={variantCatalog} onOpen={setActive} />
+          </>
+        ) : null}
         {lowStock ? <p className="muted store-card-stock">{active.stock} left</p> : null}
         <div className="lot-price-row">
           <div>
-            <div className="price">{money(active.price)}</div>
-            {onSale ? (
-              <div className="store-was">
-                <s>{money(active.compareAt!)}</s>
-                <span>Save {money(active.compareAt! - active.price)}</span>
-              </div>
-            ) : null}
-            {priceHint ? <p className="store-card-price-hint">{priceHint}</p> : null}
+            {archive ? (
+              <>
+                <div className="price store-archive-price">
+                  <s>{money(active.price)}</s>
+                </div>
+                <p className="muted tiny store-archive-note">Not for sale</p>
+              </>
+            ) : (
+              <>
+                <div className="price">{money(active.price)}</div>
+                {onSale ? (
+                  <div className="store-was">
+                    <s>{money(active.compareAt!)}</s>
+                    <span>Save {money(active.compareAt! - active.price)}</span>
+                  </div>
+                ) : null}
+                {priceHint ? <p className="store-card-price-hint">{priceHint}</p> : null}
+              </>
+            )}
           </div>
         </div>
-        <StoreConditionBadges product={active} />
+        {!archive ? <StoreConditionBadges product={active} /> : null}
         <div className="store-card-actions">
-          {soldOut ? (
+          {archive ? (
+            <button
+              type="button"
+              className="btn btn-sm store-card-cta"
+              onClick={() => onOpen(active)}
+            >
+              View details
+            </button>
+          ) : soldOut ? (
             <AskAboutItem
               channel="store"
               itemId={active.slug || active.id}

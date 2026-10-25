@@ -22,6 +22,7 @@ import {
   hubDeviceLinks,
   lotMatchesFacet,
   parseCategoryParams,
+  type DeviceClass,
   type SeoFacet,
 } from '../lib/seoTaxonomy'
 import {
@@ -62,6 +63,47 @@ function crumbs(facet: SeoFacet) {
   return rows
 }
 
+function openLots(lots: Lot[], now: number) {
+  return lots.filter((l) => l.endsAt > now || l.channel === 'marketplace')
+}
+
+function facetStats(lots: Lot[], facet: SeoFacet) {
+  let pcs = 0
+  let n = 0
+  const brands = new Set<string>()
+  for (const lot of lots) {
+    if (!lotMatchesFacet(lot, facet)) continue
+    n += 1
+    pcs += lot.qty || 0
+    const m = lot.manufacturer?.trim()
+    if (m) brands.add(m)
+  }
+  return { lots: n, pcs, brands: [...brands].sort() }
+}
+
+function FacetChip({
+  to,
+  label,
+  count,
+  active,
+}: {
+  to: string
+  label: string
+  count?: number
+  active?: boolean
+}) {
+  return (
+    <Link
+      to={to}
+      className={active ? 'is-active' : undefined}
+      aria-current={active ? 'page' : undefined}
+    >
+      <span>{label}</span>
+      {count != null && count > 0 ? <em className="seo-cat-chip-count">{count}</em> : null}
+    </Link>
+  )
+}
+
 export function WholesaleCategoryPage() {
   const { a, b, c } = useParams()
   const location = useLocation()
@@ -78,12 +120,52 @@ export function WholesaleCategoryPage() {
 }
 
 function CategoryHub() {
-  const { settings } = useStore()
+  const { settings, lots, user, isStaff } = useStore()
+  const now = useNow()
   const brand = settings.brandName || 'Equarios'
   const title = `${brand} | Wholesale devices worldwide — phones, tablets, PCs, consoles`
   const description = facetDescription({}, brand)
   const devices = hubDeviceLinks()
-  const conditions = CONDITIONS
+  const deskOk = canUseWholesaleDesk(user, isStaff)
+  const live = useMemo(() => openLots(lots, now), [lots, now])
+
+  const deviceCards = useMemo(() => {
+    return devices.map((d) => {
+      const stats = facetStats(live, { deviceClass: d.id as DeviceClass })
+      const samples = stats.brands.slice(0, 3)
+      const n = stats.brands.length
+      const note =
+        n === 0
+          ? 'No open brands in this desk yet.'
+          : n <= 3
+            ? `${n} brand${n === 1 ? '' : 's'}: ${samples.join(', ')}.`
+            : `${n} brands, incl. ${samples.join(', ')} +${n - 3} more.`
+      return { ...d, ...stats, note }
+    })
+  }, [devices, live])
+
+  /** Hub condition/brand chips deep-link via phones (largest funnel). */
+  const hubBase: DeviceClass = 'phones'
+  const conditionChips = useMemo(
+    () =>
+      CONDITIONS.map((id) => ({
+        id,
+        label: conditionLabel(id),
+        to: categoryPath({ deviceClass: hubBase, condition: id }),
+        count: facetStats(live, { deviceClass: hubBase, condition: id }).lots,
+      })),
+    [live],
+  )
+  const brandChips = useMemo(
+    () =>
+      SEO_BRANDS.slice(0, 12).map((id) => ({
+        id,
+        label: brandLabel(id),
+        to: categoryPath({ deviceClass: hubBase, brand: id }),
+        count: facetStats(live, { deviceClass: hubBase, brand: id }).lots,
+      })),
+    [live],
+  )
 
   const jsonLd = {
     '@context': 'https://schema.org',
@@ -98,54 +180,83 @@ function CategoryHub() {
     <PublicShell mode="wholesale">
       <SeoHead title={title} description={description} path="/wholesale/c" jsonLd={jsonLd} />
       <article className="seo-cat">
-        <header className="seo-cat-hero">
-          <p className="seo-cat-kicker">{brand} wholesale desk</p>
-          <h1>Buy &amp; sell devices worldwide</h1>
-          <p className="seo-cat-lead">
-            New, used, locked, unlocked, refurbished, recycled, and scrap — mobile phones (Apple,
-            Android, other OS), tablets &amp; iPads, PCs, laptops, Chromebooks, PlayStation, Xbox,
-            Nintendo, and more. B2B auctions and marketplace for verified buyers.
-          </p>
-          <div className="seo-cat-cta">
-            <Link className="pub-btn pub-btn-fill" to="/register">
-              Apply as buyer
-            </Link>
-            <Link className="pub-btn" to="/buyers">
-              How wholesale works
-            </Link>
+        <header className="seo-cat-hero-chip ending-soon-chip is-hero" aria-label="Categories">
+          <div className="ending-soon-hero-body">
+            <h1 className="ending-soon-hero-title">
+              Categories
+              <em className="store-page-hero-count">{devices.length}</em>
+            </h1>
+            <p className="ending-soon-hero-note">
+              Watch a device or condition — matches land on Your desk.
+            </p>
+            <ul className="store-page-trust">
+              <li>
+                <Link to={deskOk ? '/auctions' : '/register'}>
+                  {deskOk ? 'Open auctions' : 'Apply as buyer'}
+                </Link>
+              </li>
+              <li>
+                <Link to={deskOk ? '/wholesale' : '/buyers'}>
+                  {deskOk ? 'Your desk' : 'How wholesale works'}
+                </Link>
+              </li>
+              <li>{devices.length} device types</li>
+            </ul>
           </div>
         </header>
 
-        <section className="seo-cat-section">
-          <h2>Shop by device</h2>
-          <ul className="seo-cat-grid">
-            {devices.map((d) => (
-              <li key={d.id}>
-                <Link to={d.to}>{d.label}</Link>
-              </li>
-            ))}
-          </ul>
-        </section>
-
-        <section className="seo-cat-section">
-          <h2>Shop by condition</h2>
-          <ul className="seo-cat-chips">
-            {conditions.map((id) => (
-              <li key={id}>
-                <Link to={categoryPath({ deviceClass: 'phones', condition: id })}>
-                  {conditionLabel(id)}
+        <section className="seo-cat-section" aria-label="Shop by device">
+          <div className="pub-section-head is-rail">
+            <h2>Shop by device</h2>
+          </div>
+          <div className="ending-soon-row seo-cat-device-row">
+            {deviceCards.map((d) => {
+              const lotLabel = d.lots === 1 ? 'lot' : 'lots'
+              return (
+                <Link
+                  key={d.id}
+                  to={d.to}
+                  className="ending-soon-chip is-desk is-hero seo-cat-device-chip"
+                  title={`${d.label}: ${d.pcs.toLocaleString()} pcs · ${d.lots} ${lotLabel}`}
+                >
+                  <span className="ending-soon-hero-body">
+                    <strong className="ending-soon-hero-title">
+                      {d.label}
+                      <em className="store-page-hero-count">{d.lots}</em>
+                    </strong>
+                    <span className="ending-soon-hero-note">{d.note}</span>
+                    <ul className="store-page-trust">
+                      <li>{d.pcs.toLocaleString()} pcs</li>
+                      <li>
+                        {d.lots.toLocaleString()} {lotLabel}
+                      </li>
+                    </ul>
+                  </span>
                 </Link>
+              )
+            })}
+          </div>
+        </section>
+
+        <section className="seo-cat-section seo-cat-facet-strip">
+          <h2>Condition</h2>
+          <p className="seo-cat-facet-hint muted tiny">Filter phones by condition — or open a device above first.</p>
+          <ul className="seo-cat-chips">
+            {conditionChips.map((c) => (
+              <li key={c.id}>
+                <FacetChip to={c.to} label={c.label} count={c.count} />
               </li>
             ))}
           </ul>
         </section>
 
-        <section className="seo-cat-section">
+        <section className="seo-cat-section seo-cat-facet-strip">
           <h2>Popular brands</h2>
+          <p className="seo-cat-facet-hint muted tiny">Phone brands with open lots highlighted.</p>
           <ul className="seo-cat-chips">
-            {SEO_BRANDS.slice(0, 12).map((id) => (
-              <li key={id}>
-                <Link to={categoryPath({ deviceClass: 'phones', brand: id })}>{brandLabel(id)}</Link>
+            {brandChips.map((b) => (
+              <li key={b.id}>
+                <FacetChip to={b.to} label={b.label} count={b.count} />
               </li>
             ))}
           </ul>
@@ -229,8 +340,7 @@ function CategoryDetail({ facet }: { facet: SeoFacet }) {
 
   const matched = useMemo(() => {
     const seen = new Set<string>()
-    return lots
-      .filter((l) => l.endsAt > now || l.channel === 'marketplace')
+    return openLots(lots, now)
       .filter((l) => lotMatchesFacet(l, facet))
       .filter((l) => {
         if (seen.has(l.id)) return false
@@ -239,6 +349,54 @@ function CategoryDetail({ facet }: { facet: SeoFacet }) {
       })
       .slice(0, 24)
   }, [lots, facet, now])
+
+  const stats = useMemo(() => {
+    let pcs = 0
+    for (const lot of matched) pcs += lot.qty || 0
+    return { lots: matched.length, pcs }
+  }, [matched])
+
+  const live = useMemo(() => openLots(lots, now), [lots, now])
+  const conditionChips = useMemo(() => {
+    if (!facet.deviceClass) return []
+    return hubConditionLinks(facet.deviceClass).map((c) => ({
+      ...c,
+      count: facetStats(live, {
+        deviceClass: facet.deviceClass,
+        condition: c.id as SeoFacet['condition'],
+      }).lots,
+    }))
+  }, [facet.deviceClass, live])
+  const brandChips = useMemo(() => {
+    if (!facet.deviceClass || facet.brand) return []
+    return SEO_BRANDS.map((id) => ({
+      id,
+      label: brandLabel(id),
+      to: categoryPath({
+        deviceClass: facet.deviceClass,
+        condition: facet.condition,
+        brand: id,
+      }),
+      count: facetStats(live, {
+        deviceClass: facet.deviceClass,
+        condition: facet.condition,
+        brand: id,
+      }).lots,
+    }))
+  }, [facet.deviceClass, facet.condition, facet.brand, live])
+  const moreDeviceChips = useMemo(
+    () =>
+      DEVICE_CLASSES.filter((id) => id !== facet.deviceClass).map((id) => ({
+        id,
+        label: deviceClassLabel(id),
+        to: categoryPath({ deviceClass: id, condition: facet.condition }),
+        count: facetStats(live, {
+          deviceClass: id,
+          condition: facet.condition,
+        }).lots,
+      })),
+    [facet.deviceClass, facet.condition, live],
+  )
 
   const jsonLd = {
     '@context': 'https://schema.org',
@@ -257,6 +415,8 @@ function CategoryDetail({ facet }: { facet: SeoFacet }) {
     },
   }
 
+  const lotLabel = stats.lots === 1 ? 'lot' : 'lots'
+
   return (
     <PublicShell mode="wholesale">
       <SeoHead title={title} description={description} path={path} jsonLd={jsonLd} />
@@ -270,76 +430,73 @@ function CategoryDetail({ facet }: { facet: SeoFacet }) {
           ))}
         </nav>
 
-        <header className="seo-cat-hero is-compact">
-          <h1>{topic}</h1>
-          <p className="seo-cat-lead">{description}</p>
-          <div className="seo-cat-cta">
-            {deskOk ? (
-              <Link className="pub-btn pub-btn-fill" to="/auctions">
-                Open auctions
-              </Link>
-            ) : (
-              <Link className="pub-btn pub-btn-fill" to="/register">
-                Apply as buyer
-              </Link>
-            )}
-            {user && facet.deviceClass ? (
-              <button
-                type="button"
-                className="pub-btn"
-                onClick={() => {
-                  if (watching) {
-                    removeWatchFilter(user.accountId, categoryPath(watchFacet))
-                    setWatching(false)
-                  } else {
-                    upsertWatchFilter(user.accountId, watchFacet, lots, now)
-                    setWatching(true)
-                  }
-                }}
-              >
-                {watching ? 'Watching filter' : 'Watch this filter'}
-              </button>
-            ) : null}
-            <Link className="pub-btn" to="/wholesale/c">
-              All categories
-            </Link>
+        <header className="seo-cat-hero-chip ending-soon-chip is-hero" aria-label={topic}>
+          <div className="ending-soon-hero-body">
+            <h1 className="ending-soon-hero-title">
+              {topic}
+              <em className="store-page-hero-count">{stats.lots}</em>
+            </h1>
+            <p className="ending-soon-hero-note">{description}</p>
+            <ul className="store-page-trust">
+              <li>
+                {stats.pcs.toLocaleString()} pcs
+              </li>
+              <li>
+                {stats.lots.toLocaleString()} {lotLabel}
+              </li>
+              {user && facet.deviceClass ? (
+                <li>
+                  <button
+                    type="button"
+                    className="seo-cat-trust-btn"
+                    onClick={() => {
+                      if (watching) {
+                        removeWatchFilter(user.accountId, categoryPath(watchFacet))
+                        setWatching(false)
+                      } else {
+                        upsertWatchFilter(user.accountId, watchFacet, lots, now)
+                        setWatching(true)
+                      }
+                    }}
+                  >
+                    {watching ? 'Watching' : 'Watch filter'}
+                  </button>
+                </li>
+              ) : null}
+              <li>
+                <Link to={deskOk ? '/auctions' : '/register'}>
+                  {deskOk ? 'Open auctions' : 'Apply as buyer'}
+                </Link>
+              </li>
+            </ul>
           </div>
         </header>
 
-        {facet.deviceClass ? (
-          <section className="seo-cat-section">
+        {conditionChips.length ? (
+          <section className="seo-cat-section seo-cat-facet-strip">
             <h2>Condition</h2>
             <ul className="seo-cat-chips">
-              {hubConditionLinks(facet.deviceClass).map((c) => (
+              {conditionChips.map((c) => (
                 <li key={c.id}>
-                  <Link
+                  <FacetChip
                     to={c.to}
-                    className={facet.condition === c.id ? 'is-active' : undefined}
-                    aria-current={facet.condition === c.id ? 'page' : undefined}
-                  >
-                    {c.label}
-                  </Link>
+                    label={c.label}
+                    count={c.count}
+                    active={facet.condition === c.id}
+                  />
                 </li>
               ))}
             </ul>
           </section>
         ) : null}
 
-        {facet.deviceClass && !facet.brand ? (
-          <section className="seo-cat-section">
+        {brandChips.length ? (
+          <section className="seo-cat-section seo-cat-facet-strip">
             <h2>Brands</h2>
             <ul className="seo-cat-chips">
-              {SEO_BRANDS.map((id) => (
-                <li key={id}>
-                  <Link
-                    to={categoryPath({
-                      deviceClass: facet.deviceClass,
-                      condition: facet.condition,
-                      brand: id,
-                    })}
-                  >
-                    {brandLabel(id)}
-                  </Link>
+              {brandChips.map((b) => (
+                <li key={b.id}>
+                  <FacetChip to={b.to} label={b.label} count={b.count} />
                 </li>
               ))}
             </ul>
@@ -347,7 +504,12 @@ function CategoryDetail({ facet }: { facet: SeoFacet }) {
         ) : null}
 
         <section className="seo-cat-section">
-          <h2>Live &amp; marketplace lots</h2>
+          <div className="pub-section-head is-rail">
+            <h2>Live &amp; marketplace lots</h2>
+            <Link className="linkish" to="/wholesale/c">
+              All categories
+            </Link>
+          </div>
           {matched.length ? (
             <ul className="seo-lot-list">
               {matched.map((lot) => (
@@ -365,14 +527,12 @@ function CategoryDetail({ facet }: { facet: SeoFacet }) {
           )}
         </section>
 
-        <section className="seo-cat-section">
+        <section className="seo-cat-section seo-cat-facet-strip">
           <h2>More device types</h2>
           <ul className="seo-cat-chips">
-            {DEVICE_CLASSES.filter((id) => id !== facet.deviceClass).map((id) => (
-              <li key={id}>
-                <Link to={categoryPath({ deviceClass: id, condition: facet.condition })}>
-                  {deviceClassLabel(id)}
-                </Link>
+            {moreDeviceChips.map((d) => (
+              <li key={d.id}>
+                <FacetChip to={d.to} label={d.label} count={d.count} />
               </li>
             ))}
           </ul>

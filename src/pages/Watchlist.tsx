@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { LotCard } from '../components/LotCard'
+import { MyPageHead } from '../components/MyPageHead'
 import {
   loadWatchFilters,
   removeWatchFilter,
@@ -27,14 +28,29 @@ export function Watchlist() {
 
   return (
     <div className="watchlist-page">
+      <MyPageHead
+        title="Favorites"
+        count={rows.length}
+        note={
+          settings.copy.favouritesIntro ||
+          'Saved lots you are watching. Matching open lots also show on Your desk.'
+        }
+        trust={[
+          { to: '/auctions', label: 'Browse auctions' },
+          { to: '/account/bids', label: 'Bids' },
+        ]}
+      >
+        {withBids ? (
+          <ul className="store-page-trust mypage-head-meta">
+            <li>Your bids {withBids}</li>
+          </ul>
+        ) : null}
+      </MyPageHead>
+
       {user && filters.length ? (
-        <section className="watch-filters-panel" aria-label="Saved filters">
-          <div className="mypage-meta">
-            <em>{filters.length} saved filter{filters.length === 1 ? '' : 's'}</em>
-            <span className="muted tiny">
-              Matching open lots show on Your desk as watch hits.
-            </span>
-          </div>
+        <section className="watch-filters-panel help-panel" aria-label="Saved filters">
+          <h3 className="mypage-panel-label">Saved filters</h3>
+          <p className="muted tiny">Matching open lots show on Your desk as watch hits.</p>
           <ul className="watch-filters-list">
             {filters.map((f) => (
               <li key={f.id}>
@@ -52,13 +68,6 @@ export function Watchlist() {
         </section>
       ) : null}
 
-      <div className="mypage-meta">
-        <em>{rows.length} saved</em>
-        {withBids ? <em className="is-yours">Your bids {withBids}</em> : null}
-        {settings.copy.favouritesIntro ? (
-          <span className="muted tiny">{settings.copy.favouritesIntro}</span>
-        ) : null}
-      </div>
       {rows.length ? (
         <div className="grid">
           {rows.map((lot) => (
@@ -66,12 +75,12 @@ export function Watchlist() {
           ))}
         </div>
       ) : (
-        <section className="account-panel account-empty">
-          <p className="muted">{settings.copy.emptyFavourites}</p>
-          <Link className="btn btn-primary" to="/auctions">
+        <div className="mh-empty shop-empty">
+          <p>{settings.copy.emptyFavourites}</p>
+          <Link className="btn btn-primary btn-sm" to="/auctions">
             Browse auctions
           </Link>
-        </section>
+        </div>
       )}
     </div>
   )

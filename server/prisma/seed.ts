@@ -1,6 +1,7 @@
 /**
  * Fresh local catalog for feature testing.
- * ~20 brands, mixed 500–1000 pcs/model, ≈50k warehouse pcs + auction/market/store demos.
+ * ~20 brands, mixed 500–1000 pcs/model, ≈50k warehouse pcs + dense auction/market/store demos
+ * (enough lots for catalog pagination: ~72 auctions, ~72 marketplace, ~100+ store SKUs).
  * Run: npm run db:seed | npm run db:reset (from server/)
  */
 import '../src/loadEnv'
@@ -342,12 +343,16 @@ function lotRow(
     endsAt: number
     description: string
     origin?: string
+    simLocked?: boolean
+    activationLocked?: boolean
   },
 ) {
   return {
     ...partial,
     auctionType: partial.auctionType ?? null,
     buyNowPrice: partial.buyNowPrice ?? null,
+    simLocked: Boolean(partial.simLocked),
+    activationLocked: Boolean(partial.activationLocked),
     bidCount: 0,
     accent: '#2a6f7c',
     endsAt: BigInt(partial.endsAt),
@@ -508,26 +513,38 @@ async function main() {
     endsAt: number
   }> = []
 
-  // 12 auction + 10 marketplace listings drawn from warehouse.
-  for (let i = 0; i < 12; i++) {
-    const sku = skus[i]!
-    const qty = Math.min(40 + Math.floor(rng() * 80), Math.floor(sku.onHand * 0.15))
+  // Dense demos so Store/Marketplace/Auctions pagination is exercisable locally.
+  const AUCTION_LOTS = 72
+  const MARKET_LOTS = 72
+  const reservedBySku = new Map<string, number>()
+
+  for (let i = 0; i < AUCTION_LOTS; i++) {
+    const sku = skus[i % skus.length]!
+    const already = reservedBySku.get(sku.id) || 0
+    const room = Math.max(0, sku.onHand - already)
+    const qty = Math.min(12 + Math.floor(rng() * 28), Math.max(5, Math.floor(room * 0.08)))
+    if (qty < 5 || room < qty) continue
+    reservedBySku.set(sku.id, already + qty)
     listPlans.push({
       sku,
       channel: 'auction',
       auctionType: auctionTypes[i % auctionTypes.length]!,
-      qty: Math.max(10, qty),
-      endsAt: now + (1 + (i % 5)) * day,
+      qty,
+      endsAt: now + (1 + (i % 7)) * day,
     })
   }
-  for (let i = 12; i < 22; i++) {
-    const sku = skus[i]!
-    const qty = Math.min(60 + Math.floor(rng() * 100), Math.floor(sku.onHand * 0.2))
+  for (let i = 0; i < MARKET_LOTS; i++) {
+    const sku = skus[(i + 3) % skus.length]!
+    const already = reservedBySku.get(sku.id) || 0
+    const room = Math.max(0, sku.onHand - already)
+    const qty = Math.min(15 + Math.floor(rng() * 35), Math.max(8, Math.floor(room * 0.1)))
+    if (qty < 8 || room < qty) continue
+    reservedBySku.set(sku.id, already + qty)
     listPlans.push({
       sku,
       channel: 'marketplace',
       auctionType: null,
-      qty: Math.max(20, qty),
+      qty,
       endsAt: now + 30 * day,
     })
   }
@@ -540,6 +557,11 @@ async function main() {
         ? `LOT-${String(1000 + lotN)}`
         : `MP-${String(11000 + lotN)}`
     const price = plan.sku.lastPrice
+    const simLocked = lotN % 7 === 0
+    const activationLocked = lotN % 11 === 0
+    const asIs = lotN % 9 === 0
+    const grade = asIs ? 'C' : plan.sku.grade
+    const lockedMul = simLocked || activationLocked || asIs ? 0.78 : 1
     const row = lotRow({
       id,
       channel: plan.channel,
@@ -549,17 +571,22 @@ async function main() {
       modelNumber: plan.sku.modelNumber,
       capacity: plan.sku.capacity,
       color: plan.sku.color,
-      grade: plan.sku.grade,
+      grade,
       battery: plan.sku.battery,
       qty: plan.qty,
       moq: plan.sku.defaultMoq,
-      startPrice: price,
-      currentPrice: plan.channel === 'auction' ? Math.round(price * 1.02) : price,
-      buyNowPrice: plan.channel === 'marketplace' ? price : undefined,
+      startPrice: Math.round(price * lockedMul),
+      currentPrice:
+        plan.channel === 'auction'
+          ? Math.round(price * 1.02 * lockedMul)
+          : Math.round(price * lockedMul),
+      buyNowPrice: plan.channel === 'marketplace' ? Math.round(price * lockedMul) : undefined,
       endsAt: plan.endsAt,
       description:
         plan.channel === 'auction' ? 'Seed auction lot for testing' : 'Seed marketplace listing',
       origin: plan.sku.origin,
+      simLocked,
+      activationLocked,
     })
 
     await prisma.$transaction(async (tx) => {
@@ -674,45 +701,50 @@ async function main() {
     }
   }
 
-  for (const s of skus.slice(0, 20)) {
+  const storeColors = ['Black', 'Blue', 'Silver', 'Graphite'] as const
+  for (const s of skus) {
     if (familyModelNos.has(s.modelNumber)) continue
-    storeIdx += 1
-    const slug = `${s.manufacturer}-${s.model}-${s.capacity}-${s.grade}`
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-|-$/g, '')
-      .slice(0, 72)
-    const simLocked = storeIdx % 7 === 0
-    const activationLocked = storeIdx % 11 === 0
-    const asIs = storeIdx % 9 === 0
-    const grade = asIs ? 'C' : s.grade
-    const price = Math.round(
-      s.lastPrice * (1.15 + rng() * 0.2) * (simLocked || activationLocked || asIs ? 0.72 : 1),
-    )
-    storeRows.push({
-      title: `${s.manufacturer} ${s.model} ${s.capacity}`,
-      slug: `${slug}-${storeIdx}`,
-      description: asIs
-        ? `${grade} grade · ${s.color} · sold as-is — possible faults or heavy wear`
-        : simLocked
-          ? `${grade} grade · ${s.color} · SIM locked — may not work on all carriers`
-          : `${grade} grade · ${s.color} · retail demo unit`,
-      price,
-      compareAt: Math.round(price * 1.12),
-      stock: 8 + Math.floor(rng() * 28),
-      category:
-        s.model.toLowerCase().includes('tab') || s.capacity === '32GB' ? 'Tablets' : 'Phones',
-      brand: s.manufacturer,
-      modelNumber: s.modelNumber,
-      capacity: s.capacity,
-      color: s.color,
-      grade,
-      battery: s.battery,
-      origin: s.origin,
-      simLocked,
-      activationLocked,
-      active: true,
-    })
+    // Two colorways per warehouse SKU → enough retail tiles for pagination.
+    for (let c = 0; c < 2; c++) {
+      storeIdx += 1
+      const color = storeColors[(storeIdx + c) % storeColors.length]!
+      const slug = `${s.manufacturer}-${s.model}-${s.capacity}-${color}-${s.grade}`
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '')
+        .slice(0, 72)
+      const simLocked = storeIdx % 7 === 0
+      const activationLocked = storeIdx % 11 === 0
+      const asIs = storeIdx % 9 === 0
+      const grade = asIs ? 'C' : s.grade
+      const price = Math.round(
+        s.lastPrice * (1.15 + rng() * 0.2) * (simLocked || activationLocked || asIs ? 0.72 : 1),
+      )
+      storeRows.push({
+        title: `${s.manufacturer} ${s.model} ${s.capacity}`,
+        slug: `${slug}-${storeIdx}`,
+        description: asIs
+          ? `${grade} grade · ${color} · sold as-is — possible faults or heavy wear`
+          : simLocked
+            ? `${grade} grade · ${color} · SIM locked — may not work on all carriers`
+            : `${grade} grade · ${color} · retail demo unit`,
+        price,
+        compareAt: Math.round(price * 1.12),
+        stock: 8 + Math.floor(rng() * 28),
+        category:
+          s.model.toLowerCase().includes('tab') || s.capacity === '32GB' ? 'Tablets' : 'Phones',
+        brand: s.manufacturer,
+        modelNumber: s.modelNumber,
+        capacity: s.capacity,
+        color,
+        grade,
+        battery: s.battery,
+        origin: s.origin,
+        simLocked,
+        activationLocked,
+        active: true,
+      })
+    }
   }
   await prisma.storeProduct.createMany({ data: storeRows })
 

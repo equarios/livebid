@@ -1,6 +1,5 @@
 import { Link } from 'react-router-dom'
 import { HelpLayout } from '../components/HelpLayout'
-import { PubArticle } from '../components/PubArticle'
 import { PublicShell } from '../components/PublicShell'
 import { SellToUsEnquiry } from '../components/SellToUsEnquiry'
 import { SupportEnquiry } from '../components/SupportEnquiry'
@@ -8,13 +7,6 @@ import { DEFAULT_SETTINGS } from '../data'
 import { renderPageBody } from '../lib/pageBody'
 import { useStore } from '../store'
 import type { MarketingPageCopy } from '../types'
-
-const PHOTO = {
-  buyers:
-    'https://images.unsplash.com/photo-1556656793-08538906a9f8?auto=format&fit=crop&w=2000&q=72',
-  sellers:
-    'https://images.unsplash.com/photo-1553413077-190dd305871c?auto=format&fit=crop&w=2000&q=72',
-} as const
 
 function useMarketingPage(key: 'buyers' | 'sellers' | 'support'): MarketingPageCopy {
   const { settings } = useStore()
@@ -30,29 +22,62 @@ export function BuyersPage() {
   const brand = settings.brandName || 'eQuarios'
   return (
     <PublicShell mode="wholesale">
-      <PubArticle
-        brand={brand}
-        title={page.title}
-        lead={page.lead}
-        photo={PHOTO.buyers}
-        sectionTitle="How buying works"
-        actions={
-          <>
-            {page.primaryCta ? (
-              <Link className="pub-btn pub-btn-fill" to="/register">
-                {page.primaryCta}
-              </Link>
-            ) : null}
-            {page.secondaryCta ? (
-              <Link className="land-hero-secondary" to="/login">
-                {page.secondaryCta} →
-              </Link>
-            ) : null}
-          </>
-        }
-      >
-        {renderPageBody(page.body)}
-      </PubArticle>
+      <article className="mkt-page">
+        <header className="mkt-page-hero ending-soon-chip is-hero" aria-label={page.title}>
+          <div className="ending-soon-hero-body">
+            <p className="mkt-page-kicker">{brand} · For buyers</p>
+            <h1 className="ending-soon-hero-title">{page.title}</h1>
+            <p className="ending-soon-hero-note">{page.lead}</p>
+            <ul className="store-page-trust">
+              {page.primaryCta ? (
+                <li>
+                  <Link to="/register">{page.primaryCta} →</Link>
+                </li>
+              ) : null}
+              {page.secondaryCta ? (
+                <li>
+                  <Link to="/login">{page.secondaryCta}</Link>
+                </li>
+              ) : null}
+              <li>
+                <Link to="/wholesale/c">Categories</Link>
+              </li>
+              <li>
+                <Link to="/support">Help</Link>
+              </li>
+            </ul>
+          </div>
+        </header>
+
+        <nav className="mkt-page-topics seo-cat-facet-strip" aria-label="Buyer links">
+          <h2 className="mkt-page-topics-label">Quick links</h2>
+          <ul className="seo-cat-chips">
+            <li>
+              <Link to="/register">Apply</Link>
+            </li>
+            <li>
+              <Link to="/login">Sign in</Link>
+            </li>
+            <li>
+              <Link to="/wholesale/c">Categories</Link>
+            </li>
+            <li>
+              <Link to="/auctions">Live desks</Link>
+            </li>
+            <li>
+              <Link to="/tutorial">How it works</Link>
+            </li>
+            <li>
+              <Link to="/support">Support</Link>
+            </li>
+          </ul>
+        </nav>
+
+        <section className="mkt-page-body help-panel" aria-label="How buying works">
+          <h2>How buying works</h2>
+          {renderPageBody(page.body)}
+        </section>
+      </article>
     </PublicShell>
   )
 }
@@ -63,22 +88,61 @@ export function SellersPage() {
   const brand = settings.brandName || 'eQuarios'
   return (
     <PublicShell mode="wholesale">
-      <PubArticle
-        brand={brand}
-        title={page.title}
-        lead={page.lead}
-        photo={PHOTO.sellers}
-        sectionTitle="Seller path"
-        actions={
-          page.primaryCta ? (
-            <Link className="pub-btn pub-btn-fill" to="/login">
-              {page.primaryCta}
-            </Link>
-          ) : undefined
-        }
-      >
-        {renderPageBody(page.body)}
-        <section className="sellers-supply" aria-labelledby="sell-to-us">
+      <article className="mkt-page">
+        <header className="mkt-page-hero ending-soon-chip is-hero" aria-label={page.title}>
+          <div className="ending-soon-hero-body">
+            <p className="mkt-page-kicker">{brand} · For sellers</p>
+            <h1 className="ending-soon-hero-title">{page.title}</h1>
+            <p className="ending-soon-hero-note">{page.lead}</p>
+            <ul className="store-page-trust">
+              {page.primaryCta ? (
+                <li>
+                  <Link to="/login">{page.primaryCta} →</Link>
+                </li>
+              ) : null}
+              <li>
+                <a href="#sell-to-us">Sell to us</a>
+              </li>
+              <li>
+                <Link to="/buyers">For buyers</Link>
+              </li>
+              <li>
+                <Link to="/support">Support</Link>
+              </li>
+            </ul>
+          </div>
+        </header>
+
+        <nav className="mkt-page-topics seo-cat-facet-strip" aria-label="Seller links">
+          <h2 className="mkt-page-topics-label">Quick links</h2>
+          <ul className="seo-cat-chips">
+            <li>
+              <Link to="/login">Staff sign in</Link>
+            </li>
+            <li>
+              <a href="#sell-to-us">Sell inventory</a>
+            </li>
+            <li>
+              <Link to="/buyers">For buyers</Link>
+            </li>
+            <li>
+              <Link to="/wholesale">Wholesale</Link>
+            </li>
+            <li>
+              <Link to="/support">Support</Link>
+            </li>
+          </ul>
+        </nav>
+
+        <section className="mkt-page-body help-panel" aria-label="Seller path">
+          <h2>Seller path</h2>
+          {renderPageBody(page.body)}
+        </section>
+
+        <section
+          className="mkt-page-body help-panel sellers-supply"
+          aria-labelledby="sell-to-us"
+        >
           <h2 id="sell-to-us">Sell inventory to us</h2>
           <p>
             Wholesale suppliers: we buy graded phones, tablets, and related devices in volume.
@@ -92,7 +156,7 @@ export function SellersPage() {
           </ul>
           <SellToUsEnquiry />
         </section>
-      </PubArticle>
+      </article>
     </PublicShell>
   )
 }
@@ -106,7 +170,7 @@ export function SupportPage() {
       title={page.title || settings.copy.navSupport}
       lead={page.lead || 'Ask a question or reach us on email, WhatsApp, or WeChat.'}
     >
-      <div className="card account-card help-support-card">
+      <section className="help-panel help-support-card">
         <h2 className="help-support-h2">Quick answers</h2>
         {renderPageBody(page.body)}
         <p className="support-dispute-note">
@@ -132,7 +196,7 @@ export function SupportPage() {
             Quick enquiry
           </a>
         </p>
-      </div>
+      </section>
       <SupportEnquiry />
     </HelpLayout>
   )

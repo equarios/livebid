@@ -7,12 +7,35 @@ import { resolveDeskBannerSlides } from '../lib/deskBanner'
 import {
   capacityOptions,
   CheckMenu,
+  ChoiceMenu,
   makerOptions,
   originFilterOptions,
   toggleValue,
 } from '../components/CheckMenu'
 import { isFilterUiTarget } from '../components/FilterPanel'
 import { originLabel } from '../lib/auctionLists'
+import { CatalogPager } from '../components/CatalogPager'
+import {
+  CATALOG_PAGE_SIZE_DEFAULT,
+  CATALOG_PAGE_SIZE_IDS,
+  readCatalogPageSize,
+  slicePage,
+  writeCatalogPageSize,
+  type CatalogPageSize,
+} from '../lib/catalogPaging'
+import {
+  STORE_CONDITION_DEFAULT,
+  STORE_CONDITION_LABEL,
+  STORE_CONDITION_OPTIONS,
+  STORE_CONDITION_TABS,
+  activeStoreConditionTab,
+  conditionsFromTab,
+  deviceConditionCounts,
+  isStoreConditionDefault,
+  matchesStoreCondition,
+  type StoreConditionFilter,
+  type StoreConditionTab,
+} from '../lib/storeCondition'
 import { lotItemTitle } from '../lib/itemLine'
 import { ItemLink } from '../components/ItemLink'
 import { ConfirmBidDialog } from '../components/ConfirmBidDialog'
@@ -37,6 +60,8 @@ import {
 import { feePctForLot, moneyForChannel, moneyForLot, quoteMoney } from '../lib/invoices'
 import { useStore } from '../store'
 import type { Grade, Lot } from '../types'
+
+const MARKET_PAGE_SIZE_KEY = 'equarios.marketplace.pageSize'
 
 function MarketLot({ lot, asCard }: { lot: Lot; asCard?: boolean }) {
   const { addToCart, invoices, settings, cart, offers, user, placeOffer, confirmOffer } = useStore()
@@ -427,9 +452,17 @@ export function Marketplace() {
   const [memories, setMemories] = useState<string[]>([])
   const [origins, setOrigins] = useState<string[]>([])
   const [stock, setStock] = useState<StockFilter[]>(['available'])
-  const [open, setOpen] = useState<'maker' | 'grade' | 'memory' | 'origin' | 'stock' | null>(null)
+  const [conditions, setConditions] = useState<StoreConditionFilter[]>(STORE_CONDITION_DEFAULT)
+  const [pageSize, setPageSize] = useState<CatalogPageSize>(() =>
+    readCatalogPageSize(MARKET_PAGE_SIZE_KEY),
+  )
+  const [page, setPage] = useState(1)
+  const [open, setOpen] = useState<
+    'maker' | 'grade' | 'memory' | 'origin' | 'stock' | 'condition' | 'pageSize' | null
+  >(null)
   const [deskCollapsed, setDeskCollapsed] = useState(() => readDeskCollapsed(MARKET_DESK_KEY))
   const filtersRef = useRef<HTMLDivElement>(null)
+  const listTopRef = useRef<HTMLElement>(null)
   function toggleDesk() {
     setDeskCollapsed((prev) => {
       const next = !prev
@@ -460,7 +493,7 @@ export function Marketplace() {
     return () => document.removeEventListener('mousedown', onDoc)
   }, [])
 
-  const rows = useMemo(() => {
+  const baseRows = useMemo(() => {
     const now = Date.now()
     const list = lots.filter((l) => {
       if (l.channel !== 'marketplace') return false
@@ -477,6 +510,44 @@ export function Marketplace() {
     })
     return sortStockLast(list, (l) => l.qty > 0)
   }, [lots, q, grades, makers, memories, origins, stock])
+
+  const conditionCounts = useMemo(() => deviceConditionCounts(baseRows), [baseRows])
+  const conditionTabs = STORE_CONDITION_TABS.filter(
+    (t) => t.id === 'all' || conditionCounts[t.id] > 0,
+  )
+  const activeConditionTab = activeStoreConditionTab(conditions)
+
+  const rows = useMemo(
+    () => baseRows.filter((l) => matchesStoreCondition(l, conditions)),
+    [baseRows, conditions],
+  )
+
+  const { pageCount, safePage, items: pageRows } = useMemo(
+    () => slicePage(rows, page, pageSize),
+    [rows, page, pageSize],
+  )
+
+  useEffect(() => {
+    if (page !== safePage) setPage(safePage)
+  }, [page, safePage])
+
+  useEffect(() => {
+    setPage(1)
+  }, [q, grades, makers, memories, origins, stock, conditions, pageSize])
+
+  function changePageSize(next: CatalogPageSize) {
+    setPageSize(next)
+    writeCatalogPageSize(MARKET_PAGE_SIZE_KEY, next)
+  }
+
+  function goToPage(n: number) {
+    setPage(Math.min(Math.max(1, n), pageCount))
+    listTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  function selectConditionTab(id: StoreConditionTab) {
+    startTransition(() => setConditions(conditionsFromTab(id)))
+  }
 
   const soldArchive = useMemo(() => {
     const now = Date.now()
@@ -520,6 +591,18 @@ export function Marketplace() {
                   labelFor={(v) => STOCK_FILTER_LABEL[v]}
                   onToggle={(value) =>
                     startTransition(() => setStock((prev) => toggleValue(prev, value)))
+                  }
+                />
+                <CheckMenu
+                  title="Condition"
+                  open={open === 'condition'}
+                  onOpen={() => setOpen((v) => (v === 'condition' ? null : 'condition'))}
+                  options={STORE_CONDITION_OPTIONS}
+                  selected={conditions}
+                  labelFor={(v) => STORE_CONDITION_LABEL[v]}
+                  highlight={!isStoreConditionDefault(conditions)}
+                  onToggle={(value) =>
+                    startTransition(() => setConditions((prev) => toggleValue(prev, value)))
                   }
                 />
                 {settings.filters.maker ? (
@@ -570,12 +653,44 @@ export function Marketplace() {
                     }
                   />
                 ) : null}
+                <ChoiceMenu
+                  title="Per page"
+                  open={open === 'pageSize'}
+                  onOpen={() => setOpen((v) => (v === 'pageSize' ? null : 'pageSize'))}
+                  options={[...CATALOG_PAGE_SIZE_IDS]}
+                  value={String(pageSize)}
+                  defaultValue={String(CATALOG_PAGE_SIZE_DEFAULT)}
+                  onChange={(next) => {
+                    changePageSize(Number(next) as CatalogPageSize)
+                    setOpen(null)
+                  }}
+                />
               </div>
             </div>
           </div>
         </div>
       ) : null}
-      <section className="auction-type-block is-solo market-listings">
+      <section className="auction-type-block is-solo market-listings" ref={listTopRef}>
+        {conditionTabs.length > 1 ? (
+          <div className="store-condition-tabs" role="tablist" aria-label="Device condition">
+            {conditionTabs.map((t) => {
+              const selected = activeConditionTab === t.id
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={selected}
+                  className={`store-condition-tab${selected ? ' is-active' : ''}`}
+                  onClick={() => selectConditionTab(t.id)}
+                >
+                  <span>{t.label}</span>
+                  <em>{conditionCounts[t.id]}</em>
+                </button>
+              )
+            })}
+          </div>
+        ) : null}
         <AuctionTypeHead>
           <div className="auction-command">
             <h2>
@@ -639,21 +754,47 @@ export function Marketplace() {
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((lot) => (
+                  {pageRows.map((lot) => (
                     <MarketLot key={lot.id} lot={lot} />
                   ))}
                 </tbody>
               </table>
             </div>
             <div className="auction-cards market-cards" aria-label="Marketplace lots">
-              {rows.map((lot) => (
+              {pageRows.map((lot) => (
                 <MarketLot key={lot.id} lot={lot} asCard />
               ))}
             </div>
+            <CatalogPager
+              page={safePage}
+              pageCount={pageCount}
+              pageSize={pageSize}
+              total={rows.length}
+              onPage={goToPage}
+              label="Marketplace pages"
+            />
           </>
         ) : (
-          <div className="mh-empty">
+          <div className="mh-empty shop-empty">
             <p>{marketLots.length ? settings.copy.emptyFilters : settings.copy.emptyMarket}</p>
+            {marketLots.length ? (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => {
+                  startTransition(() => {
+                    setStock(['available'])
+                    setGrades([])
+                    setMakers([])
+                    setMemories([])
+                    setOrigins([])
+                    setConditions(STORE_CONDITION_DEFAULT)
+                  })
+                }}
+              >
+                Clear filters
+              </button>
+            ) : null}
           </div>
         )}
         {soldArchive.length ? (

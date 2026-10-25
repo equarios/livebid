@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { InvoicePreview } from '../components/InvoicePreview'
+import { MyPageHead } from '../components/MyPageHead'
 import { PaymentSubmitDialog } from '../components/PaymentSubmitDialog'
 import { api } from '../lib/api'
 import {
@@ -240,24 +241,31 @@ export function Invoices() {
 
   return (
     <div className="inv-page mh-desk">
-      <header className="mh-desk-head">
-        <h2>
-          Invoices
-          <em>{rows.length}</em>
-          {awaitingCount ? <em className="is-lose">Awaiting {awaitingCount}</em> : null}
-        </h2>
-        <p className="mh-desk-note">{noteParts.join(' · ')}</p>
-        <div className="mh-desk-actions">
-          <label className="auction-command-flag">
-            <input type="checkbox" checked={unopened} onChange={(e) => setUnopened(e.target.checked)} />
-            Unopened
-          </label>
-          <label className="auction-command-flag">
-            <input type="checkbox" checked={poOnly} onChange={(e) => setPoOnly(e.target.checked)} />
-            PO only
-          </label>
-        </div>
-      </header>
+      <MyPageHead
+        title="Invoice"
+        count={rows.length}
+        note={noteParts.join(' · ')}
+        trust={[
+          { to: '/account/bids', label: 'Bids' },
+          { to: '/account/marketplace-history', label: 'Cart' },
+        ]}
+      >
+        {awaitingCount ? (
+          <ul className="store-page-trust mypage-head-meta">
+            <li>Awaiting payment {awaitingCount}</li>
+          </ul>
+        ) : null}
+      </MyPageHead>
+      <div className="mypage-meta mypage-inv-flags">
+        <label className="auction-command-flag">
+          <input type="checkbox" checked={unopened} onChange={(e) => setUnopened(e.target.checked)} />
+          Unopened
+        </label>
+        <label className="auction-command-flag">
+          <input type="checkbox" checked={poOnly} onChange={(e) => setPoOnly(e.target.checked)} />
+          PO only
+        </label>
+      </div>
 
       {notice ? <p className="ok tiny">{notice}</p> : null}
 

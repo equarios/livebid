@@ -523,10 +523,10 @@ export function StoreOrders() {
             <p className="store-page-empty-title">No orders yet</p>
             <p className="muted">When you check out, your receipts and trade-ins show up here.</p>
             <div className="store-page-empty-actions">
-              <Link to="/store" className="btn btn-primary">
+              <Link to="/store" className="btn btn-primary btn-sm">
                 Continue shopping
               </Link>
-              <Link to="/store/trade-in" className="btn btn-ghost">
+              <Link to="/store/trade-in" className="btn btn-ghost btn-sm">
                 Start a trade-in
               </Link>
             </div>

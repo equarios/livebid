@@ -99,13 +99,13 @@ export function MyPage() {
       <section className="auction-type-block is-solo mypage-desk">
         <AuctionTypeHead>
           <div className="auction-command">
-            <nav className="ops-nav mypage-ops-nav" aria-label="My Page">
+            <nav className="ops-nav mypage-ops-nav mypage-ops-chips" aria-label="My Page">
               {tabs.map((tab) => (
                 <NavLink
                   key={tab.to}
                   to={tab.to}
                   end={tab.end}
-                  className={({ isActive }) => `ops-nav-btn${isActive ? ' on' : ''}`}
+                  className={({ isActive }) => `ops-nav-btn mypage-tab-chip${isActive ? ' on is-active' : ''}`}
                 >
                   {tab.label}
                   {tab.badge ? <em>{tab.badge}</em> : null}
@@ -114,7 +114,7 @@ export function MyPage() {
               <div className={`mypage-more${moreOpen ? ' open' : ''}`} ref={moreRef}>
                 <button
                   type="button"
-                  className={`ops-nav-btn${moreOn || moreOpen ? ' on' : ''}`}
+                  className={`ops-nav-btn mypage-tab-chip${moreOn || moreOpen ? ' on is-active' : ''}`}
                   aria-expanded={moreOpen}
                   onClick={() => setMoreOpen((v) => !v)}
                 >

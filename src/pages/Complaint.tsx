@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import { Link } from 'react-router-dom'
+import { MyPageHead } from '../components/MyPageHead'
 import { DEFAULT_SETTINGS } from '../data'
 import { useStore } from '../store'
 
@@ -100,16 +100,39 @@ export function Complaint() {
 
   return (
     <div className="complaint-page">
-      <h2 className="complaint-title">Complaint</h2>
-      <p className="muted tiny mypage-intro">
-        Lot, invoice, or shipping issue — staff review from Admin. For general questions use{' '}
-        <Link to="/support#enquiry">Support enquiry</Link>.
-      </p>
+      <MyPageHead
+        title="Complaint"
+        note="Lot, invoice, or shipping issue — staff review from Admin."
+        trust={[
+          { to: '/support#enquiry', label: 'Support enquiry' },
+          { to: '/account/documents', label: 'Documents' },
+        ]}
+      />
 
-      <form className="complaint-form support-enquiry-form" noValidate onSubmit={onSubmit}>
-        <div className="support-enquiry-row">
-          <label className="field">
-            <span>Name</span>
+      <form className="complaint-form help-panel" noValidate onSubmit={onSubmit}>
+        <h3 className="mypage-panel-label">File a complaint</h3>
+
+        <fieldset className="complaint-topic">
+          <legend className="filter-trigger-title">Topic</legend>
+          <div className="ti-chips" role="radiogroup" aria-label="Topic">
+            {TOPICS.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                role="radio"
+                aria-checked={topic === t.id}
+                className={`btn btn-sm ti-chip${topic === t.id ? ' is-active' : ''}`}
+                onClick={() => setTopic(t.id)}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </fieldset>
+
+        <div className="complaint-row">
+          <label className="complaint-field">
+            <span className="filter-trigger-title">Name</span>
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -117,8 +140,8 @@ export function Complaint() {
               required
             />
           </label>
-          <label className="field">
-            <span>Email</span>
+          <label className="complaint-field">
+            <span className="filter-trigger-title">Email</span>
             <input
               type="email"
               value={email}
@@ -129,29 +152,17 @@ export function Complaint() {
           </label>
         </div>
 
-        <div className="support-enquiry-row">
-          <label className="field">
-            <span>Topic</span>
-            <select value={topic} onChange={(e) => setTopic(e.target.value as TopicId)} required>
-              {TOPICS.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span>Reference</span>
-            <input
-              value={reference}
-              onChange={(e) => setReference(e.target.value)}
-              placeholder="Lot ID, invoice #, order #"
-            />
-          </label>
-        </div>
+        <label className="complaint-field">
+          <span className="filter-trigger-title">Reference</span>
+          <input
+            value={reference}
+            onChange={(e) => setReference(e.target.value)}
+            placeholder="Lot ID, invoice #, order #"
+          />
+        </label>
 
-        <label className="field">
-          <span>What went wrong</span>
+        <label className="complaint-field">
+          <span className="filter-trigger-title">What went wrong</span>
           <textarea
             rows={5}
             value={message}
@@ -162,15 +173,6 @@ export function Complaint() {
             maxLength={2000}
           />
         </label>
-
-        <div className="support-enquiry-actions">
-          <button type="submit" className="btn btn-primary btn-sm" disabled={!to}>
-            Send complaint
-          </button>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => void copyMessage()}>
-            Copy message
-          </button>
-        </div>
 
         {formError ? (
           <p className="error tiny" role="alert">
@@ -192,6 +194,19 @@ export function Complaint() {
             Enquiry email isn’t set yet. Super can add it under Footer &amp; contact.
           </p>
         ) : null}
+
+        <div className="ti-bar complaint-bar">
+          <div className="ti-bar-estimate">
+            <span className="muted tiny">To</span>
+            <strong className="complaint-bar-to">{to || 'Not set'}</strong>
+          </div>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => void copyMessage()}>
+            Copy message
+          </button>
+          <button type="submit" className="btn btn-primary" disabled={!to}>
+            Send complaint
+          </button>
+        </div>
       </form>
     </div>
   )

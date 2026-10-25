@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { MyPageHead } from '../components/MyPageHead'
 import { api } from '../lib/api'
 import { downloadCsv } from '../lib/csv'
 
@@ -86,33 +87,42 @@ export function ImeiPage() {
 
   return (
     <div className="imei-page">
-      <div className="mypage-meta">
-        <em>
-          {packs.length} pack{packs.length === 1 ? '' : 's'}
-        </em>
-        <span className="muted tiny">Search one device or download a pack CSV.</span>
-      </div>
-      <form className="imei-search" onSubmit={(e) => void onSearch(e)}>
-        <label className="field">
-          <span>IMEI</span>
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Paste IMEI (14–16 digits)"
-            inputMode="numeric"
-            autoComplete="off"
-            spellCheck={false}
-          />
-        </label>
-        <button type="submit" className="btn btn-primary btn-sm" disabled={searching}>
-          {searching ? 'Searching…' : 'Search'}
-        </button>
+      <MyPageHead
+        title="IMEI"
+        count={loading ? '…' : packs.length}
+        note="Search one device or download a pack CSV."
+        trust={[
+          { to: '/account/invoices', label: 'Invoice' },
+          { to: '/account/documents', label: 'Documents' },
+        ]}
+      />
+
+      <form className="imei-search help-panel" onSubmit={(e) => void onSearch(e)}>
+        <h3 className="mypage-panel-label">Look up</h3>
+        <div className="imei-search-row">
+          <label className="imei-search-field">
+            <span className="sr-only">IMEI</span>
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Paste IMEI (14–16 digits)"
+              inputMode="numeric"
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </label>
+          <button type="submit" className="btn btn-primary btn-sm" disabled={searching}>
+            {searching ? 'Searching…' : 'Search'}
+          </button>
+        </div>
       </form>
+
       {err ? <p className="tiny imei-err">{err}</p> : null}
 
       {matches && matches.length > 0 ? (
-        <div className="table-wrap imei-results">
-          <table className="auction-table">
+        <div className="table-wrap imei-results help-panel">
+          <h3 className="mypage-panel-label">Match</h3>
+          <table className="gbs-table auction-table">
             <thead>
               <tr>
                 <th>IMEI</th>
@@ -140,33 +150,37 @@ export function ImeiPage() {
         </div>
       ) : null}
 
-      <div className="imei-packs">
-        <div className="mypage-meta">
-          <span className="mypage-meta-label">Your packs</span>
-        </div>
+      <section className="imei-packs help-panel" aria-label="Your packs">
+        <h3 className="mypage-panel-label">Your packs</h3>
         {loading ? (
           <p className="muted tiny">Loading…</p>
         ) : packs.length === 0 ? (
-          <p className="muted tiny">No IMEI packs assigned yet. Staff upload and assign after shipping.</p>
+          <div className="mh-empty shop-empty">
+            <p>No IMEI packs assigned yet. Staff upload and assign after shipping.</p>
+          </div>
         ) : (
           <ul className="imei-pack-list">
             {packs.map((p) => (
               <li key={p.id}>
-                <div>
+                <div className="imei-pack-copy">
                   <strong>{p.title}</strong>
-                  <div className="muted tiny">
+                  <span className="muted tiny">
                     {p.rowCount} device{p.rowCount === 1 ? '' : 's'}
                     {p.invoiceId ? ` · ${p.invoiceId}` : ''}
-                  </div>
+                  </span>
                 </div>
-                <button type="button" className="btn btn-primary btn-sm" onClick={() => void downloadPack(p)}>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => void downloadPack(p)}
+                >
                   Download CSV
                 </button>
               </li>
             ))}
           </ul>
         )}
-      </div>
+      </section>
     </div>
   )
 }

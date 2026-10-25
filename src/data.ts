@@ -1,4 +1,5 @@
 import { ORIGINS } from './lib/auctionLists'
+import { LANDER_PHOTOS } from './lib/landerMedia'
 import type { Account, AuctionType, Lot, SiteSettings } from './types'
 
 export const DEFAULT_SETTINGS: SiteSettings = {
@@ -327,24 +328,21 @@ export const DEFAULT_SETTINGS: SiteSettings = {
         title: 'Tested devices. Fixed prices.',
         body: 'Ready-to-ship phones and tablets — shop now, no wholesale account needed.',
         cta: 'Shop collection',
-        imageUrl:
-          'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?auto=format&fit=crop&w=2000&q=72',
+        imageUrl: LANDER_PHOTOS.phoneStack(2000),
       },
       {
         kicker: 'Consumer store',
         title: 'Grade A picks. Same-day ready.',
         body: 'Inspected units with clear grades — add to cart and check out in minutes.',
         cta: 'Browse phones',
-        imageUrl:
-          'https://images.unsplash.com/photo-1592899677977-9c10ca588bbd?auto=format&fit=crop&w=2000&q=72',
+        imageUrl: LANDER_PHOTOS.phoneFlat(2000),
       },
       {
         kicker: 'Consumer store',
         title: 'Tablets and wearables too.',
         body: 'Fixed retail prices — separate from wholesale auctions and invoices.',
         cta: 'Shop collection',
-        imageUrl:
-          'https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?auto=format&fit=crop&w=2000&q=72',
+        imageUrl: LANDER_PHOTOS.tablet(2000),
       },
     ],
     wholesaleHeroes: [
@@ -354,8 +352,7 @@ export const DEFAULT_SETTINGS: SiteSettings = {
         body: 'Bid by the piece or buy at listed price — one wholesale desk for verified companies.',
         cta: 'Browse wholesale',
         to: '/wholesale',
-        imageUrl:
-          'https://images.unsplash.com/photo-1556656793-08538906a9f8?auto=format&fit=crop&w=2000&q=72',
+        imageUrl: LANDER_PHOTOS.phoneHand(2000),
       },
       {
         kicker: 'B2B wholesale',
@@ -363,8 +360,7 @@ export const DEFAULT_SETTINGS: SiteSettings = {
         body: 'Cart checkout for verified buyers — staff review, then your confirm.',
         cta: 'Browse wholesale',
         to: '/wholesale',
-        imageUrl:
-          'https://images.unsplash.com/photo-1563986768609-322da13575f3?auto=format&fit=crop&w=2000&q=72',
+        imageUrl: LANDER_PHOTOS.phoneFlat(2000),
       },
       {
         kicker: 'B2B wholesale',
@@ -372,8 +368,7 @@ export const DEFAULT_SETTINGS: SiteSettings = {
         body: 'Pay after Admin and Super accept the receipt — clear window from issue date.',
         cta: 'How buying works',
         to: '/buyers',
-        imageUrl:
-          'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?auto=format&fit=crop&w=2000&q=72',
+        imageUrl: LANDER_PHOTOS.tablet(2000),
       },
     ],
     wholesaleHowTitle: 'How wholesale works',
@@ -412,100 +407,85 @@ export const DEFAULT_SETTINGS: SiteSettings = {
         {
           title: 'Live auctions',
           body: 'Bid by the piece. You only see your fill — other buyers stay private.',
-          imageUrl:
-            'https://images.unsplash.com/photo-1556656793-08538906a9f8?auto=format&fit=crop&w=1600&q=72',
+          imageUrl: LANDER_PHOTOS.phoneHand(1600),
         },
         {
           title: 'Highest prices fill first',
           body: 'Last bid per account counts. Take all if you want every remaining unit.',
-          imageUrl:
-            'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?auto=format&fit=crop&w=1600&q=72',
+          imageUrl: LANDER_PHOTOS.phoneStack(1600),
         },
         {
           title: 'Private fills',
           body: 'See your own allocation — competing bids stay off the public board.',
-          imageUrl:
-            'https://images.unsplash.com/photo-1592899677977-9c10ca588bbd?auto=format&fit=crop&w=1600&q=72',
+          imageUrl: LANDER_PHOTOS.phoneFlat(1600),
         },
       ],
       marketplace: [
         {
           title: 'Marketplace',
           body: 'Buy at the listed price or send an offer. Staff review, then you confirm the invoice.',
-          imageUrl:
-            'https://images.unsplash.com/photo-1563986768609-322da13575f3?auto=format&fit=crop&w=1600&q=72',
+          imageUrl: LANDER_PHOTOS.phoneFlat(1600),
         },
         {
           title: 'List price or offer',
           body: 'Cart checkout for ready lots — or send a price and wait for staff accept.',
-          imageUrl:
-            'https://images.unsplash.com/photo-1553413077-190dd305871c?auto=format&fit=crop&w=1600&q=72',
+          imageUrl: LANDER_PHOTOS.tablet(1600),
         },
         {
           title: 'Confirm after review',
           body: 'Accepted carts and offers become invoices you confirm before pay.',
-          imageUrl:
-            'https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?auto=format&fit=crop&w=1600&q=72',
+          imageUrl: LANDER_PHOTOS.phoneStack(1600),
         },
       ],
       myPage: [
         {
           title: 'My Page',
           body: 'Queues, bid history, marketplace cart, and invoices — one desk.',
-          imageUrl:
-            'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?auto=format&fit=crop&w=1600&q=72',
+          imageUrl: LANDER_PHOTOS.tablet(1600),
         },
         {
           title: 'Wholesale status',
           body: 'Apply, upload documents, and track approval from one account hub.',
-          imageUrl:
-            'https://images.unsplash.com/photo-1556656793-08538906a9f8?auto=format&fit=crop&w=1600&q=72',
+          imageUrl: LANDER_PHOTOS.phoneHand(1600),
         },
         {
           title: 'Pay and ship',
           body: 'Unpaid invoices, receipts, and IMEI packs stay next to your bids.',
-          imageUrl:
-            'https://images.unsplash.com/photo-1486312338219-ce68d2c6f44d?auto=format&fit=crop&w=1600&q=72',
+          imageUrl: LANDER_PHOTOS.phoneFlat(1600),
         },
       ],
       admin: [
         {
           title: 'Admin',
           body: 'Catalog, commerce reviews, buyers, clients email, and first payment stamps.',
-          imageUrl:
-            'https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&w=1600&q=72',
+          imageUrl: LANDER_PHOTOS.phoneStack(1600),
         },
         {
           title: 'Listings and IMEI',
           body: 'Publish drops, extend clocks, and pack serials for fulfilled invoices.',
-          imageUrl:
-            'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?auto=format&fit=crop&w=1600&q=72',
+          imageUrl: LANDER_PHOTOS.tablet(1600),
         },
         {
           title: 'First payment stamp',
           body: 'Review receipts — Super handles final confirms and site settings.',
-          imageUrl:
-            'https://images.unsplash.com/photo-1563986768609-322da13575f3?auto=format&fit=crop&w=1600&q=72',
+          imageUrl: LANDER_PHOTOS.phoneHand(1600),
         },
       ],
       super: [
         {
           title: 'Super admin',
           body: 'Approve catalogs, issue invoices, manage people, and edit site-wide look.',
-          imageUrl:
-            'https://images.unsplash.com/photo-1486312338219-ce68d2c6f44d?auto=format&fit=crop&w=1600&q=72',
+          imageUrl: LANDER_PHOTOS.phoneFlat(1600),
         },
         {
           title: 'Settings → Pages',
           body: 'Heroes, workbench banners, buyers/sellers copy — edit without a deploy.',
-          imageUrl:
-            'https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&w=1600&q=72',
+          imageUrl: LANDER_PHOTOS.phoneStack(1600),
         },
         {
           title: 'Final money stamps',
           body: 'Day-to-day listing and IMEI live under Admin — Super closes the pay loop.',
-          imageUrl:
-            'https://images.unsplash.com/photo-1553413077-190dd305871c?auto=format&fit=crop&w=1600&q=72',
+          imageUrl: LANDER_PHOTOS.tablet(1600),
         },
       ],
     },

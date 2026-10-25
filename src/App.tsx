@@ -2,18 +2,49 @@ import { lazy, Suspense, type ComponentType, type ReactNode } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { FloatingContact } from './components/FloatingContact'
 import { Layout } from './components/Layout'
+import { PublicShell } from './components/PublicShell'
 import { useLangQuerySync } from './components/SeoHead'
 import { ThemeApplier } from './components/ThemeApplier'
 import { canUseWholesaleDesk, publicHome, wholesaleHome } from './lib/channelAccess'
 import { guestLoginFrom } from './lib/safeReturnPath'
 import { useStore } from './store'
 
-const pageFallback = (
-  <div className="page-fallback" role="status" aria-live="polite">
-    <span className="page-fallback-pulse" />
-    <p className="muted tiny">Loading page…</p>
-  </div>
-)
+function PagePulse() {
+  return (
+    <div className="page-fallback" role="status" aria-live="polite">
+      <span className="page-fallback-pulse" />
+      <p className="muted tiny">Loading page…</p>
+    </div>
+  )
+}
+
+/** Keep the public header mounted while a route chunk loads. */
+function PageFallback() {
+  const { pathname } = useLocation()
+  const { settings } = useStore()
+  const inApp =
+    pathname.startsWith('/account') ||
+    pathname.startsWith('/auctions') ||
+    pathname.startsWith('/marketplace') ||
+    pathname.startsWith('/admin') ||
+    pathname.startsWith('/super')
+  if (inApp) return <PagePulse />
+  const consumer =
+    settings.showStore &&
+    (pathname === '/' ||
+      pathname.startsWith('/store') ||
+      pathname === '/login' ||
+      pathname === '/register')
+  return (
+    <PublicShell mode={consumer ? 'consumer' : 'wholesale'}>
+      <PagePulse />
+    </PublicShell>
+  )
+}
+
+function AppSuspense({ children }: { children: ReactNode }) {
+  return <Suspense fallback={<PagePulse />}>{children}</Suspense>
+}
 
 function lazyNamed<M>(loader: () => Promise<M>, exportName: keyof M & string) {
   return lazy(async () => {
@@ -58,10 +89,14 @@ const Tutorial = lazyNamed(() => import('./pages/InfoPages'), 'Tutorial')
 const NotFound = lazyNamed(() => import('./pages/NotFound'), 'NotFound')
 
 function Guard({ children }: { children: ReactNode }) {
-  const { user, authReady } = useStore()
+  const { user, authReady, settings } = useStore()
   const location = useLocation()
   if (!authReady) {
-    return <p className="muted tiny" style={{ padding: 16 }}>Loading session…</p>
+    return (
+      <PublicShell mode={settings.showStore ? 'consumer' : 'wholesale'}>
+        <PagePulse />
+      </PublicShell>
+    )
   }
   if (!user)
     return (
@@ -125,7 +160,11 @@ function HomeRedirect() {
 function RootPage() {
   const { settings, user, isStaff, authReady } = useStore()
   if (!authReady) {
-    return <p className="muted tiny" style={{ padding: 16 }}>Loading session…</p>
+    return (
+      <PublicShell mode={settings.showStore ? 'consumer' : 'wholesale'}>
+        <PagePulse />
+      </PublicShell>
+    )
   }
   if (canUseWholesaleDesk(user, isStaff) && !isStaff) {
     return <Navigate to={wholesaleHome(settings)} replace />
@@ -139,7 +178,11 @@ function RootPage() {
 function WholesaleHubPage() {
   const { user, isStaff, authReady } = useStore()
   if (!authReady) {
-    return <p className="muted tiny" style={{ padding: 16 }}>Loading session…</p>
+    return (
+      <PublicShell mode="wholesale">
+        <PagePulse />
+      </PublicShell>
+    )
   }
   /* Guests can browse the deal board (prices locked); approved buyers/staff get the full hub. */
   if (!user) return <Home />
@@ -184,7 +227,7 @@ export default function App() {
       <ThemeApplier />
       <LangQueryBridge />
       <FloatingContact />
-      <Suspense fallback={pageFallback}>
+      <Suspense fallback={<PageFallback />}>
         <Routes>
           <Route path="/" element={<RootPage />} />
           <Route path="/wholesale" element={<WholesaleHubPage />} />
@@ -260,34 +303,47 @@ export default function App() {
             <Route
               path="/auctions"
               element={
-                <WholesaleDeskGate>
-                  <ChannelGate flag="showAuctions">
-                    <Auctions />
-                  </ChannelGate>
-                </WholesaleDeskGate>
+                <AppSuspense>
+                  <WholesaleDeskGate>
+                    <ChannelGate flag="showAuctions">
+                      <Auctions />
+                    </ChannelGate>
+                  </WholesaleDeskGate>
+                </AppSuspense>
               }
             />
             <Route
               path="/auctions/:type"
               element={
-                <WholesaleDeskGate>
-                  <ChannelGate flag="showAuctions">
-                    <Auctions />
-                  </ChannelGate>
-                </WholesaleDeskGate>
+                <AppSuspense>
+                  <WholesaleDeskGate>
+                    <ChannelGate flag="showAuctions">
+                      <Auctions />
+                    </ChannelGate>
+                  </WholesaleDeskGate>
+                </AppSuspense>
               }
             />
             <Route
               path="/marketplace"
               element={
-                <WholesaleDeskGate>
-                  <ChannelGate flag="showMarketplace">
-                    <Marketplace />
-                  </ChannelGate>
-                </WholesaleDeskGate>
+                <AppSuspense>
+                  <WholesaleDeskGate>
+                    <ChannelGate flag="showMarketplace">
+                      <Marketplace />
+                    </ChannelGate>
+                  </WholesaleDeskGate>
+                </AppSuspense>
               }
             />
-            <Route path="/account" element={<MyPage />}>
+            <Route
+              path="/account"
+              element={
+                <AppSuspense>
+                  <MyPage />
+                </AppSuspense>
+              }
+            >
               <Route index element={<AccountOverview />} />
               <Route path="wholesale" element={<WholesaleApply />} />
               <Route path="documents" element={<AccountDocuments />} />
@@ -319,10 +375,24 @@ export default function App() {
             <Route path="/watchlist" element={<Navigate to="/account/favourites" replace />} />
             <Route path="/favourites" element={<Navigate to="/account/favourites" replace />} />
             <Route path="/invoices" element={<Navigate to="/account/invoices" replace />} />
-            <Route path="/admin" element={<AdminGuard />} />
+            <Route
+              path="/admin"
+              element={
+                <AppSuspense>
+                  <AdminGuard />
+                </AppSuspense>
+              }
+            />
             <Route path="/admin/invoices" element={<Navigate to="/admin?section=money" replace />} />
             <Route path="/admin/imei" element={<Navigate to="/admin?section=imei" replace />} />
-            <Route path="/super" element={<SuperGuard />} />
+            <Route
+              path="/super"
+              element={
+                <AppSuspense>
+                  <SuperGuard />
+                </AppSuspense>
+              }
+            />
             <Route path="/super/invoices" element={<Navigate to="/super?section=money" replace />} />
             <Route path="/super/imei" element={<Navigate to="/admin?section=imei" replace />} />
           </Route>

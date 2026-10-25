@@ -6,6 +6,7 @@ import { SeoHead } from '../components/SeoHead'
 import { TimeLeft } from '../components/TimeLeft'
 import { WholesaleDeskPulseBar } from '../components/WholesaleDeskPulseBar'
 import { WholesaleOnboardChecklist } from '../components/WholesaleOnboardChecklist'
+import { canUseWholesaleDesk } from '../lib/channelAccess'
 import {
   effectiveEndsAt,
   hideAuctionHigh,
@@ -93,11 +94,12 @@ function DealCard({
 
 /** Wholesale hub — B2B workspace (auctions, marketplace, account). */
 export function Home() {
-  const { lots, user, settings } = useStore()
+  const { lots, user, isStaff, settings } = useStore()
   const now = useNow()
   const navigate = useNavigate()
   const [params] = useSearchParams()
   const q = (params.get('q') || '').trim().toLowerCase()
+  const deskOk = canUseWholesaleDesk(user, isStaff)
   const pages = {
     ...DEFAULT_SETTINGS.pages,
     ...settings.pages,
@@ -259,12 +261,13 @@ export function Home() {
         noindex={Boolean(q)}
         jsonLd={seoJsonLd}
       />
-      {/* Hero → ending soon → auctions/market desk → How/Trust. */}
+      {/* Hero → quick links → desk → ending soon / deals. */}
       {!q ? (
         <>
           <LandHeroSlider
             brand={brand}
             label={`${brand} wholesale`}
+            className="wholesale-hub-hero"
             veilClassName="is-wholesale"
             slides={pages.wholesaleHeroes.slice(0, MAX_LANDER_HERO_SLIDES).map((s) => ({
               title: s.title,
@@ -284,16 +287,57 @@ export function Home() {
             )}
             secondary={null}
           />
-          <p className="muted tiny wholesale-we-buy-note">
-            We also buy bulk inventory —{' '}
-            <Link to="/sellers#sell-to-us">sell to us</Link>.
-          </p>
+          <nav className="pub-section wholesale-hub-links" aria-label="Wholesale quick links">
+            <h2 className="wholesale-hub-links-label">Quick links</h2>
+            <ul className="seo-cat-chips">
+              {!deskOk ? (
+                <>
+                  <li>
+                    <Link to="/register">Apply</Link>
+                  </li>
+                  <li>
+                    <Link to="/login">Sign in</Link>
+                  </li>
+                </>
+              ) : null}
+              <li>
+                <Link to="/wholesale/c">Categories</Link>
+              </li>
+              <li>
+                <button type="button" className="wholesale-hub-chip-btn" onClick={() => go('/auctions')}>
+                  Live desks
+                </button>
+              </li>
+              {settings.showMarketplace ? (
+                <li>
+                  <button
+                    type="button"
+                    className="wholesale-hub-chip-btn"
+                    onClick={() => go('/marketplace')}
+                  >
+                    {settings.marketplaceLabel || 'Marketplace'}
+                  </button>
+                </li>
+              ) : null}
+              <li>
+                <Link to="/buyers">For buyers</Link>
+              </li>
+              <li>
+                <Link to="/sellers#sell-to-us">Sell to us</Link>
+              </li>
+              <li>
+                <Link to="/support">Help</Link>
+              </li>
+            </ul>
+          </nav>
         </>
       ) : null}
 
-      {!q && user ? <WholesaleDeskPulseBar /> : null}
       {!q && user ? (
-        <WholesaleOnboardChecklist forceOpen={params.get('onboard') === '1'} />
+        <div className="pub-section wholesale-desk-strips">
+          <WholesaleDeskPulseBar forceOpenOnboard={params.get('onboard') === '1'} />
+          <WholesaleOnboardChecklist forceOpen={params.get('onboard') === '1'} />
+        </div>
       ) : null}
 
       <div className={`wholesale-desk-band${q ? ' is-search' : ''}`}>
@@ -324,7 +368,7 @@ export function Home() {
                 id="wholesale-ending-soon"
                 className="pub-section wholesale-ending-soon"
               >
-                <div className="pub-section-head is-rail">
+                <div className="pub-section-head is-rail wholesale-hub-rail">
                   <h2>{pages.wholesaleEndingSoonTitle}</h2>
                   <button type="button" className="linkish" onClick={() => go('/auctions')}>
                     {pages.wholesaleEndingSoonViewAll}
@@ -332,50 +376,40 @@ export function Home() {
                 </div>
                 <div className="ending-soon-row" aria-label="Auction desks ending soon">
                   {endingSoonDesks.map((desk) => {
-                    const lot = desk.nextLot
                     const n = desk.brandList.length
                     const samples = desk.brandList.slice(0, 3)
                     const brandCount =
                       n === 0 ? 'No brands yet' : `${n.toLocaleString()} brand${n === 1 ? '' : 's'}`
-                    const brandSamples =
+                    const note =
                       n === 0
-                        ? ''
+                        ? 'No brands yet in this desk.'
                         : n <= 3
-                          ? samples.join(' · ')
-                          : `incl. ${samples.join(', ')} +${n - 3} more`
+                          ? `${brandCount}: ${samples.join(', ')}.`
+                          : `${brandCount}, incl. ${samples.join(', ')} +${n - 3} more.`
+                    const lotLabel = desk.lots === 1 ? 'lot' : 'lots'
                     return (
                       <button
                         key={desk.value}
                         type="button"
-                        className="ending-soon-chip is-desk"
+                        className="ending-soon-chip is-desk is-hero"
                         onClick={() => go(listPath(desk.value))}
-                        title={`${desk.label}: ${desk.pcs.toLocaleString()} pcs · ${brandCount}${n ? ` (${desk.brandList.join(', ')})` : ''}`}
+                        title={`${desk.label}: ${desk.pcs.toLocaleString()} pcs · ${desk.lots} ${lotLabel}`}
                       >
-                        <img
-                          src={lotThumb(lot)}
-                          alt=""
-                          onError={(e) => {
-                            e.currentTarget.onerror = null
-                            e.currentTarget.src = photoFallback(lot)
-                          }}
-                        />
-                        <span className="ending-soon-copy">
-                          <span className="ending-soon-type">{desk.label}</span>
-                          <strong>
-                            {desk.pcs.toLocaleString()} pcs · {desk.lots}{' '}
-                            {desk.lots === 1 ? 'lot' : 'lots'}
+                        <span className="ending-soon-hero-body">
+                          <strong className="ending-soon-hero-title">
+                            {desk.label}
+                            <em className="store-page-hero-count">{desk.lots}</em>
                           </strong>
-                          <span className="ending-soon-stats">
-                            <span className="ending-soon-brand-count">{brandCount}</span>
-                            {brandSamples ? (
-                              <span className="ending-soon-brand-samples">{brandSamples}</span>
-                            ) : null}
-                          </span>
-                          <span className="ending-soon-foot">
-                            <span className="ending-soon-clock">
+                          <span className="ending-soon-hero-note">{note}</span>
+                          <ul className="store-page-trust">
+                            <li>{desk.pcs.toLocaleString()} pcs</li>
+                            <li>
+                              {desk.lots.toLocaleString()} {lotLabel}
+                            </li>
+                            <li className="ending-soon-clock">
                               <TimeLeft endsAt={desk.nextCloseAt} warn />
-                            </span>
-                          </span>
+                            </li>
+                          </ul>
                         </span>
                       </button>
                     )
@@ -387,7 +421,7 @@ export function Home() {
             {auctionDeals.length ? (
               <section className={`pub-section${q ? ' is-search-results' : ''}`}>
                 <div className="deal-type-block">
-                  <div className="pub-section-head is-rail">
+                  <div className="pub-section-head is-rail wholesale-hub-rail">
                     <h2>{q ? `Results for “${params.get('q')}”` : pages.wholesaleDealsTitle}</h2>
                     <button type="button" className="linkish" onClick={() => go('/auctions')}>
                       {pages.wholesaleViewAllAuctions}
@@ -412,7 +446,7 @@ export function Home() {
             {showMarketBlock ? (
               <section className="pub-section">
                 <div className="deal-type-block">
-                  <div className="pub-section-head is-rail">
+                  <div className="pub-section-head is-rail wholesale-hub-rail">
                     <h2>{settings.marketplaceLabel}</h2>
                     <button type="button" className="linkish" onClick={() => go('/marketplace')}>
                       {pages.wholesaleViewAllMarket}
@@ -444,28 +478,44 @@ export function Home() {
       {!q ? (
         <section className="wholesale-info-strip" aria-label="How it works">
           <div className="wholesale-info-inner">
-            <div className="wholesale-info-how">
-              <h2>{pages.wholesaleHowTitle}</h2>
-              <ol>
-                {pages.wholesaleHowSteps.map((step, i) => (
-                  <li key={step.title}>
-                    <span className="how-step-n" aria-hidden>
-                      {String(i + 1).padStart(2, '0')}
-                    </span>
-                    <strong>{step.title}</strong>
-                    <span>{step.body}</span>
+            <header className="wholesale-how-hero ending-soon-chip is-hero">
+              <div className="ending-soon-hero-body">
+                <h2 className="ending-soon-hero-title">
+                  {pages.wholesaleHowTitle}
+                  <em className="store-page-hero-count">{pages.wholesaleHowSteps.length}</em>
+                </h2>
+                <p className="ending-soon-hero-note">
+                  Apply, get approved, bid or buy, then pay the invoice — same desk end to end.
+                </p>
+                <ul className="store-page-trust">
+                  {pages.wholesaleTrust.map((item) => (
+                    <li key={item.title} title={item.body}>
+                      {item.title}
+                    </li>
+                  ))}
+                  <li>
+                    <Link to={deskOk ? '/tutorial' : '/register'}>
+                      {deskOk ? 'Tutorial' : 'Apply as buyer'} →
+                    </Link>
                   </li>
-                ))}
-              </ol>
-            </div>
-            <ul className="wholesale-info-trust">
-              {pages.wholesaleTrust.map((item) => (
-                <li key={item.title}>
-                  <strong>{item.title}</strong>
-                  <span>{item.body}</span>
+                  <li>
+                    <Link to="/support">Support</Link>
+                  </li>
+                </ul>
+              </div>
+            </header>
+
+            <ol className="wholesale-how-steps">
+              {pages.wholesaleHowSteps.map((step, i) => (
+                <li key={step.title} className="help-panel wholesale-how-step">
+                  <span className="how-step-n" aria-hidden>
+                    {String(i + 1).padStart(2, '0')}
+                  </span>
+                  <strong>{step.title}</strong>
+                  <span>{step.body}</span>
                 </li>
               ))}
-            </ul>
+            </ol>
           </div>
         </section>
       ) : null}

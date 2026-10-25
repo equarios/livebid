@@ -3,6 +3,7 @@ import { CheckMenu, toggleValue } from '../components/CheckMenu'
 import { isFilterUiTarget } from '../components/FilterPanel'
 import { InvoicePreview } from '../components/InvoicePreview'
 import { ItemLink } from '../components/ItemLink'
+import { MyPageHead } from '../components/MyPageHead'
 import { bidOutcome, fillStats } from '../lib/allocate'
 import { downloadCsv as exportCsvFile } from '../lib/csv'
 import { isSealedLot, typePillClass } from '../lib/auctionLists'
@@ -207,34 +208,37 @@ export function BidHistory() {
 
   return (
     <div className="bid-history-page mypage-listings">
-      <div className="mypage-desk-head">
-        <h2>
-          Bid history
-          <em>{filtered.length}</em>
-        </h2>
-        <div className="mypage-meta">
-          <button
-            type="button"
-            className={`bh-chip is-won${statuses.includes('won') ? ' is-on' : ''}`}
-            onClick={() => toggleOutcome('won')}
-          >
-            Won {wonOnly}
-          </button>
-          <button
-            type="button"
-            className={`bh-chip is-partial${statuses.includes('partial') ? ' is-on' : ''}`}
-            onClick={() => toggleOutcome('partial')}
-          >
-            Partial {partialOnly}
-          </button>
-          <button
-            type="button"
-            className={`bh-chip is-lost${statuses.includes('lost') ? ' is-on' : ''}`}
-            onClick={() => toggleOutcome('lost')}
-          >
-            Lost {lostOnly}
-          </button>
-        </div>
+      <MyPageHead
+        title="Bids"
+        count={filtered.length}
+        note="Wins, partials, and losses — filter and export when you need a record."
+        trust={[
+          { to: '/account/invoices', label: 'Invoice' },
+          { to: '/account/favourites', label: 'Favorites' },
+        ]}
+      />
+      <div className="mypage-meta mypage-bids-meta">
+        <button
+          type="button"
+          className={`bh-chip is-won${statuses.includes('won') ? ' is-on' : ''}`}
+          onClick={() => toggleOutcome('won')}
+        >
+          Won {wonOnly}
+        </button>
+        <button
+          type="button"
+          className={`bh-chip is-partial${statuses.includes('partial') ? ' is-on' : ''}`}
+          onClick={() => toggleOutcome('partial')}
+        >
+          Partial {partialOnly}
+        </button>
+        <button
+          type="button"
+          className={`bh-chip is-lost${statuses.includes('lost') ? ' is-on' : ''}`}
+          onClick={() => toggleOutcome('lost')}
+        >
+          Lost {lostOnly}
+        </button>
         <div className="mypage-toolbar-flags">
           <button type="button" className="btn btn-ghost btn-sm" onClick={reset}>
             Reset

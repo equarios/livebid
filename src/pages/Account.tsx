@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { MyPageHead } from '../components/MyPageHead'
 import { api } from '../lib/api'
 import { buildDigestPreviewLines } from '../lib/digestPreview'
 import { DEFAULT_FULFILLMENT, FULFILLMENT_LABELS } from '../lib/fulfillment'
@@ -146,14 +147,18 @@ export function Account() {
 
   return (
     <div className="account-settings-page">
-      <div className="mypage-meta">
-        <span className="mypage-meta-label">{user?.company || user?.accountId}</span>
-        <em>{roleLabel}</em>
-        <em>{user?.status || 'active'}</em>
-      </div>
+      <MyPageHead
+        title="Settings"
+        count={roleLabel}
+        note={`${user?.company || user?.accountId || 'Account'} · ${user?.status || 'active'}`}
+        trust={[
+          { to: '/account/documents', label: 'Documents' },
+          { to: '/account', label: 'Overview' },
+        ]}
+      />
       <div className="account-settings-grid">
-        <section className="account-desk-block">
-          <h3>Profile</h3>
+        <section className="account-desk-block help-panel">
+          <h3 className="mypage-panel-label">Profile</h3>
           <dl className="specs account-specs">
             <div>
               <dt>Account ID</dt>
@@ -197,8 +202,8 @@ export function Account() {
           </dl>
         </section>
 
-        <section className="account-desk-block">
-          <h3>Default logistics</h3>
+        <section className="account-desk-block help-panel">
+          <h3 className="mypage-panel-label">Default logistics</h3>
           <p className="muted tiny">
             Auto-fills wholesale invoices and store checkout. Use your own FedEx / UPS / DHL account
             when you prefer.
@@ -251,14 +256,16 @@ export function Account() {
               placeholder="Used for delivery mode"
             />
           </label>
-          <button
-            type="button"
-            className="btn btn-primary btn-sm"
-            disabled={logisticsBusy}
-            onClick={() => void saveLogistics()}
-          >
-            {logisticsBusy ? 'Saving…' : 'Save logistics'}
-          </button>
+          <div className="form-actions">
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={logisticsBusy}
+              onClick={() => void saveLogistics()}
+            >
+              {logisticsBusy ? 'Saving…' : 'Save logistics'}
+            </button>
+          </div>
           {logisticsMsg ? (
             <p className={logisticsMsg.includes('saved') || logisticsMsg.includes('Saved') ? 'ok' : 'error'}>
               {logisticsMsg}
@@ -266,8 +273,8 @@ export function Account() {
           ) : null}
         </section>
 
-        <section className="account-desk-block">
-          <h3>Email notifications</h3>
+        <section className="account-desk-block help-panel">
+          <h3 className="mypage-panel-label">Email notifications</h3>
           <p className="muted tiny">
             In-app bell notices always fire. Email is optional — noisy events stay off by default.
             Quiet hours (UTC 22:00–07:00): outbid / watch / digest / closing skip email; invoices and

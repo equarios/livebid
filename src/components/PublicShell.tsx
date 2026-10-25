@@ -12,26 +12,35 @@ import { SiteFooter } from './SiteFooter'
 import { SiteNav } from './SiteNav'
 import { HeaderDeskPulse } from './HeaderDeskPulse'
 import { WholesaleCatSubnav } from './WholesaleCatSubnav'
-import { canUseWholesaleDesk } from '../lib/channelAccess'
+import { canUseWholesaleDesk, wholesaleHome } from '../lib/channelAccess'
 import { useWatchFilterNotices } from '../lib/useWatchFilterNotices'
 import { useStore } from '../store'
 
 type ShellMode = 'consumer' | 'wholesale'
 
-/** Marketing / apply chrome for guests on wholesale-facing pages. */
+/** Same header chrome as store — Store | Wholesale first, then wholesale marketing links. */
 function GuestWholesaleNav({ onNavigate }: { onNavigate?: () => void }) {
-  const { settings } = useStore()
+  const { settings, user } = useStore()
+  const storeLabel =
+    settings.storeLabel && settings.storeLabel !== 'Store'
+      ? settings.storeLabel
+      : settings.copy.navStore
   return (
     <nav
-      className="site-nav"
+      className="site-nav consumer-nav gd-nav"
       onClick={() => {
         onNavigate?.()
       }}
     >
+      {settings.showStore ? <NavLink to="/store">{storeLabel}</NavLink> : null}
+      {user ? (
+        <NavLink to="/account/wholesale">{settings.copy.navApplyWholesale}</NavLink>
+      ) : (
+        <NavLink to="/wholesale">{settings.copy.navWholesale}</NavLink>
+      )}
       <NavLink to="/buyers">{settings.copy.navBuyers}</NavLink>
       <NavLink to="/sellers">{settings.copy.navSellers}</NavLink>
       <NavLink to="/wholesale/c">Categories</NavLink>
-      {settings.features.register ? <NavLink to="/register">{settings.copy.navApply}</NavLink> : null}
     </nav>
   )
 }
@@ -51,6 +60,13 @@ export function PublicShell({
   const [panel, setPanel] = useState<'me' | 'lang' | 'notes' | null>(null)
   const consumer = mode === 'consumer'
   const deskOk = canUseWholesaleDesk(user, isStaff)
+  const logoTo = deskOk
+    ? wholesaleHome(settings)
+    : settings.showStore
+      ? '/'
+      : user
+        ? '/account'
+        : '/buyers'
   const showCatSubnav =
     !consumer &&
     (location.pathname === '/wholesale' || location.pathname.startsWith('/wholesale/'))
@@ -141,10 +157,7 @@ export function PublicShell({
     <div className={`pub ${consumer ? 'is-consumer' : 'is-wholesale'}`}>
       <header className="pub-header">
         <div className="pub-header-row">
-          <Link
-            to={consumer ? '/store' : deskOk ? '/wholesale' : user ? '/account' : '/buyers'}
-            className="pub-logo"
-          >
+          <Link to={logoTo} className="pub-logo">
             <BrandLogo />
           </Link>
           <form className="pub-search" onSubmit={onSearch} role="search">
@@ -186,11 +199,13 @@ export function PublicShell({
                 closeWhen={panel === 'lang' || panel === 'notes'}
               />
               <div className="topbar-icon-pair">
-                <NoticeBell
-                  closeWhen={panel === 'me' || panel === 'lang'}
-                  onOpen={() => setPanel('notes')}
-                  onClose={() => setPanel((p) => (p === 'notes' ? null : p))}
-                />
+                {user ? (
+                  <NoticeBell
+                    closeWhen={panel === 'me' || panel === 'lang'}
+                    onOpen={() => setPanel('notes')}
+                    onClose={() => setPanel((p) => (p === 'notes' ? null : p))}
+                  />
+                ) : null}
                 <LanguageMenu
                   onOpen={() => setPanel('lang')}
                   onClose={() => setPanel((p) => (p === 'lang' ? null : p))}
